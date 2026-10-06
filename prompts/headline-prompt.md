@@ -40,7 +40,7 @@ RULES
    Avoid absolutes such as "CVE-free", "zero", "always", "never", "best". Prefer wording SUSE uses publicly,
    for example "pre-validated", "low CVE count".
 7. Use current SUSE product names exactly: SUSE AI Factory, SUSE Rancher Prime, SUSE Application Collection,
-   SUSE Observability, SUSE Virtualization. Fix obvious transcription errors (for example "VLM" is vLLM,
+   SUSE Observability, SUSE Virtualization, SUSE Security, SUSE Linux, SUSE Multi-Linux Manager (SUSE MLM). Fix obvious transcription errors (for example "VLM" is vLLM,
    "light LLM" is LiteLLM) and tell me you did.
 8. Do not criticise or single out third-party projects by name. Describe the general problem instead.
 9. Neighbouring headlines should not repeat each other's wording.
