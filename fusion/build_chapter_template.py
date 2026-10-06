@@ -36,9 +36,32 @@ BRAND = {
     "style_ui":    "Medium",
 }
 # ---- WHERE THINGS ARE ------------------------------------------------------------------
-REPO_DIR = os.path.expanduser("~/Documents/GitHub/demo-booth-video-template")   # <-- EDIT if cloned elsewhere
-TIMING_NAME = "suse-ai-factory-demo.json"     # <-- which file in timings/ to build from
+TIMING_NAME = "example.json"     # <-- which file in timings/ to build from
+REPO_DIR = ""                    # leave empty: the repo folder is found automatically (see below)
 # -----------------------------------------------------------------------------------------
+
+def _find_repo():
+    """Locate this repo (the folder with assets/ and timings/) so no path ever needs editing.
+    Tries: REPO_DIR above, $DEMO_BOOTH_REPO, the folder this file lives in (if run as a file, not pasted),
+    then the usual clone locations."""
+    home = os.path.expanduser("~")
+    name = "demo-booth-video-template"
+    cands = [REPO_DIR, os.environ.get("DEMO_BOOTH_REPO", "")]
+    try:
+        cands.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    except NameError:
+        pass                                              # pasted into the Console: no __file__
+    cands += [os.path.join(home, d, name) for d in ("Documents/GitHub", "GitHub", "Developer", "Documents",
+                                                     "Desktop", "Downloads", "Projects", "src", "git")]
+    cands = [os.path.expanduser(c) for c in cands if c]
+    for c in cands:
+        if os.path.isfile(os.path.join(c, "assets", "SUSE_Logo-hor_Green.png")) and os.path.isdir(os.path.join(c, "timings")):
+            return c
+    raise RuntimeError("Could not find the %s folder. Looked in:\n  %s\nSet REPO_DIR at the top of the script to "
+                       "the folder that contains assets/ and timings/." % (name, "\n  ".join(cands)))
+
+REPO_DIR = _find_repo()
+print("Using repo: %s   timing file: %s" % (REPO_DIR, TIMING_NAME))
 LOGO_PATH = os.path.join(REPO_DIR, "assets", "SUSE_Logo-hor_Green.png")
 # Only used to measure headline word widths. First one that exists wins; without one the script falls
 # back to a rough width estimate (headline spacing is then less exact).
@@ -313,7 +336,7 @@ if os.path.isfile(LOGO_PATH):
     out.SetInput("Center", [nx(PANEL["cx"]), ny(LOGO_CY)])
     out.SetInput("Size", LOGO_W_PX / 880.0)   # visible mark is ~880 px of the 1125 px PNG
 else:
-    print("LOGO_PATH not found (%s) - using a text placeholder. Check REPO_DIR at the top and re-run." % LOGO_PATH)
+    print("LOGO_PATH not found (%s) - using a text placeholder. Check that assets/SUSE_Logo-hor_Green.png exists in the repo and re-run." % LOGO_PATH)
     out = merge(out, text("LogoPlaceholder", "SUSE", PANEL["cx"], LOGO_CY, 72,
                           BRAND["product"], style="SemiBold"), "LogoMerge")
 
