@@ -49,7 +49,8 @@ def find_ffmpeg(prefer_system=False):
 
 
 def probe(ffmpeg, path):
-    """(width, height, fps, duration_seconds) read from `ffmpeg -i` output (the bundled build has no ffprobe)."""
+    """(width, height, fps, duration_seconds, colour_tagged) read from `ffmpeg -i` output (the bundled build has
+    no ffprobe). colour_tagged says whether the file declares its colour matrix (bt709, bt601, ...)."""
     r = subprocess.run([ffmpeg, "-hide_banner", "-i", str(path)], capture_output=True, text=True)
     err = r.stderr
     dur = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", err)
@@ -59,7 +60,14 @@ def probe(ffmpeg, path):
     if not video:
         sys.exit("No video stream found in %s\n%s" % (path, err[-400:]))
     seconds = (int(dur.group(1)) * 3600 + int(dur.group(2)) * 60 + float(dur.group(3))) if dur else None
-    return (int(size.group(1)), int(size.group(2))) + (float(fps.group(1)) if fps else 30.0, seconds)
+    tagged = bool(re.search(r"bt709|bt470|smpte|bt2020|bt601", video))
+    return (int(size.group(1)), int(size.group(2)), float(fps.group(1)) if fps else 30.0, seconds, tagged)
+
+
+def source_matrix(w, h, tagged):
+    """Colour matrix to assume when decoding. Tagged files are decoded as tagged. Untagged HD files are
+    treated as BT.709, which is what players do (ffmpeg alone would guess BT.601 and shift the colours)."""
+    return "bt709" if (not tagged and h >= 720) else "auto"
 
 
 # ---------------------------------------------------------------------------------------------- timing
@@ -90,17 +98,19 @@ def load_timing(arg):
 
 
 # ---------------------------------------------------------------------------------------------- frames
-def slot_filter(fps):
+def slot_filter(fps, matrix="auto"):
+    """Decode chain: correct YUV->RGB first (so odd slot sizes like 1459 px are allowed), then fit into the slot."""
     cw, ch = L.CONTENT["w"], L.CONTENT["h"]
-    return ("fps=%s,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black"
-            % (fps, cw, ch, cw, ch))
+    return ("fps=%s,scale=in_color_matrix=%s:in_range=auto:out_range=full,format=rgb24,"
+            "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black"
+            % (fps, matrix, cw, ch, cw, ch))
 
 
-def grab_frame(ffmpeg, video, t, fps):
+def grab_frame(ffmpeg, video, t, fps, matrix="auto"):
     """One decoded frame at time t, already scaled to the content slot."""
     cw, ch = L.CONTENT["w"], L.CONTENT["h"]
     cmd = [ffmpeg, "-v", "error", "-ss", "%.3f" % max(0, t), "-i", str(video), "-frames:v", "1",
-           "-vf", slot_filter(fps).split(",", 1)[1], "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+           "-vf", slot_filter(fps, matrix).split(",", 1)[1], "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     data = subprocess.run(cmd, capture_output=True).stdout
     if len(data) != cw * ch * 3:
         sys.exit("Could not read a frame at %.1fs (is that inside the video?)" % t)
@@ -108,30 +118,39 @@ def grab_frame(ffmpeg, video, t, fps):
 
 
 def render_video(args, ffmpeg, lay):
-    w, h, src_fps, src_dur = probe(ffmpeg, args.input)
+    w, h, src_fps, src_dur, tagged = probe(ffmpeg, args.input)
+    matrix = source_matrix(w, h, tagged)
     fps = args.fps or src_fps
     start = args.start or 0.0
     dur = args.duration if args.duration else (src_dur - start if src_dur else None)
     cw, ch = L.CONTENT["w"], L.CONTENT["h"]
     nbytes = cw * ch * 3
     total_frames = int(dur * fps) if dur else None
-    print("Input %dx%d @ %.3g fps, %s  ->  %dx%d @ %.3g fps" % (w, h, src_fps,
-          ("%.1fs" % dur) if dur else "unknown length", L.W, L.H, fps))
+    print("Input %dx%d @ %.3g fps, %s (colour: %s)  ->  %dx%d @ %.3g fps" % (w, h, src_fps,
+          ("%.1fs" % dur) if dur else "unknown length", matrix if matrix != "auto" else "as tagged",
+          L.W, L.H, fps))
 
+    dec_err, enc_err = tempfile.TemporaryFile(), tempfile.TemporaryFile()   # files, not pipes: can never fill up and block
     seek = ["-ss", "%.3f" % start] if start else []
     lim = ["-t", "%.3f" % dur] if args.duration else []
     dec = subprocess.Popen([ffmpeg, "-v", "error"] + seek + ["-i", str(args.input)] + lim +
-                           ["-vf", slot_filter(fps), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                           ["-vf", slot_filter(fps, matrix), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                           stdout=subprocess.PIPE, stderr=dec_err)
     vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", args.preset]
     if args.fast:
         vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
     enc = subprocess.Popen([ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                             "-s", "%dx%d" % (L.W, L.H), "-r", str(fps), "-i", "-"] + seek + lim +
                            ["-i", str(args.input), "-map", "0:v", "-map", "1:a?"] + vcodec +
-                           ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest",
+                           # RGB -> video colours with the HD matrix, and say so in the file, so players show the
+                           # exact brand colours (ffmpeg's default would be BT.601 and shift SUSE green)
+                           ["-vf", "scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,"
+                                   "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+                            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+                            "-color_range", "tv",
+                            "-c:a", "aac", "-b:a", "192k", "-shortest",
                             "-movflags", "+faststart", str(args.output)],
-                           stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                           stdin=subprocess.PIPE, stderr=enc_err)
     t0 = time.time()
     i = 0
     try:
@@ -161,11 +180,23 @@ def render_video(args, ffmpeg, lay):
         except Exception:
             pass
     enc.wait()
-    dec.wait()
+    # If the encoder stopped early, the decoder may be blocked writing into a pipe nobody reads any more.
+    # Closing our end lets it exit; kill it if it still doesn't.
+    try:
+        dec.stdout.close()
+    except Exception:
+        pass
+    try:
+        dec.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        dec.kill()
+        dec.wait()
     print()
     if enc.returncode != 0 or i == 0:
-        sys.exit("Encoding failed.\nencoder: %s\ndecoder: %s" % (enc.stderr.read().decode()[-600:],
-                                                                 dec.stderr.read().decode()[-600:]))
+        def tail(f):
+            f.seek(0)
+            return f.read().decode(errors="replace")[-600:]
+        sys.exit("Encoding failed.\nencoder: %s\ndecoder: %s" % (tail(enc_err), tail(dec_err)))
     print("Wrote %s  (%d frames, %.0fs)" % (args.output, i, time.time() - t0))
 
 
@@ -187,9 +218,21 @@ def selftest(args, ffmpeg):
                             crf=23, preset="veryfast", fast=False)
     lay = layers.Layout(load_timing(str(timing)))
     render_video(ns, ffmpeg, lay)
-    _, _, fps, dur = probe(ffmpeg, out)
-    lay.frame(3.0, grab_frame(ffmpeg, clip, 3.0, 25)).save(png)
-    ok = out.exists() and dur and abs(dur - 6) < 0.6
+    _, _, fps, dur, _ = probe(ffmpeg, out)
+    lay.frame(3.0, grab_frame(ffmpeg, clip, 3.0, 25, "bt709")).save(png)
+    # brand colours must survive the trip into the MP4: decode a frame the way a player does (HD = BT.709)
+    # and compare an inactive button's green with the brand value
+    chk = tmp / "chk.png"
+    subprocess.run([ffmpeg, "-y", "-v", "error", "-ss", "3", "-i", str(out), "-vf",
+                    "scale=in_color_matrix=bt709:in_range=tv:out_range=full,format=rgb24", "-frames:v", "1", str(chk)],
+                   check=True)
+    got = Image.open(chk).convert("RGB").getpixel((45, 725))
+    want = layers.rgb(L.BRAND["pill_base"])
+    err = max(abs(g - e) for g, e in zip(got, want))
+    colour_ok = err <= 6
+    print("colour check: button green is %s in the MP4, brand value is %s (max error %d) -> %s"
+          % (got, want, err, "ok" if colour_ok else "WRONG"))
+    ok = out.exists() and dur and abs(dur - 6) < 0.6 and colour_ok
     print("selftest %s: %s (%.1fs, %.3g fps)\n  preview frame: %s" % ("OK" if ok else "FAILED", out, dur or 0, fps, png))
     return 0 if ok else 1
 
@@ -218,7 +261,10 @@ def main():
     lay = layers.Layout(load_timing(args.timing))
 
     if args.frame is not None:
-        video = grab_frame(ffmpeg, args.input, args.frame, args.fps or 30) if args.input else None
+        video = None
+        if args.input:
+            w, h, _, _, tagged = probe(ffmpeg, args.input)
+            video = grab_frame(ffmpeg, args.input, args.frame, args.fps or 30, source_matrix(w, h, tagged))
         out = Path(args.png or "frame.png")
         lay.frame(args.frame, video).save(out)
         print("Wrote", out)
