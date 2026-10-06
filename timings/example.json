@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "title": "Example video",
+  "product_name": "Your product",
+  "chapters": ["Introduction", "Set up", "Configure", "Deploy", "Monitor", "Wrap up"],
+  "chapter_starts": [
+    [0, 1],
+    [30, 2],
+    [60, 3]
+  ],
+  "headlines": [
+    [0, "Welcome to the *demo*"],
+    [12, "Everything in one *place*"],
+    [30, "Set up in a few *clicks*"],
+    [45, "Choose your *options*"],
+    [60, "Configure it for *your* environment"]
+  ],
+  "headlines_end": null,
+  "wipe_seconds": 0.8
+}
