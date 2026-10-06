@@ -150,8 +150,10 @@ The script builds the image the first time (`docker`, `podman` or `nerdctl`; set
 mounts the current folder at `/work` and your repo's `timings/` folder read-only, so timing edits need no rebuild.
 To build it yourself: `docker build -t booth-render -f render/Containerfile .` from the repo root.
 
-> The container files are written but have not been run yet. If the build fails, send the error to whoever
-> maintains this repo.
+> Tested on Rancher Desktop (Apple silicon): the image builds from `registry.suse.com/bci/python:3.13` (SLES 15 SP7,
+> about 480 MB), `--selftest` passes inside it, and a full render through `run-container.sh` kept the audio and the
+> frame rate. Inside the Linux VM it renders at roughly 40 to 55 frames per second, slower than running natively on the
+> Mac (around 140), so prefer the virtual-environment route on your own machine and the container for servers and CI.
 
 ## Write the headlines
 
