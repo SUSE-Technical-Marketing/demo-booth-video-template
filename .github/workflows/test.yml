@@ -1,0 +1,19 @@
+name: test
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r render/requirements.txt
+      - name: Fusion script and renderer use the same layout
+        run: python tests/check_layout_sync.py
+      - name: Timing files are valid
+        run: python -c "import sys,json,glob;[json.load(open(f)) for f in glob.glob('timings/*.json')]"
+      - name: Render a generated test video end to end
+        run: python render/render.py --selftest

@@ -3,8 +3,18 @@
 Turn a screen recording into a branded booth demo video: a **chapter panel** on the left whose orange button
 follows the demo, and a **headline bar** on top where short headlines wipe in from left to right.
 
-It runs inside **DaVinci Resolve** (Fusion page) from a short Python script, and you control every word and every
-time in a small **web page** (the timing editor), so changing a headline never means touching code.
+You control every word and every time in a small **web page** (the timing editor), so changing a headline never
+means touching code. Then you produce the video one of **two ways**, from the same timing file:
+
+| | **Path A: DaVinci Resolve** | **Path B: Python renderer** |
+|---|---|---|
+| You do | Compound clip, paste a script into Fusion's Console | `python render/render.py cut.mp4 -t my-video.json` |
+| Needs | DaVinci Resolve, SUSE font installed | Python (or just a container engine), nothing else |
+| Preview | Live in Resolve | A single frame as a PNG, or the editor's preview |
+| Good for | One-off videos you want to keep tweaking visually | Repeatable runs, many videos, servers or CI |
+| Result | Layout lives on the clip inside Resolve | A finished MP4 |
+
+You still **cut your video in whatever editor you like**; both paths start from your finished edit.
 
 ![Example of the finished layout](docs/img/finished-layout.png)
 > 📷 *Screenshot to add: one finished frame (panel on the left, headline on top, your recording in the slot).*
@@ -12,14 +22,17 @@ time in a small **web page** (the timing editor), so changing a headline never m
 ## How the pieces fit
 
 ```
-narration ──► LLM prompt ──► headlines ──► timing editor ──► timings/<video>.json ──► Fusion script ──► finished video
- (transcript)  prompts/       (words)       (times, ripple)    (the single source      fusion/             in DaVinci
-                                                                of truth)              build_chapter_template.py
+narration ──► LLM prompt ──► headlines ──► timing editor ──► timings/<video>.json ─┬─► Path A: Fusion script ──► video in DaVinci
+ (transcript)  prompts/       (words)       (times, ripple)    (single source      │      fusion/build_chapter_template.py
+                                                                of truth)         └─► Path B: Python renderer ──► final .mp4
+                                                                                         render/render.py (+ container)
 ```
 
 | Path | What it is |
 |---|---|
-| `fusion/build_chapter_template.py` | The script you paste into Resolve's Fusion Console. Builds the whole layout. |
+| `fusion/build_chapter_template.py` | **Path A.** The script you paste into Resolve's Fusion Console. Builds the whole layout. |
+| `render/` | **Path B.** `render.py` (command line), `Containerfile` and `run-container.sh` (SUSE BCI Python image). |
+| `tests/` | Checks that both paths use the same layout, run automatically on every push. |
 | `timings/*.json` | **All the text and timing for one video**: button names, when the orange button switches, every headline. |
 | `docs/index.html` | The timing editor (also what GitHub Pages serves). |
 | `prompts/headline-prompt.md` | A ready-to-use LLM prompt that turns narration into headlines. |
@@ -28,15 +41,16 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 
 ## One-time setup
 
-1. **Clone this repo** to `~/Documents/GitHub/demo-booth-video-template` (the default GitHub Desktop location).
-   Somewhere else is fine, but then set `REPO_DIR` at the top of the script (step 4 below).
-2. **Install the SUSE font** (Regular, Medium and SemiBold) and **restart Resolve**. It's open source: get it from
+1. **Clone this repo** anywhere (GitHub Desktop's default, `~/Documents/GitHub/`, is fine). The script finds the
+   repo folder by itself, including its logo and font, so you never type a path. The Console prints
+   `Using repo: ...` so you can see which folder it picked.
+2. **Path A only: install the SUSE font** (Regular, Medium and SemiBold) and **restart Resolve**. It's open source: get it from
    [Google Fonts](https://fonts.google.com/specimen/SUSE) or the [SUSE font repo](https://github.com/SUSE/suse-font).
    Fusion can only use fonts installed on your Mac, which is why the script needs it even though the editor loads
    it from the web.
 3. **Use a 1920 × 1080 timeline.** The layout is built in those pixels.
 
-## Make a video, step by step
+## Path A: make the video in DaVinci Resolve (step by step)
 
 ### 1. Edit your video first, then make it one compound clip
 
@@ -69,9 +83,9 @@ In the menu bar: **Workspace → Console**. At the top of the Console panel, swi
 ### 4. Run the script
 
 1. Open `fusion/build_chapter_template.py` in any text editor.
-2. At the top, check the **WHERE THINGS ARE** block:
-   - `REPO_DIR`: where you cloned this repo.
-   - `TIMING_NAME`: which file in `timings/` to build from (for example `my-video.json`).
+2. At the top, check the **WHERE THINGS ARE** block. The only thing to set is `TIMING_NAME`: which file in
+   `timings/` to build from (for example `my-video.json`). Leave `REPO_DIR` empty. Only if the repo lives in an
+   unusual place and the Console says it can't find it, set `REPO_DIR` to that folder.
 3. Select all, copy, paste into the Console, press **Enter**.
 
 The Console prints one line per chapter and per headline with its start frame, then a few `check` lines. Each
@@ -88,6 +102,56 @@ headline should wipe in at its time.
 
 Edit the timing file in the editor (next section), save, then **paste the script again**. It deletes its own old
 nodes first, so re-running never stacks copies. Nothing else to do.
+
+## Path B: make the video with the Python renderer (no DaVinci)
+
+1. **Cut and export your video** from any editor as a normal MP4 (1920 × 1080 is ideal; other sizes are fitted into
+   the slot with black bars). Cut dead space first, because times are measured from the start of this file.
+2. **One-time setup** (needs Python 3.10 or newer; nothing else, the renderer brings its own ffmpeg):
+   ```bash
+   cd demo-booth-video-template
+   python3 -m venv .venv
+   .venv/bin/pip install -r render/requirements.txt
+   ```
+3. **Check a frame before rendering everything.** This writes one PNG of the finished layout at 75 seconds:
+   ```bash
+   .venv/bin/python render/render.py my-edit.mp4 -t my-video.json --frame 75 --png check.png
+   ```
+   (`-t` takes a file name from `timings/` or a path. Without a video it draws a grey slot, which is handy for
+   checking only the headlines and buttons.)
+4. **Render:**
+   ```bash
+   .venv/bin/python render/render.py my-edit.mp4 -t my-video.json -o my-video-final.mp4
+   ```
+   Progress prints as it goes. It keeps your audio (re-encoded to AAC), keeps the frame rate, and outputs 1920 × 1080
+   H.264. On Apple-silicon Macs add `--fast` to use the hardware encoder.
+5. **Changing something later:** edit the timing file in the editor, save, and re-run step 4. Nothing is stored in
+   the video, so there is nothing to clean up. If you re-cut the video, re-export it and use the editor's
+   **Ripple** tool to slide the times.
+
+Other options: `--start 30 --duration 60` renders just that part (timing times still count from the start of the
+source), `--fps 30`, `--crf 18` (quality; lower is better) and `--preset medium`. `--selftest` renders a generated
+clip to prove the install works.
+
+**Speed:** the check on a generated 1080p clip rendered at roughly 140 frames per second on an Apple-silicon Mac, so
+a ten minute video takes a few minutes. Your numbers will vary with the source video and the machine.
+
+### Path B in a container (SUSE Base Container Image)
+
+If you would rather not install anything, or you want to render on a server, the renderer runs in a container built on
+`registry.suse.com/bci/python`. Pillow and a static ffmpeg come from pip, so the image needs no extra repositories.
+
+```bash
+cd ~/Movies/my-demo        # the folder that holds your edited video
+/path/to/demo-booth-video-template/render/run-container.sh my-edit.mp4 -t my-video.json -o final.mp4
+```
+
+The script builds the image the first time (`docker`, `podman` or `nerdctl`; set `CONTAINER_ENGINE` to choose),
+mounts the current folder at `/work` and your repo's `timings/` folder read-only, so timing edits need no rebuild.
+To build it yourself: `docker build -t booth-render -f render/Containerfile .` from the repo root.
+
+> The container files are written but have not been run yet. If the build fails, send the error to whoever
+> maintains this repo.
 
 ## Write the headlines
 
@@ -123,11 +187,13 @@ Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link fil
 **wipe** (how long the left-to-right build-in takes), and **Names** (video title, product name, the six button
 labels).
 
-After saving, re-run the script in Resolve.
+After saving, re-run the script in Resolve (Path A) or the render command (Path B).
 
 ## Editing the video afterwards
 
-The template belongs to the compound clip. So if you change the video after adding headlines:
+**Path B:** re-export the video, use **Ripple** in the editor if you cut, and render again. Nothing else.
+
+**Path A:** the template belongs to the compound clip. So if you change the video after adding headlines:
 
 **Only the timing moved (you cut dead space or trimmed):**
 1. Make a backup first: duplicate your timeline (right-click it in the Media Pool → **Duplicate Timeline**).
@@ -188,10 +254,14 @@ plain message if, for example, a chapter switch points at a button that doesn't 
 |---|---|
 | The orange button never changes | Re-run the latest script and read the `check` lines. Each must say **ok**. If one says **WRONG**, send the Console output to whoever maintains this repo. |
 | Headlines show at the wrong time | Times are from the start of the compound clip. Re-check that the clip starts at the timeline start, and use **Ripple** after cuts. |
-| Console: `Could not read ... timings/...json` | `REPO_DIR` or `TIMING_NAME` at the top of the script is wrong. |
+| Console: `Could not find the demo-booth-video-template folder` | Set `REPO_DIR` at the top to the folder that contains `assets/` and `timings/`. |
+| Console: `Could not read ... timings/...json` | `TIMING_NAME` at the top of the script doesn't match a file in `timings/`. |
 | Console: `chapter switch ... points to chapter 7` | Chapter numbers go 1 to 6 only. Fix the row in the editor. |
-| Text is Times/serif or the wrong font | The SUSE font isn't installed, or Resolve wasn't restarted after installing it. |
-| Logo is replaced by the word "SUSE" | `assets/SUSE_Logo-hor_Green.png` wasn't found. Check `REPO_DIR`. |
+| Text is Times/serif or the wrong font | Path A: the SUSE font isn't installed, or Resolve wasn't restarted after installing it. Path B needs no installed font. |
+| Path B: `ffmpeg not found` | Run `pip install -r render/requirements.txt` inside your virtual environment (the renderer uses the ffmpeg that package bundles). |
+| Path B: rendered video is silent | Your input has no audio track, or a type ffmpeg can't read. Check with `ffmpeg -i my-edit.mp4`. |
+| Path B: `Could not read a frame at ...s` | That time is past the end of the video. |
+| Logo is replaced by the word "SUSE" | `assets/SUSE_Logo-hor_Green.png` is missing from the repo folder the Console reported. |
 | Headline words touch or have big gaps | Nudge `TEXT_SCALE` (default `1.11`) near the top of the script, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
 | Video doesn't fill the slot | The script assumes a 1920 × 1080 source. |
 | Editor says "sample data" | Click **Open file…** and choose your `timings/*.json`. |
@@ -216,6 +286,8 @@ JSON; if it's a design decision, it belongs in the script.**
   logo, which is why `assets/` still contains a PNG logo and the font file.)
 - **Fail early.** The script validates the JSON before it builds anything.
 - **Safe to re-run.** The script cleans up after itself, so iterating is just "save, paste".
+- **Two renderers, one layout.** The Fusion script and `render/` hold the same constants (`render/layout.py`
+  mirrors the top of the Fusion script). `tests/check_layout_sync.py` fails if they drift, and it runs in CI.
 
 ## Hosting on GitHub Pages
 
