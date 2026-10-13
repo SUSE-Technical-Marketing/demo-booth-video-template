@@ -117,6 +117,25 @@ def grab_frame(ffmpeg, video, t, fps, matrix="auto"):
     return Image.frombytes("RGB", (cw, ch), data)
 
 
+def chapter_metadata(lay, start, dur):
+    """ffmetadata text with one MP4 chapter per chapter switch, in output time (0 = first frame written)."""
+    esc = lambda x: re.sub(r"([=;#\\\n])", r"\\\1", str(x))
+    marks = [(max(0.0, t - start), c) for t, c in lay.chapter_starts if t - start < dur]
+    if not marks:
+        return None
+    if marks[0][0] > 0:                          # time before the first switch belongs to the first chapter's button
+        marks.insert(0, (0.0, marks[0][1]))
+    marks[0] = (0.0, marks[0][1])
+    out = [";FFMETADATA1"]
+    for i, (t, c) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else dur
+        if end - t < 0.001:
+            continue
+        out += ["[CHAPTER]", "TIMEBASE=1/1000", "START=%d" % round(t * 1000), "END=%d" % round(end * 1000),
+                "title=" + esc(lay.chapters[c - 1])]
+    return "\n".join(out) + "\n"
+
+
 def render_video(args, ffmpeg, lay):
     w, h, src_fps, src_dur, tagged = probe(ffmpeg, args.input)
     matrix = source_matrix(w, h, tagged)
@@ -130,6 +149,13 @@ def render_video(args, ffmpeg, lay):
           ("%.1fs" % dur) if dur else "unknown length", matrix if matrix != "auto" else "as tagged",
           L.W, L.H, fps))
 
+    meta = chapter_metadata(lay, start, dur) if dur else None
+    meta_args = []
+    if meta:
+        meta_file = Path(tempfile.mkdtemp(prefix="booth-chapters-")) / "chapters.txt"
+        meta_file.write_text(meta, encoding="utf-8")
+        meta_args = ["-f", "ffmetadata", "-i", str(meta_file), "-map_chapters", "2"]
+
     dec_err, enc_err = tempfile.TemporaryFile(), tempfile.TemporaryFile()   # files, not pipes: can never fill up and block
     seek = ["-ss", "%.3f" % start] if start else []
     lim = ["-t", "%.3f" % dur] if args.duration else []
@@ -141,7 +167,7 @@ def render_video(args, ffmpeg, lay):
         vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
     enc = subprocess.Popen([ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                             "-s", "%dx%d" % (L.W, L.H), "-r", str(fps), "-i", "-"] + seek + lim +
-                           ["-i", str(args.input), "-map", "0:v", "-map", "1:a?"] + vcodec +
+                           ["-i", str(args.input)] + meta_args + ["-map", "0:v", "-map", "1:a?"] + vcodec +
                            # RGB -> video colours with the HD matrix, and say so in the file, so players show the
                            # exact brand colours (ffmpeg's default would be BT.601 and shift SUSE green)
                            ["-vf", "scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,"
@@ -232,7 +258,11 @@ def selftest(args, ffmpeg):
     colour_ok = err <= 6
     print("colour check: button green is %s in the MP4, brand value is %s (max error %d) -> %s"
           % (got, want, err, "ok" if colour_ok else "WRONG"))
-    ok = out.exists() and dur and abs(dur - 6) < 0.6 and colour_ok
+    info = subprocess.run([ffmpeg, "-i", str(out)], capture_output=True, text=True).stderr
+    titles = re.findall(r"Chapter #\S+: start ([\d.]+), end ([\d.]+)\s+Metadata:\s+title\s+: (.*)", info)
+    chapters_ok = [t[2].strip() for t in titles] == ["Intro", "Details", "Wrap up"]
+    print("chapter markers: %s -> %s" % ([t[2].strip() for t in titles], "ok" if chapters_ok else "WRONG"))
+    ok = out.exists() and dur and abs(dur - 6) < 0.6 and colour_ok and chapters_ok
     print("selftest %s: %s (%.1fs, %.3g fps)\n  preview frame: %s" % ("OK" if ok else "FAILED", out, dur or 0, fps, png))
     return 0 if ok else 1
 
