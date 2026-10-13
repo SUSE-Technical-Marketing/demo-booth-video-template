@@ -133,6 +133,11 @@ Other options: `--start 30 --duration 60` renders just that part (timing times s
 source), `--fps 30`, `--crf 18` (quality; lower is better) and `--preset medium`. `--selftest` renders a generated
 clip to prove the install works.
 
+**Colours:** the output is converted with the HD (BT.709) matrix and tagged as such, so SUSE green and orange come
+out within a few levels of the brand values in any player. (ffmpeg's default would have turned SUSE green visibly
+duller.) `--selftest` measures this and fails if it drifts. Source videos that don't declare their colours are
+treated as BT.709, which is what players do.
+
 **Speed:** the check on a generated 1080p clip rendered at roughly 140 frames per second on an Apple-silicon Mac, so
 a ten minute video takes a few minutes. Your numbers will vary with the source video and the machine.
 
@@ -150,8 +155,10 @@ The script builds the image the first time (`docker`, `podman` or `nerdctl`; set
 mounts the current folder at `/work` and your repo's `timings/` folder read-only, so timing edits need no rebuild.
 To build it yourself: `docker build -t booth-render -f render/Containerfile .` from the repo root.
 
-> The container files are written but have not been run yet. If the build fails, send the error to whoever
-> maintains this repo.
+> Tested on Rancher Desktop (Apple silicon): the image builds from `registry.suse.com/bci/python:3.13` (SLES 15 SP7,
+> about 480 MB), `--selftest` passes inside it, and a full render through `run-container.sh` kept the audio and the
+> frame rate. Inside the Linux VM it renders at roughly 40 to 55 frames per second, slower than running natively on the
+> Mac (around 140), so prefer the virtual-environment route on your own machine and the container for servers and CI.
 
 ## Write the headlines
 
@@ -259,6 +266,7 @@ plain message if, for example, a chapter switch points at a button that doesn't 
 | Console: `chapter switch ... points to chapter 7` | Chapter numbers go 1 to 6 only. Fix the row in the editor. |
 | Text is Times/serif or the wrong font | Path A: the SUSE font isn't installed, or Resolve wasn't restarted after installing it. Path B needs no installed font. |
 | Path B: `ffmpeg not found` | Run `pip install -r render/requirements.txt` inside your virtual environment (the renderer uses the ffmpeg that package bundles). |
+| Path B: colours look different from the preview | Run `--selftest`; its `colour check` line shows the measured error (expect 4 or less). A larger number means a changed encoder setting. |
 | Path B: rendered video is silent | Your input has no audio track, or a type ffmpeg can't read. Check with `ffmpeg -i my-edit.mp4`. |
 | Path B: `Could not read a frame at ...s` | That time is past the end of the video. |
 | Logo is replaced by the word "SUSE" | `assets/SUSE_Logo-hor_Green.png` is missing from the repo folder the Console reported. |
