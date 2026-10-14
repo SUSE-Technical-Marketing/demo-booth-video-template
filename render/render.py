@@ -84,8 +84,6 @@ def load_timing(arg):
             problems.append('"%s" is missing or empty' % key)
     if not problems:
         n = len(tm["chapters"])
-        if not 1 <= n <= 6:
-            problems.append("the layout fits 1 to 6 chapter buttons, found %d" % n)
         for sec, ch in tm["chapter_starts"]:
             if not 1 <= int(ch) <= n:
                 problems.append("chapter switch at %ss points to chapter %s, but only 1-%d exist" % (sec, ch, n))

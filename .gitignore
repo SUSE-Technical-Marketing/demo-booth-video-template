@@ -8,3 +8,5 @@ __pycache__/
 *.mov
 frame.png
 check.png
+node_modules/
+dist/

@@ -72,7 +72,7 @@ main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 560px)
 .chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .chip.warn { color: var(--orange); border-color: var(--orange); }
 .chip.info { color: var(--green); border-color: var(--green); }
-.crow { display: grid; grid-template-columns: 78px minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 8px; }
+.crow { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 8px; }
 .crow .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
 .tools input[type=number] { width: 80px; }
@@ -96,13 +96,6 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .pill.on { background: #fe7c3f; }
 #content { left: 451.5px; top: 247px; width: 1459px; height: 820px; background: #efefef; display: flex; align-items: center;
   justify-content: center; color: #9aa7a3; font-size: 54px; letter-spacing: 1px; }
-#content video { width: 100%; height: 100%; object-fit: contain; background: #000; }
-.vclip { position: absolute; top: 40px; height: 4px; background: var(--text); opacity: .55; border-right: 1px solid var(--jungle); }
-.vrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 5px 6px; }
-.vrow .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.vrow .meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.vrow input.time { width: 78px; text-align: center; font-variant-numeric: tabular-nums; }
-#content .gap { font-size: 32px; text-align: center; white-space: normal; }
 #bar { left: 450px; top: 13.5px; width: 1468px; height: 217px; background: #16453b; border: 3px solid #fff; border-radius: 30px;
   display: flex; align-items: center; justify-content: center; }
 #hl { color: #fff; white-space: nowrap; line-height: 1; }
@@ -120,10 +113,7 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 <body>
 <header class="top">
   <h1>Timing editor</h1>
-  <button id="btnNew" title="Start a blank timing file (and clear the loaded videos)">New</button>
   <button id="btnOpen" title="Open headline_timing.json so changes save straight to the file">Open file…</button>
-  <button id="btnVideo" title="Add one or more videos to preview in the content slot (they stay on your computer, nothing is uploaded)">Add videos…</button>
-  <input type="file" id="videoFile" accept="video/*" multiple hidden>
   <button id="btnReconnect" class="primary" hidden></button>
   <button id="btnSave" class="primary" title="Cmd/Ctrl+S">Save</button>
   <button id="btnDownload" class="ghost">Download</button>
@@ -139,12 +129,6 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 <main>
   <div class="stack">
     <section class="card">
-      <h2>Videos <span class="chip" id="vidChip"></span></h2>
-      <div id="vlist"></div>
-      <p class="hint">Add one video per chapter, or one that covers several. Each plays from the time you set; <b>snap</b> moves it to the start of a chapter. Preview only for now.</p>
-    </section>
-
-    <section class="card">
       <h2>Timeline <span class="chip" id="durChip"></span></h2>
       <div id="tl"></div>
       <p class="hint">Click or drag on the timeline to scrub. Click a row below to jump to it.</p>
@@ -153,12 +137,14 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
     <section class="card">
       <h2>Chapter buttons <span class="hint" style="margin:0;text-transform:none;letter-spacing:0">when the orange pill switches</span></h2>
       <div id="chapters"></div>
-      <div class="tools"><button id="addChapter">+ Add chapter switch</button>
-        <details style="flex:1"><summary>Names: video title, product, the six buttons (chapter names can also be edited on each row)</summary>
+      <div class="tools"><button id="addChapter">+ Add chapter</button><button id="addChapterSwitch">+ Add chapter switch</button>
+        <details style="flex:1"><summary>Names: video title, product, chapter buttons</summary>
           <div class="names" id="meta">
             <label class="inline">title <input id="titleIn" placeholder="Video title (for your own reference)"></label>
             <label class="inline">product <input id="productIn" placeholder="Shown under the logo"></label></div>
           <div class="names" id="names"></div></details></div>
+      <p class="hint">Edit a chapter title in its row. Add a switch to revisit an existing chapter; deleting its last switch
+        also removes its button. The layout fits 1 to 6 chapters.</p>
     </section>
 
     <section class="card">
@@ -294,10 +280,7 @@ function tc(t) {
   const tot = Math.floor(Math.max(0, t) + OFFSET + 1e-6);
   return `${pad(Math.floor(tot / 3600))}:${pad(Math.floor(tot / 60) % 60)}:${pad(tot % 60)}`;
 }
-const VIDS = [];   // preview clips: { name, el, dur, start } (start = seconds on the timeline)
-const clipEnd = v => v.start + v.dur;
-const activeClip = t => VIDS.find(v => t >= v.start - 1e-6 && t < clipEnd(v));
-const duration = () => VIDS.length ? Math.max(...VIDS.map(clipEnd)) : Math.max(60, ...S.headlines.map(h => h.t), ...S.chapter_starts.map(c => c.t), S.headlines_end || 0) + 30;
+const duration = () => Math.max(60, ...S.headlines.map(h => h.t), ...S.chapter_starts.map(c => c.t), S.headlines_end || 0) + 30;
 
 // ------------------------------------------------------------------ remember the linked file
 const idb = {
@@ -432,7 +415,6 @@ function buildStage() {
   P.prod = el('div', { id: 'prodname', className: 'abs', textContent: 'SUSE AI Factory' });
   stage.append(P.prod);
   P.pills = [];
-  for (let i = 1; i <= 6; i++) { const p = el('div', { className: 'abs pill', style: `top:${977 - (6 - i) * 126 - 54}px` }); P.pills.push(p); stage.append(p); }
   stage.append(el('div', { id: 'content', className: 'abs', textContent: 'your video here' }));
   P.hl = el('div', { id: 'hl' });
   stage.append(el('div', { id: 'bar', className: 'abs' }, P.hl));
@@ -456,7 +438,16 @@ function renderPreview() {
   P.prod.textContent = S.product_name || '';
   P.prod.style.fontSize = prodPx + 'px'; P.prod.style.top = (197 - prodPx / 2) + 'px';
   const ac = activeChapter(cur);
-  P.pills.forEach((p, i) => { p.textContent = S.chapters[i] || ''; p.style.fontSize = pillPx + 'px'; p.classList.toggle('on', ac === i + 1); });
+  while (P.pills.length > S.chapters.length) P.pills.pop().remove();
+  while (P.pills.length < S.chapters.length) {
+    const p = el('div', { className: 'abs pill' });
+    P.pills.push(p); stage.append(p);
+  }
+  P.pills.forEach((p, i) => {
+    p.textContent = S.chapters[i]; p.style.fontSize = pillPx + 'px';
+    p.style.top = (977 - (S.chapters.length - i - 1) * 126 - 54) + 'px';
+    p.classList.toggle('on', ac === i + 1);
+  });
   const h = activeHeadline(cur);
   P.hl.style.fontSize = fs.px + 'px';
   P.hl.replaceChildren(h ? markup(h.text) : '');
@@ -469,49 +460,6 @@ function renderPreview() {
   document.querySelectorAll('.row.sel').forEach(r => r.classList.remove('sel'));
   if (selected && ROW.get(selected)) ROW.get(selected).classList.add('sel');
   renderTimelineMarks();
-  syncVideo();
-}
-
-// ------------------------------------------------------------------ video clips
-let shown = null;
-function syncVideo() {
-  const c = activeClip(cur) || null;
-  if (c !== shown) {
-    if (shown) shown.el.pause();
-    shown = c;
-    if (VIDS.length) $('#content').replaceChildren(c ? c.el : el('div', { className: 'gap', textContent: 'no video at this time' }));
-  }
-  if (!c) return;
-  const want = cur - c.start;
-  if (!playing || Math.abs(c.el.currentTime - want) > 0.4) c.el.currentTime = want;
-  if (playing && c.el.paused) c.el.play().catch(() => {});
-}
-function renderVideos() {
-  const box = $('#vlist'); box.innerHTML = '';
-  VIDS.forEach((v, i) => {
-    const snap = el('select', { title: 'Start at the beginning of a chapter' }, el('option', { value: '', textContent: 'snap…' }),
-      ...S.chapter_starts.map((c, k) => el('option', { value: k, textContent: 'ch ' + c.ch + ' · ' + fmt(c.t) })));
-    snap.onchange = () => { if (snap.value !== '') { v.start = S.chapter_starts[+snap.value].t; afterVideoChange(); } };
-    const t = el('input', { className: 'time', value: fmt(v.start), title: 'Where this video starts on the timeline (m:ss)' });
-    t.onchange = () => { const x = parseClock(t.value); if (!isNaN(x) && x >= 0) { v.start = x; afterVideoChange(); } else t.value = fmt(v.start); };
-    const rm = el('button', { className: 'ghost', textContent: '✕', title: 'Remove this video' });
-    rm.onclick = () => { if (shown === v) shown = null; v.el.pause(); URL.revokeObjectURL(v.el.src); VIDS.splice(i, 1); if (!VIDS.length) $('#content').textContent = 'your video here'; afterVideoChange(); };
-    const cover = S.chapter_starts.filter(c => c.t < clipEnd(v) - 0.05 && (S.chapter_starts.find(n => n.t > c.t) || { t: Infinity }).t > v.start + 0.05).map(c => c.ch);
-    box.append(el('div', { className: 'vrow' }, el('div', { className: 'name', textContent: v.name, title: v.name }),
-      el('span', { className: 'meta', textContent: fmt(v.dur) + (cover.length ? ' · ch ' + cover.join(', ') : '') }), t, snap, rm));
-  });
-  $('#vidChip').textContent = VIDS.length ? VIDS.length + ' loaded' : '';
-}
-function afterVideoChange() { VIDS.sort((a, b) => a.start - b.start); shown = undefined; renderVideos(); renderTimeline(); renderPreview(); }
-function addVideo(f) {
-  return new Promise(res => {
-    const v = el('video', { src: URL.createObjectURL(f), playsInline: true, preload: 'auto' });
-    v.addEventListener('loadedmetadata', () => {
-      const start = VIDS.length ? Math.max(...VIDS.map(clipEnd)) : 0;   // new clips go after the last one; change the time or snap to a chapter
-      VIDS.push({ name: f.name, el: v, dur: v.duration, start }); res(true);
-    });
-    v.addEventListener('error', () => { URL.revokeObjectURL(v.src); toast(f.name + ': this browser cannot play that file (try H.264 .mp4)'); res(false); });
-  });
 }
 
 // ------------------------------------------------------------------ timeline
@@ -525,7 +473,6 @@ function renderTimeline() {
       title: `${fmt(c.t)} – ${fmt(end)}`, style: `left:${pct(c.t)};width:calc(${pct(end - c.t)} - 0px);background:${CH_COLORS[(c.ch - 1) % 6]}` }));
   });
   S.headlines.forEach(h => { const tk = el('div', { className: 'tick', title: `${fmt(h.t)}  ${plain(h.text)}`, style: `left:${pct(h.t)}` }); TICK.set(h, tk); tl.append(tk); });
-  VIDS.forEach(v => tl.append(el('div', { className: 'vclip', title: v.name, style: `left:${pct(v.start)};width:${pct(v.dur)}` })));
   const ruler = el('div', { className: 'ruler' });
   const step = D > 600 ? 60 : 30;
   for (let t = 0; t <= D; t += step) { ruler.append(el('i', { style: `left:${pct(t)}` })); if (t > D - step / 2) continue;
@@ -612,22 +559,44 @@ function rowChips(h, i, next) {
   return out;
 }
 
+function removeChapter(ch) {
+  S.chapters.splice(ch - 1, 1);
+  S.chapter_starts = S.chapter_starts.filter(c => c.ch !== ch);
+  S.chapter_starts.forEach(c => { if (c.ch > ch) c.ch--; });
+}
+
+function chapterTitleInput(ch) {
+  const inp = el('input', { value: S.chapters[ch - 1], placeholder: 'Chapter title' });
+  inp.setAttribute('aria-label', 'Chapter ' + ch + ' title');
+  inp.dataset.chapter = ch;
+  inp.addEventListener('focus', () => pushHistory(true));
+  inp.addEventListener('input', () => {
+    S.chapters[ch - 1] = inp.value;
+    document.querySelectorAll('input[data-chapter]').forEach(other => {
+      if (+other.dataset.chapter === ch && other !== inp) other.value = inp.value;
+    });
+    document.querySelectorAll('#chapters select').forEach(sel => {
+      sel.options[ch - 1].textContent = `${ch}  ${inp.value}`;
+    });
+    renderTimeline(); renderPreview(); markDirty();
+  });
+  return inp;
+}
+
 function chapterRow(c) {
   const row = el('div', { className: 'crow' });
   const sel = el('select');
   S.chapters.forEach((n, i) => sel.append(el('option', { value: i + 1, textContent: `${i + 1}  ${n}`, selected: c.ch === i + 1 })));
   sel.addEventListener('change', () => { pushHistory(true); c.ch = +sel.value; rebuildAll(); markDirty(); });
-  // the name is the button label and the MP4 chapter title; it is shared by every switch that uses this button
-  const name = el('input', { value: S.chapters[c.ch - 1] || '', placeholder: 'Name for button ' + c.ch, title: 'Rename button ' + c.ch + ' (also the MP4 chapter title)' });
-  name.addEventListener('focus', () => pushHistory(true));
-  name.addEventListener('input', () => { S.chapters[c.ch - 1] = name.value; renderTimeline(); renderPreview(); markDirty(); });
-  name.addEventListener('change', () => rebuildAll());
-  name.addEventListener('click', e => e.stopPropagation());
-  row.append(timeInput(c), el('div', {}, el('span', { className: 'dot', style: `background:${CH_COLORS[(c.ch - 1) % 6]}` }), sel), name,
+  row.append(timeInput(c), el('div', { className: 'textcell' },
+    el('div', {}, el('span', { className: 'dot', style: `background:${CH_COLORS[(c.ch - 1) % 6]}` }), sel),
+    chapterTitleInput(c.ch)),
     el('span', { className: 'meta', textContent: tc(c.t) }),
     el('button', { className: 'icon ghost', textContent: '✕', title: 'Delete', onclick: () => {
       if (S.chapter_starts.length < 2) return toast('Keep at least one chapter');
-      pushHistory(true); S.chapter_starts.splice(S.chapter_starts.indexOf(c), 1); rebuildAll(); markDirty(); } }));
+      pushHistory(true); S.chapter_starts.splice(S.chapter_starts.indexOf(c), 1);
+      if (!S.chapter_starts.some(other => other.ch === c.ch) && S.chapters.length > 1) removeChapter(c.ch);
+      rebuildAll(); markDirty(); } }));
   row.addEventListener('click', () => setCur(c.t + 0.1));
   return row;
 }
@@ -635,13 +604,13 @@ function chapterRow(c) {
 function renderLists() {
   $('#headlines').replaceChildren(...S.headlines.map(headlineRow));
   $('#chapters').replaceChildren(...S.chapter_starts.map(chapterRow));
-  $('#names').replaceChildren(...S.chapters.map((n, i) => {
-    const inp = el('input', { value: n, placeholder: 'Button ' + (i + 1) });
-    inp.addEventListener('focus', () => pushHistory(true));
-    inp.addEventListener('input', () => { S.chapters[i] = inp.value; renderTimeline(); renderPreview(); markDirty(); });
-    inp.addEventListener('change', () => rebuildAll());
-    return el('label', { className: 'inline' }, (i + 1) + '', inp);
-  }));
+  $('#names').replaceChildren(...S.chapters.map((n, i) =>
+    el('div', { className: 'inline' },
+      el('label', { className: 'inline' }, (i + 1) + '', chapterTitleInput(i + 1)),
+      el('button', { className: 'icon ghost', textContent: '✕', title: 'Delete chapter and all its switches', onclick: () => {
+        if (S.chapters.length < 2 || !S.chapter_starts.some(c => c.ch !== i + 1)) return toast('Keep at least one chapter switch');
+        pushHistory(true); removeChapter(i + 1); rebuildAll(); markDirty();
+      } }))));
   $('#titleIn').value = S.title; $('#productIn').value = S.product_name;
   $('#endAt').value = S.headlines_end == null ? '' : fmt(S.headlines_end);
   $('#wipe').value = S.wipe_seconds;
@@ -651,6 +620,7 @@ function renderStats() {
   const warn = S.headlines.filter((h, i) => { const e = S.headlines[i + 1] ? S.headlines[i + 1].t : S.headlines_end; return e != null && e - h.t < 3; }).length;
   const s = $('#stats'); s.replaceChildren(
     el('span', { className: 'chip', textContent: S.headlines.length + ' headlines' }),
+    el('span', { className: 'chip', textContent: S.chapters.length + ' chapters' }),
     el('span', { className: 'chip', textContent: S.chapter_starts.length + ' chapter switches' }),
     el('span', { className: 'chip info', textContent: `headline text ≈ ${(f.px / TEXT_SCALE).toFixed(0)} px` + (f.idx >= 0 ? ` (set by #${f.idx + 1})` : '') }),
     warn ? el('span', { className: 'chip warn', textContent: warn + ' shorter than 3 s' }) : '');
@@ -659,7 +629,7 @@ function renderStats() {
     r.querySelector('.meta').replaceChildren(...rowChips(h, i, S.headlines[i + 1]));
   });
 }
-function rebuildAll() { renderVideos(); renderLists(); renderTimeline(); renderStats(); renderPreview(); }
+function rebuildAll() { renderLists(); renderTimeline(); renderStats(); renderPreview(); }
 
 // ------------------------------------------------------------------ playback
 let timer = null, lastTs = 0;
@@ -674,7 +644,7 @@ function play() {
     renderPreview(); timer = requestAnimationFrame(tick);
   });
 }
-function stop() { VIDS.forEach(v => v.el.pause()); playing = false; cancelAnimationFrame(timer); $('#btnPlay').textContent = 'Play'; }
+function stop() { playing = false; cancelAnimationFrame(timer); $('#btnPlay').textContent = 'Play'; }
 function jump(dir) {
   const ts = S.headlines.map(h => h.t);
   const t = dir > 0 ? ts.find(x => x > cur + 0.5) : [...ts].reverse().find(x => x < cur - 0.5);
@@ -682,26 +652,7 @@ function jump(dir) {
 }
 
 // ------------------------------------------------------------------ wiring
-$('#btnNew').onclick = () => {
-  if (dirty && !confirm('You have unsaved changes. Start a new video anyway?')) return;
-  stop();
-  VIDS.forEach(v => { v.el.pause(); URL.revokeObjectURL(v.el.src); }); VIDS.length = 0; shown = undefined;
-  $('#content').textContent = 'your video here';
-  S = { title: 'New video', product_name: '', chapters: [1, 2, 3, 4, 5, 6].map(i => 'Chapter ' + i),
-        chapter_starts: [{ t: 0, ch: 1 }], headlines: [{ t: 0, text: 'Your first *headline*' }], headlines_end: null, wipe_seconds: 0.8 };
-  clearTimeout(saveTimer); history = []; handle = null; idb.set('handle', null); dirty = false; selected = null; cur = 0;
-  $('#btnReconnect').hidden = true;
-  rebuildAll(); setStatus('new video: edit, then Save to choose where the file goes');
-};
 $('#btnOpen').onclick = openFile;
-$('#btnVideo').onclick = () => $('#videoFile').click();
-$('#videoFile').addEventListener('change', async e => {
-  const files = [...e.target.files]; e.target.value = '';
-  stop();
-  let ok = 0;
-  for (const f of files) if (await addVideo(f)) ok++;   // one at a time so they land in the order picked
-  if (ok) { afterVideoChange(); toast('added ' + ok + (ok > 1 ? ' videos' : ' video')); }
-});
 $('#btnSave').onclick = save;
 $('#btnDownload').onclick = download;
 $('#btnUndo').onclick = undo;
@@ -714,8 +665,16 @@ $('#addHeadline').onclick = () => {
   ROW.get(n).scrollIntoView({ block: 'center' }); ROW.get(n).querySelector('input:not(.time)').select();
 };
 $('#addChapter').onclick = () => {
+  if (S.chapters.length >= 6) return toast('The layout fits at most 6 chapters');
   pushHistory(true);
-  S.chapter_starts.push({ t: +cur.toFixed(1), ch: Math.min(6, activeChapter(cur) + 1) });
+  S.chapters.push('New chapter');
+  S.chapter_starts.push({ t: +cur.toFixed(1), ch: S.chapters.length });
+  sortAll(); rebuildAll(); markDirty();
+  $(`#chapters input[data-chapter="${S.chapters.length}"]`).select();
+};
+$('#addChapterSwitch').onclick = () => {
+  pushHistory(true);
+  S.chapter_starts.push({ t: +cur.toFixed(1), ch: Math.min(S.chapters.length, activeChapter(cur) + 1) });
   sortAll(); rebuildAll(); markDirty();
 };
 $('#endAt').addEventListener('change', e => {
