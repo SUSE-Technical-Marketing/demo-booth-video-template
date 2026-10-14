@@ -34,7 +34,8 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 | `render/` | **Path B.** `render.py` (command line), `Containerfile` and `run-container.sh` (SUSE BCI Python image). |
 | `tests/` | Checks that both paths use the same layout, run automatically on every push. |
 | `timings/*.json` | **All the text and timing for one video**: button names, when the orange button switches, every headline. |
-| `docs/index.html` | The timing editor (also what GitHub Pages serves). |
+| `editor/` | Vue 3 timing editor, built with Vite into `dist/` for static hosting. |
+| `package.json`, `bun.lock` | Editor scripts and locked dependencies, managed with Bun. |
 | `prompts/headline-prompt.md` | A ready-to-use LLM prompt that turns narration into headlines. |
 | `assets/` | SUSE logo (PNG for Fusion) and the SUSE Medium font file used to measure text widths. |
 | `start_editor.command` | Double-click to run the editor locally instead of the hosted copy. |
@@ -136,7 +137,7 @@ clip to prove the install works.
 ### Using mise
 
 If you have [mise](https://mise.jdx.dev/) installed, the repository's [`mise.toml`](mise.toml) selects Python 3.13
-(the version used in CI) and provides tasks for setup, rendering, testing, and the local editor. From the repository
+and Node.js 24 plus Bun 1.3.14 (the versions used in CI) and provides tasks for setup, rendering, testing, and the local editor. From the repository
 root:
 
 ```bash
@@ -146,6 +147,8 @@ mise run build my-edit.mp4 -t my-video.json -o my-video-final.mp4
 
 The build task installs the renderer dependencies automatically. To check the project, run `mise run test`. To serve
 the timing editor locally, run `mise run run` and open <http://127.0.0.1:8765/>; press Ctrl+C to stop the server.
+`mise run editor:build` builds the static editor; `mise run editor:test` runs its tests. These tasks install the
+locked dependencies with Bun automatically. The existing `build` task still renders videos.
 
 **Colours:** the output is converted with the HD (BT.709) matrix and tagged as such, so SUSE green and orange come
 out within a few levels of the brand values in any player. (ffmpeg's default would have turned SUSE green visibly
@@ -186,17 +189,39 @@ were written with.
 
 **Hosted:** `https://suse-technical-marketing.github.io/demo-booth-video-template/` (once GitHub Pages is enabled,
 see [Hosting](#hosting-on-github-pages)).
-**Local:** double-click `start_editor.command` (needs Python 3; Mac only).
+**Local:** double-click `start_editor.command` (needs mise, or Bun 1.3.14+ and Node.js 24+; Mac only), or run the Vue app from the
+repository root:
 
-Use **Chrome or Edge** so the page can save straight to your file.
+```bash
+bun install --frozen-lockfile
+bun run dev
+```
+
+Open <http://127.0.0.1:8765/>. The development server binds only to localhost and stops with Ctrl+C. Alternatively,
+`mise run run` installs dependencies and starts it. Bun manages packages and scripts; Node runs the Vite/Vitest CLIs.
+Both are used only for tooling: timing files still stay in your
+browser and on your own disk, with no backend or uploads.
+
+For a production build, run `bun run build` (output: `dist/`). Run `bun run preview` to serve that build locally.
+Run `bun run test` for the editor's Vitest regression tests (not `bun test`, which selects Bun's own test runner).
+
+The editor's `App.vue` owns document changes, undo, autosave, and playback. `ChapterEditor`/`ChapterRow` and
+`HeadlineEditor`/`HeadlineRow` handle their editing sections through props and emitted actions; the timeline,
+preview, time input, and accent text are separate components too. Pure timing and JSON helpers live in `timing.js`.
+
+Use **Chrome or Edge** so the page can save straight to your file. Other browsers can open a JSON file and use
+**Download** to save a replacement, but cannot link it for autosave or reconnect.
 
 1. Click **Open file…** and pick your `timings/<video>.json` from your clone. The page remembers it, and
    **autosave** writes every change to that file. (First time for a new video? Copy `timings/example.json`, rename
    it, and open the copy.)
-2. **Chapter buttons**: use **Add chapter** to create a new button (up to six), then edit its title directly in the
-   row. Use **Add chapter switch** to revisit an existing button and pick it from the list. Deleting a chapter's
+2. **Chapter buttons**: use **Add chapter** to create a new button; **Names** opens with its title selected for editing.
+   Use **Add chapter switch** to revisit an existing button and pick it from the list. Deleting a chapter's
    last switch removes its button too; **Names** also lets you delete a chapter and all its switches. Keep at least
    one chapter switch. The preview updates the button count and titles immediately.
+   Buttons follow each chapter's first switch in time order, not creation order. Editing a time or inserting a
+   chapter reorders the buttons and their saved numbers together; repeated switches keep the same chapter, and
+   chapters without a switch stay at the end.
 3. **Headlines**: one row each. Type the time and the words. Wrap words in `*asterisks*` for the orange accent
    (an accent can span several words: `*AI stack*`).
 4. **Times** accept `3:44` (minutes:seconds), `224` (seconds) or the timecode Resolve shows, like `1:03:44`.
@@ -210,6 +235,12 @@ Use **Chrome or Edge** so the page can save straight to your file.
 Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **last headline ends at**,
 **wipe** (how long the left-to-right build-in takes), and **Names** (video title, product name, chapter button
 labels).
+
+For more than six chapters, the sidebar becomes a six-button viewport. At each chapter switch it scrolls smoothly
+over 0.4 seconds, keeping two previous chapters above the active button and three next chapters below it whenever
+possible. At the beginning/end it stays on the first/last six buttons. Arrows indicate more chapters above/below,
+and a **Chapter 7 of 12** counter shows progress. This follows video time in the preview and both renderers, including
+when scrubbing, jumping backwards, or revisiting a chapter. Six or fewer chapters keep the existing static layout.
 
 After saving, re-run the script in Resolve (Path A) or the render command (Path B).
 
@@ -261,7 +292,7 @@ words and timings live in the JSON file and the script rebuilds the whole layout
 
 | Key | Meaning |
 |---|---|
-| `chapters` | Names of the left-hand buttons (1 to 6). Long names are shrunk to fit. |
+| `chapters` | Names of the left-hand buttons (at least one). More than six scroll automatically. Long names are shrunk to fit. |
 | `chapter_starts` | `[seconds, button number]`: from that second, that button is orange. |
 | `headlines` | `[seconds, "text"]`: shown from that second until the next headline. `*word*` = accent. |
 | `headlines_end` | Second at which the last headline goes away, or `null` to keep it to the end of the clip. |
@@ -305,7 +336,9 @@ JSON; if it's a design decision, it belongs in the script.**
   it diffs cleanly in git, and one file per video keeps each demo's words and timings versioned together.
   YAML or CSV would need an extra parser or can't hold the nested rows.
 - **One source of truth.** The editor and the script read and write the same file; neither stores a copy.
-- **Browser-only editor.** The page has no server and sends nothing anywhere: your file is read and written locally.
+- **Browser-only editor.** Vue 3 provides reactive UI components; Bun manages dependencies and scripts, with Vite
+  and Node handling development and builds.
+  The deployed app needs only static hosting, not a Node backend: your timing file is read and written locally.
   It loads the SUSE font from Google Fonts and the logo from suse.com, so there are no brand assets to host for it.
   If the logo ever can't load, the preview shows the word "SUSE" instead. (Fusion can't use web fonts or an SVG
   logo, which is why `assets/` still contains a PNG logo and the font file.)
@@ -316,10 +349,15 @@ JSON; if it's a design decision, it belongs in the script.**
 
 ## Hosting on GitHub Pages
 
-The editor is a single static file, `docs/index.html`, so it can be published from the repo. For admins:
+The Vue editor builds to static files in `dist/`. The [Pages workflow](.github/workflows/pages.yml) builds, tests,
+and deploys them on pushes to `main`, or when run manually. For admins:
 
-1. Repo **Settings → Pages → Build and deployment → Deploy from a branch**, branch `main`, folder `/docs`.
-2. The site appears at `https://suse-technical-marketing.github.io/demo-booth-video-template/`.
+1. Repo **Settings → Pages → Build and deployment → Source → GitHub Actions** (replace the old `/docs` branch setup).
+2. Push to `main`, or run **Deploy timing editor** from the **Actions** tab.
+3. The site appears at `https://suse-technical-marketing.github.io/demo-booth-video-template/`.
+
+Vite uses relative asset URLs, so the same `dist/` works at the repository's Pages URL or another static host.
+Generated build files are ignored by git; the workflow publishes an artifact, not committed bundles.
 
 Things to decide first:
 - **Pages on a private repo needs a paid GitHub plan.** On a free organisation, Pages only works for a

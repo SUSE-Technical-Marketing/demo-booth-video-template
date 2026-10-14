@@ -3,6 +3,19 @@ on:
   push:
   pull_request:
 jobs:
+  editor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+      - run: bun run build
   test:
     runs-on: ubuntu-latest
     steps:
@@ -13,6 +26,8 @@ jobs:
       - run: pip install -r render/requirements.txt
       - name: Fusion script and renderer use the same layout
         run: python tests/check_layout_sync.py
+      - name: Chapter scrolling and viewport regression tests
+        run: python -m unittest discover -s tests
       - name: Timing files are valid
         run: python -c "import sys,json,glob;[json.load(open(f)) for f in glob.glob('timings/*.json')]"
       - name: Render a generated test video end to end
