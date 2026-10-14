@@ -9,20 +9,24 @@ import { DEFAULT, fromJSON } from '../timing.js';
 
 describe('chapter components', () => {
   it('emits row edits without mutating chapter props', async () => {
-    const chapter = { id: 1, t: 0, ch: 1 }, chapters = ['Intro', 'Details'];
-    const row = mount(ChapterRow, { props: { chapter, chapters, offset: 3600, duration: 30 } });
+    const chapter = { id: 1, t: 0, ch: 1 };
+    const row = mount(ChapterRow, { props: { chapter, title: 'Intro', offset: 3600, duration: 30 } });
     await row.get('.time').trigger('focus');
-    await row.get('select').setValue('2');
+    await row.get('.chapter-title').trigger('focus');
+    await row.get('.chapter-title').setValue('Edited directly');
+    await row.get('.chapter-title').trigger('click');
     await row.get('.time').setValue('0:30');
-    expect(row.emitted('begin-edit')).toHaveLength(1);
-    expect(row.emitted('choose-chapter')).toEqual([[2]]);
+    expect(row.emitted('begin-edit')).toHaveLength(2);
+    expect(row.emitted('update-title')).toEqual([['Edited directly']]);
+    expect(row.find('select').exists()).toBe(false);
+    expect(row.emitted('select')).toBeUndefined();
     expect(row.emitted('update-time')).toEqual([[30]]);
     expect(chapter).toEqual({ id: 1, t: 0, ch: 1 });
-    expect(chapters).toEqual(['Intro', 'Details']);
+    expect(row.props('title')).toBe('Intro');
     row.unmount();
   });
   it('does not seek when deleting a row', async () => {
-    const row = mount(ChapterRow, { props: { chapter: { id: 1, t: 0, ch: 1 }, chapters: ['Intro'], offset: 3600, duration: 30 } });
+    const row = mount(ChapterRow, { props: { chapter: { id: 1, t: 0, ch: 1 }, title: 'Intro', offset: 3600, duration: 30 } });
     await row.get('button').trigger('click');
     expect(row.emitted('delete')).toHaveLength(1);
     expect(row.emitted('select')).toBeUndefined();
@@ -31,26 +35,28 @@ describe('chapter components', () => {
   it('forwards chapter identities and metadata edits from the section', async () => {
     const state = fromJSON(DEFAULT);
     const editor = mount(ChapterEditor, { props: {
-      chapters: state.chapters, switches: state.chapter_starts, title: state.title,
+      chapters: state.chapters, starts: state.chapter_starts, title: state.title,
       product: state.product_name, offset: 3600, end: 195,
     } });
-    await editor.get('#names input[data-chapter="1"]').setValue('Edited in names');
+    await editor.get('#chapters input[data-chapter="1"]').setValue('Edited directly');
     await editor.get('#productIn').setValue('New product');
     await editor.get('#titleIn').setValue('New video title');
     await editor.get('#chapters .time').setValue('0:20');
     await editor.get('#addChapter').trigger('click');
-    await editor.get('#addChapterSwitch').trigger('click');
-    expect(editor.emitted('update-chapter-title')).toEqual([[1, 'Edited in names']]);
+    await editor.get('#chapters .crow button').trigger('click');
+    expect(editor.emitted('update-chapter-title')).toEqual([[1, 'Edited directly']]);
+    expect(editor.emitted('delete-chapter')).toEqual([[1]]);
     expect(editor.emitted('update-metadata')).toEqual([['product_name', 'New product'], ['title', 'New video title']]);
     expect(editor.emitted('update-time')[0]).toEqual([state.chapter_starts[0], 20]);
     expect(editor.emitted('add-chapter')).toHaveLength(1);
-    expect(editor.emitted('add-switch')).toHaveLength(1);
+    expect(editor.find('#addChapterSwitch').exists()).toBe(false);
+    expect(editor.find('#names').exists()).toBe(false);
     expect(state.chapters[0]).toBe(DEFAULT.chapters[0]);
     editor.unmount();
   });
   it('shows a segment length rather than duplicating the starting timecode', async () => {
     const row = mount(ChapterRow, { props: {
-      chapter: { id: 1, t: 15, ch: 1 }, chapters: ['Intro'], offset: 3600, duration: 10.5,
+      chapter: { id: 1, t: 15, ch: 1 }, title: 'Intro', offset: 3600, duration: 10.5,
     } });
     expect(row.get('.time').element.value).toBe('0:15');
     expect(row.get('.time').attributes('title')).toBe('01:00:15');
@@ -63,20 +69,20 @@ describe('chapter components', () => {
     expect(row.get('.chapter-duration').classes()).toContain('warn');
     row.unmount();
   });
-  it('updates segment lengths for repeated chapters, time edits and preview end changes', async () => {
-    const switches = [{ id: 1, t: 0, ch: 1 }, { id: 2, t: 30, ch: 2 }, { id: 3, t: 45, ch: 1 }];
+  it('updates chapter lengths for time edits and preview end changes', async () => {
+    const starts = [{ id: 1, t: 0, ch: 1 }, { id: 2, t: 30, ch: 2 }, { id: 3, t: 45, ch: 3 }];
     const editor = mount(ChapterEditor, { props: {
-      chapters: ['Intro', 'Details'], switches, title: 'Video', product: 'Product', offset: 3600, end: 75,
+      chapters: ['Intro', 'Details', 'Ending'], starts, title: 'Video', product: 'Product', offset: 3600, end: 75,
     } });
     const lengths = () => editor.findAll('.chapter-duration').map(badge => badge.text());
     expect(lengths()).toEqual(['Length 0:30', 'Length 0:15', 'Length 0:30']);
-    await editor.setProps({ switches: [switches[0], { ...switches[1], t: 10 }, switches[2]] });
+    await editor.setProps({ starts: [starts[0], { ...starts[1], t: 10 }, starts[2]] });
     expect(lengths()).toEqual(['Length 0:10', 'Length 0:35', 'Length 0:30']);
     await editor.setProps({ end: 60 });
     expect(lengths()).toEqual(['Length 0:10', 'Length 0:35', 'Length 0:15']);
     await editor.setProps({ end: 35 });
     expect(lengths()).toEqual(['Length 0:10', 'Length 0:25', 'Past end']);
-    await editor.setProps({ switches: [{ ...switches[0], t: 0 }, { ...switches[1], t: 0 }] });
+    await editor.setProps({ starts: [{ ...starts[0], t: 0 }, { ...starts[1], t: 0 }] });
     expect(lengths()).toEqual(['Length 0:00', 'Length 0:35']);
     editor.unmount();
   });

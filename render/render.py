@@ -28,6 +28,7 @@ from PIL import Image  # noqa: E402
 
 import layout as L  # noqa: E402
 import layers  # noqa: E402
+from timing import normalize_chapters  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -92,6 +93,9 @@ def load_timing(arg):
                 problems.append("bad headline at %ss: %r" % (sec, text))
     if problems:
         sys.exit("%s: %s" % (p, "; ".join(problems)))
+    notice = normalize_chapters(tm)
+    if notice:
+        print("Timing import: " + notice, file=sys.stderr)
     return tm
 
 

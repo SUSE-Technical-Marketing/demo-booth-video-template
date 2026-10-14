@@ -192,7 +192,9 @@ class ChapterScrollTests(unittest.TestCase):
             subprocess.run([ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
                             "color=c=gray:s=320x180:r=25:d=3", "-c:v", "libx264", str(clip)], check=True)
             timing_file = Path(tmp) / "timing.json"
-            timing_file.write_text(json.dumps(timing(starts=[[0, 1], [1, 7], [2, 12]])))
+            # Keep all chapters scheduled while exercising the same simultaneous scroll targets.
+            starts = [[0, 1]] + [[1, ch] for ch in range(2, 8)] + [[2, ch] for ch in range(8, 13)]
+            timing_file.write_text(json.dumps(timing(starts=starts)))
             rendered = subprocess.run([sys.executable, str(ROOT / "render" / "render.py"), str(clip),
                                        "-t", str(timing_file), "-o", str(output), "--crf", "23",
                                        "--preset", "veryfast"], capture_output=True, text=True)
@@ -220,6 +222,45 @@ class ChapterScrollTests(unittest.TestCase):
             path.write_text(json.dumps(invalid))
             with self.assertRaisesRegex(SystemExit, "only 1-12 exist"):
                 load_timing(str(path))
+
+    def test_renderer_converts_legacy_reuse_without_changing_source_file(self):
+        source = {
+            "chapters": ["Intro", "Details", "Unused"],
+            "chapter_starts": [[20, 1], [0, 1], [10, 2]],
+            "headlines": [[0, "A headline"]],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "timing.json"
+            path.write_text(json.dumps(source))
+            with contextlib.redirect_stderr(io.StringIO()) as output:
+                converted = load_timing(str(path))
+            self.assertEqual(converted["chapters"], ["Intro", "Details", "Intro"])
+            self.assertEqual(converted["chapter_starts"], [[0, 1], [10, 2], [20, 3]])
+            self.assertIn("Converted repeated chapter switches", output.getvalue())
+            self.assertIn("unused chapter titles", output.getvalue())
+            self.assertEqual(json.loads(path.read_text()), source)
+
+    def test_fusion_builder_converts_legacy_reuse_to_forward_only_buttons(self):
+        source = {
+            "chapters": ["Intro", "Details"],
+            "chapter_starts": [[0, 1], [1, 2], [2, 1]],
+            "headlines": [[0, "A headline"]],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "assets").mkdir()
+            (repo / "assets" / "SUSE_Logo-hor_Green.png").touch()
+            (repo / "timings").mkdir()
+            (repo / "timings" / "example.json").write_text(json.dumps(source))
+            comp = FakeComp()
+            with patch.dict(os.environ, {"DEMO_BOOTH_REPO": tmp}), contextlib.redirect_stdout(io.StringIO()) as output:
+                result = runpy.run_path(str(ROOT / "fusion" / "build_chapter_template.py"),
+                                       init_globals={"fu": SimpleNamespace(GetCurrentComp=lambda: comp)})
+            self.assertEqual(result["CHAPTERS"], ["Intro", "Details", "Intro"])
+            self.assertEqual(result["CHAPTER_STARTS"], [(0, 1), (1, 2), (2, 3)])
+            self.assertIn("Converted repeated chapter switches", output.getvalue())
+            for t, active in ((0, 1), (1, 2), (2, 3), (3, 3)):
+                self.assertEqual(expression_value(result["ACTIVE_EXPR"], 100 + t * 25), active)
 
     def test_fusion_builder_wires_scroll_and_viewport(self):
         with tempfile.TemporaryDirectory() as tmp:

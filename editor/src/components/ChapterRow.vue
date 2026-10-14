@@ -5,12 +5,12 @@ import { CH_COLORS } from '../timing.js';
 
 defineProps({
   chapter: { type: Object, required: true },
-  chapters: { type: Array, required: true },
+  title: { type: String, required: true },
   offset: { type: Number, required: true },
   duration: { type: Number, required: true },
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
-  'choose-chapter', 'delete', 'update-title']);
+  'delete', 'update-title']);
 </script>
 
 <template>
@@ -19,16 +19,14 @@ const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', '
       @update:model-value="emit('update-time', $event)" @commit="emit('commit-time')" @error="emit('error', $event)" />
     <div class="textcell">
       <div><span class="dot" :style="{ background: CH_COLORS[(chapter.ch - 1) % 6] }"></span>
-        <select :value="chapter.ch" aria-label="Chapter button" @change="emit('choose-chapter', +$event.target.value)">
-          <option v-for="(title, i) in chapters" :key="i" :value="i + 1">{{ i + 1 }} {{ title }}</option>
-        </select>
+        <span class="chapter-number">{{ chapter.ch }}</span>
+        <input class="chapter-title" :value="title" placeholder="Chapter title" :aria-label="`Chapter ${chapter.ch} title`"
+          :data-chapter="chapter.ch" @click.stop @focus="emit('begin-edit')"
+          @input="emit('update-title', $event.target.value)">
       </div>
       <DurationBadge :duration="duration" class="meta chapter-duration"
-        title="Duration until the next chapter switch or preview end." />
+        title="Duration until the next chapter or preview end." />
     </div>
-    <!-- <input class="chapter-title" :value="chapters[chapter.ch - 1]" placeholder="Chapter title" :aria-label="`Chapter ${chapter.ch} title`"
-      :data-inline-chapter="chapter.ch" @click.stop @focus="emit('begin-edit')"
-      @input="emit('update-title', $event.target.value)"> -->
-    <button class="icon ghost" title="Delete" @click.stop="emit('delete')">✕</button>
+    <button class="icon ghost" title="Delete chapter" @click.stop="emit('delete')">✕</button>
   </div>
 </template>

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
 import Preview from './components/Preview.vue';
 import TimeInput from './components/TimeInput.vue';
-import { DEFAULT, fromJSON } from './timing.js';
+import { DEFAULT, fromJSON, toJSON } from './timing.js';
 import { downloadJSON, rememberHandle, rememberedHandle } from './fileAccess.js';
 
 vi.mock('./fileAccess.js', () => ({
@@ -34,7 +34,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 async function editTitle(ch, text) {
-  const input = wrapper.get(`#names input[data-chapter="${ch}"]`);
+  const input = wrapper.get(`#chapters input[data-chapter="${ch}"]`);
   await input.trigger('focus');
   await input.setValue(text);
 }
@@ -71,15 +71,16 @@ describe('Vue editor', () => {
     await editTitle(12, 'A custom chapter');
     expect(wrapper.findAll('#stage .pill')).toHaveLength(12);
     expect(wrapper.findAll('#stage .pill').at(-1).text()).toBe('A custom chapter');
-    expect(wrapper.get('#names input[data-chapter="12"]').element.value).toBe('A custom chapter');
-    expect(wrapper.findAll('#chapters select').every(s => s.text().includes('A custom chapter'))).toBe(true);
+    expect(wrapper.get('#chapters input[data-chapter="12"]').element.value).toBe('A custom chapter');
+    expect(wrapper.findAll('#chapters .crow')).toHaveLength(12);
+    expect(wrapper.find('#chapters select').exists()).toBe(false);
     expect(wrapper.get('#chapterCounter').text()).toContain('of 12');
   });
   it('deletes middle chapters, renumbers, and restores them with undo', async () => {
     await wrapper.findAll('#chapters .crow')[2].get('button').trigger('click');
     expect(wrapper.findAll('#stage .pill')).toHaveLength(5);
     expect(wrapper.findAll('#stage .pill')[2].text()).toBe('SUSE Security');
-    expect(wrapper.findAll('#chapters select')[2].element.value).toBe('3');
+    expect(wrapper.findAll('#chapters .chapter-number')[2].text()).toBe('3');
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
     expect(wrapper.findAll('#stage .pill')[2].text()).toBe('SUSE Virtualization');
@@ -90,8 +91,7 @@ describe('Vue editor', () => {
     await time.setValue('0:10');
     const orderedTitles = [DEFAULT.chapters[0], DEFAULT.chapters[2], DEFAULT.chapters[1], ...DEFAULT.chapters.slice(3)];
     expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(orderedTitles);
-    expect(wrapper.findAll('#chapters select').map(select => select.element.selectedOptions[0].textContent.trim()))
-      .toEqual(orderedTitles.map((title, i) => `${i + 1} ${title}`));
+    expect(wrapper.findAll('#chapters .chapter-title').map(input => input.element.value)).toEqual(orderedTitles);
     expect(wrapper.get('.pill.on').text()).toBe(DEFAULT.chapters[2]);
     await wrapper.get('#btnDownload').trigger('click');
     const saved = JSON.parse(downloadJSON.mock.calls[0][0]);
@@ -104,40 +104,51 @@ describe('Vue editor', () => {
     await wrapper.get('#scrub').setValue('15');
     await wrapper.get('#addChapter').trigger('click');
     expect(wrapper.findAll('#stage .pill')[1].text()).toBe('New chapter');
-    const input = wrapper.get('#names input[data-chapter="2"]');
-    expect(wrapper.get('.names-details').element.open).toBe(true);
+    const input = wrapper.get('#chapters input[data-chapter="2"]');
+    expect(wrapper.find('#names').exists()).toBe(false);
     expect(document.activeElement).toBe(input.element);
     await input.setValue('Inserted chapter');
     expect(wrapper.findAll('#stage .pill')[1].text()).toBe('Inserted chapter');
-    expect(wrapper.get('#names input[data-chapter="2"]').element.value).toBe('Inserted chapter');
+    expect(wrapper.get('#chapters input[data-chapter="2"]').element.value).toBe('Inserted chapter');
   });
-  it('reorders by first appearance when a repeated switch is deleted', async () => {
-    await openLinkedFile({
+  it('migrates legacy chapter reuse and keeps the resulting chapters independent', async () => {
+    const { writable } = await openLinkedFile({
       ...DEFAULT, chapters: ['Intro', 'Details', 'Wrap up'],
       chapter_starts: [[0, 1], [10, 2], [20, 3], [30, 2]],
     });
+    expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Details', 'Wrap up', 'Details']);
+    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+    expect(writable.write).not.toHaveBeenCalled();
+    await editTitle(2, 'Renamed details');
+    expect(wrapper.findAll('#stage .pill').at(-1).text()).toBe('Details');
     await wrapper.findAll('#chapters .crow')[1].get('button').trigger('click');
     expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Wrap up', 'Details']);
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3]]);
+    await wrapper.get('#btnSave').trigger('click');
+    await flushPromises();
+    expect(JSON.parse(writable.write.mock.calls[0][0]).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3]]);
+    expect(wrapper.get('#status').text()).toBe('saved to linked.json');
   });
-  it('keeps the button when a repeated switch is deleted', async () => {
-    await wrapper.get('#addChapterSwitch').trigger('click');
-    await wrapper.findAll('#chapters select')[1].setValue('1');
-    await wrapper.findAll('#chapters .crow')[1].get('button').trigger('click');
-    expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
+  it('offers only direct chapter editing, with no switch or reuse controls', () => {
+    expect(wrapper.find('#addChapterSwitch').exists()).toBe(false);
+    expect(wrapper.find('#chapters select').exists()).toBe(false);
+    expect(wrapper.find('#names').exists()).toBe(false);
+    expect(wrapper.findAll('#chapters .chapter-title')).toHaveLength(6);
+    expect(wrapper.get('#stats').text()).not.toContain('switch');
   });
-  it('updates metadata and Names through extracted component events with undo', async () => {
+  it('updates metadata and inline chapter titles through component events with undo', async () => {
     const product = wrapper.get('#productIn');
     await product.trigger('focus');
     await product.setValue('Updated product');
     expect(wrapper.get('#prodname').text()).toBe('Updated product');
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.get('#prodname').text()).toBe(DEFAULT.product_name);
-    const title = wrapper.get('#names input[data-chapter="2"]');
+    const title = wrapper.get('#chapters input[data-chapter="2"]');
     await title.trigger('focus');
     await title.setValue('Shared updated title');
-    expect(wrapper.findAll('#chapters select')[1].element.selectedOptions[0].textContent).toContain('Shared updated title');
+    expect(wrapper.findAll('#chapters .chapter-title')[1].element.value).toBe('Shared updated title');
     expect(wrapper.findAll('#stage .pill')[1].text()).toBe('Shared updated title');
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.findAll('#stage .pill')[1].text()).toBe(DEFAULT.chapters[1]);
@@ -257,6 +268,20 @@ describe('Vue editor', () => {
     await flushPromises();
     expect(wrapper.findAll('#stage .pill')[0].text()).toBe('New local edits');
   });
+  it('converts reused chapters when restoring a remembered file', async () => {
+    wrapper.unmount();
+    rememberedHandle.mockResolvedValue({
+      name: 'legacy.json', queryPermission: vi.fn().mockResolvedValue('granted'),
+      getFile: vi.fn().mockResolvedValue({ text: async () => JSON.stringify({
+        ...DEFAULT, chapters: ['Intro', 'Details'], chapter_starts: [[0, 1], [10, 2], [20, 1]],
+      }) }),
+    });
+    wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Details', 'Intro']);
+    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+  });
   it('shows failed saves rather than claiming success', async () => {
     const { fileHandle } = await openLinkedFile();
     fileHandle.createWritable.mockRejectedValue(new Error('Disk is full'));
@@ -279,6 +304,16 @@ describe('Vue editor', () => {
     await flushPromises();
     expect(wrapper.findAll('#stage .pill')[0].text()).toBe('Local unsaved edit');
   });
+  it('notices legacy reuse on refresh even when the converted contents are unchanged', async () => {
+    const legacy = { ...DEFAULT, chapters: ['Intro', 'Details'], chapter_starts: [[0, 1], [10, 2], [20, 1]] };
+    const { fileHandle, writable } = await openLinkedFile(JSON.parse(toJSON(fromJSON(legacy))));
+    fileHandle.getFile.mockResolvedValue({ text: async () => JSON.stringify(legacy) });
+    window.dispatchEvent(new Event('focus'));
+    await flushPromises();
+    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+    expect(writable.write).not.toHaveBeenCalled();
+  });
   it('downloads the renderer-compatible JSON schema', async () => {
     await editTitle(1, 'Download me');
     await wrapper.get('#btnDownload').trigger('click');
@@ -294,12 +329,16 @@ describe('Vue editor', () => {
   });
   it('supports browser import fallback', async () => {
     const input = wrapper.get('input[type="file"]');
-    const file = { text: async () => JSON.stringify({ ...DEFAULT, title: 'Fallback file' }), name: 'fallback.json' };
+    const file = { text: async () => JSON.stringify({
+      ...DEFAULT, title: 'Fallback file', chapters: ['Intro', 'Details'], chapter_starts: [[0, 1], [10, 2], [20, 1]],
+    }), name: 'fallback.json' };
     Object.defineProperty(input.element, 'files', { value: [file], configurable: true });
     await input.trigger('change');
     await flushPromises();
     expect(wrapper.get('#titleIn').element.value).toBe('Fallback file');
     expect(wrapper.get('#toast').text()).toContain('use Download');
+    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
+    expect(wrapper.findAll('#chapters .chapter-title').map(title => title.element.value)).toEqual(['Intro', 'Details', 'Intro']);
   });
 });
 

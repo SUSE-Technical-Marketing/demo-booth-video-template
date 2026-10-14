@@ -5,8 +5,8 @@ export const clipEnd = clip => clip.start + clip.dur;
 export const clipAt = (clips, t) => clips.find(c => t >= c.start - 1e-6 && t < clipEnd(c));
 
 // Which chapter buttons a clip overlaps, by number.
-export function chaptersCovered(clip, switches) {
-  const starts = switches.slice().sort((a, b) => a.t - b.t);
+export function chaptersCovered(clip, chapterStarts) {
+  const starts = chapterStarts.slice().sort((a, b) => a.t - b.t);
   return [...new Set(starts.filter((c, i) => c.t < clipEnd(clip) - 0.05 &&
     (starts[i + 1]?.t ?? Infinity) > clip.start + 0.05).map(c => c.ch))];
 }

@@ -85,7 +85,7 @@ describe('videos and New in the editor', () => {
     await row.get('input.time').setValue('1:00'); await row.get('input.time').trigger('change');
     expect(row.get('input.time').element.value).toBe('1:00');
     const select = row.get('select');
-    await select.setValue(String(select.findAll('option')[2].element.value)); // second chapter switch (30 s)
+    await select.setValue(String(select.findAll('option')[2].element.value)); // second chapter (30 s)
     expect(wrapper.get('#vlist .vrow input.time').element.value).toBe('0:30');
   });
   it('removes a clip and falls back to the placeholder', async () => {
@@ -113,12 +113,12 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnNew').trigger('click'); await flushPromises();
     expect(wrapper.findAll('#headlines .row')).toHaveLength(12);
   });
-  it('renames a chapter from Names', async () => {
-    const input = wrapper.get('#names input[data-chapter="1"]');
+  it('renames a chapter directly from its row', async () => {
+    const input = wrapper.get('#chapters input[data-chapter="1"]');
     await input.setValue('Renamed');
     expect(wrapper.get('#stage .pill').text()).toBe('Renamed');
-    expect(wrapper.get('#names input[data-chapter="1"]').element.value).toBe('Renamed');
-    await wrapper.get('#names input[data-chapter="1"]').setValue('Edited in Names');
-    expect(wrapper.get('#stage .pill').text()).toBe('Edited in Names');
+    expect(input.element.value).toBe('Renamed');
+    await input.setValue('Edited directly');
+    expect(wrapper.get('#stage .pill').text()).toBe('Edited directly');
   });
 });

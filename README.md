@@ -233,16 +233,13 @@ Use **Chrome or Edge** so the page can save straight to your file. Other browser
 1. Click **Open file…** and pick your `timings/<video>.json` from your clone. The page remembers it, and
    **autosave** writes every change to that file. (First time for a new video? Copy `timings/example.json`, rename
    it, and open the copy.)
-2. **Chapter buttons**: use **Add chapter** to create a new button; **Names** opens with its title selected for editing.
-   Use **Add chapter switch** to revisit an existing button and pick it from the list. Deleting a chapter's
-   last switch removes its button too; **Names** also lets you delete a chapter and all its switches. Keep at least
-   one chapter switch. Edit titles in **Names**. Each row's **Length** shows its segment duration until the next switch
-   or preview end; repeated switches have separate durations. The preview end follows loaded videos, or the timeline
-   duration when none are loaded. Switches after that end are marked **Past end**. The start input's tooltip retains
-   the absolute Resolve timecode. The preview updates the button count and titles immediately.
-   Buttons follow each chapter's first switch in time order, not creation order. Editing a time or inserting a
-   chapter reorders the buttons and their saved numbers together; repeated switches keep the same chapter, and
-   chapters without a switch stay at the end.
+2. **Chapters**: each row is one chapter and one button, with its start time and title edited directly in the row.
+   **Add chapter** inserts a chapter at the playhead and selects its title for editing. Delete removes the chapter
+   and its button; keep at least one. There is no chapter reuse: buttons advance once in chronological order
+   through each pass of the looping video. Changing a start time reorders the titles and saved numbers together.
+   **Length** shows the duration until the next chapter or preview end. The preview end follows loaded videos,
+   or the timeline duration when none are loaded; chapters after that end are marked **Past end**.
+   The start input's tooltip retains the absolute Resolve timecode.
 3. **Headlines**: one row each. The **Length** badge uses the same minutes:seconds format as chapter durations,
    including fractional seconds; it is hidden when the last headline's end is unspecified.
    Type the time and the words. Wrap words in `*asterisks*` for the orange accent
@@ -256,14 +253,13 @@ Use **Chrome or Edge** so the page can save straight to your file. Other browser
    them bigger.
 
 Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **last headline ends at**,
-**wipe** (how long the left-to-right build-in takes), and **Names** (video title, product name, chapter button
-labels).
+**wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).
 
-For more than six chapters, the sidebar becomes a six-button viewport. At each chapter switch it scrolls smoothly
+For more than six chapters, the sidebar becomes a six-button viewport. At each chapter start it scrolls smoothly
 over 0.4 seconds, keeping two previous chapters above the active button and three next chapters below it whenever
 possible. At the beginning/end it stays on the first/last six buttons. Arrows indicate more chapters above/below,
 and a **Chapter 7 of 12** counter shows progress. This follows video time in the preview and both renderers, including
-when scrubbing, jumping backwards, or revisiting a chapter. Six or fewer chapters keep the existing static layout.
+when scrubbing or jumping backwards during editing. Six or fewer chapters keep the existing static layout.
 
 After saving, re-run the script in Resolve (Path A) or the render command (Path B).
 
@@ -316,7 +312,7 @@ words and timings live in the JSON file and the script rebuilds the whole layout
 | Key | Meaning |
 |---|---|
 | `chapters` | Names of the left-hand buttons (at least one). More than six scroll automatically. Long names are shrunk to fit. |
-| `chapter_starts` | `[seconds, button number]`: from that second, that button is orange. |
+| `chapter_starts` | One `[seconds, chapter number]` per chapter, ordered by start time with numbers `1, 2, 3, ...`. |
 | `headlines` | `[seconds, "text"]`: shown from that second until the next headline. `*word*` = accent. |
 | `headlines_end` | Second at which the last headline goes away, or `null` to keep it to the end of the clip. |
 | `wipe_seconds` | How long each headline takes to wipe in. |
@@ -324,7 +320,13 @@ words and timings live in the JSON file and the script rebuilds the whole layout
 | `title`, `schema_version` | For your reference and for future format changes. |
 
 Seconds are measured from the start of the compound clip. The script checks the file when it starts and stops with a
-plain message if, for example, a chapter switch points at a button that doesn't exist.
+plain message if, for example, a chapter start points at a title that doesn't exist.
+
+The JSON keys remain compatible with existing timing files. On import, the editor and both renderers convert
+legacy repeated chapter references into independent chapters, preserving every segment's title and start time.
+Titles with no start time are omitted, with an explicit import notice. The editor marks converted files as
+unsaved; use **Save** or **Download** to persist the forward-only sequence. Renderers normalize in memory without
+rewriting the source file.
 
 ## Troubleshooting
 
@@ -334,7 +336,7 @@ plain message if, for example, a chapter switch points at a button that doesn't 
 | Headlines show at the wrong time | Times are from the start of the compound clip. Re-check that the clip starts at the timeline start, and use **Ripple** after cuts. |
 | Console: `Could not find the demo-booth-video-template folder` | Set `REPO_DIR` at the top to the folder that contains `assets/` and `timings/`. |
 | Console: `Could not read ... timings/...json` | `TIMING_NAME` at the top of the script doesn't match a file in `timings/`. |
-| Console: `chapter switch ... points to chapter 7` | Chapter numbers go 1 to 6 only. Fix the row in the editor. |
+| Console: `chapter switch ... points to chapter ...` | A legacy chapter number refers to a missing title. Correct the timing file, then reopen it. |
 | Text is Times/serif or the wrong font | Path A: the SUSE font isn't installed, or Resolve wasn't restarted after installing it. Path B needs no installed font. |
 | Path B: `ffmpeg not found` | Run `pip install -r render/requirements.txt` inside your virtual environment (the renderer uses the ffmpeg that package bundles). |
 | Path B: colours look different from the preview | Run `--selftest`; its `colour check` line shows the measured error (expect 4 or less). A larger number means a changed encoder setting. |

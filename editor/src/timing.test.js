@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeChapter, activeHeadline, chapterScrollAt, chapterScrollSteps, DEFAULT, fromJSON,
+import { activeChapter, activeHeadline, chapterImportNotice, chapterScrollAt, chapterScrollSteps, DEFAULT, fromJSON,
   headlineWords, parseTime, removeChapter, sortAll, toJSON } from './timing.js';
 
 const fixture = count => ({
@@ -32,7 +32,7 @@ describe('timing JSON', () => {
   ])('rejects invalid imports: %j', overrides => {
     expect(() => fromJSON({ ...DEFAULT, ...overrides })).toThrow();
   });
-  it('removes a chapter and renumbers all remaining switches', () => {
+  it('removes a chapter and renumbers all remaining chapters', () => {
     const state = fromJSON(fixture(12));
     removeChapter(state, 3);
     expect(state.chapters).toHaveLength(11);
@@ -40,14 +40,33 @@ describe('timing JSON', () => {
     expect(state.chapter_starts[2]).toMatchObject({ t: 6, ch: 3 });
     expect(state.chapter_starts.every(c => c.ch <= 11)).toBe(true);
   });
-  it('orders chapter titles by their first chronological switch and remaps references', () => {
-    const state = fromJSON({
+  it('converts every legacy segment to an independent chapter in chronological order', () => {
+    const source = {
       chapters: ['Created first', 'Created second', 'Created third', 'Unused'],
       chapter_starts: [[30, 1], [0, 3], [20, 2], [40, 3]],
       headlines: [[0, 'A headline']],
-    });
-    expect(state.chapters).toEqual(['Created third', 'Created second', 'Created first', 'Unused']);
-    expect(JSON.parse(toJSON(state)).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3], [40, 1]]);
+    };
+    const state = fromJSON(source);
+    expect(state.chapters).toEqual(['Created third', 'Created second', 'Created first', 'Created third']);
+    expect(JSON.parse(toJSON(state)).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3], [40, 4]]);
+    expect(chapterImportNotice(source)).toContain('Converted repeated chapter switches');
+    expect(chapterImportNotice(source)).toContain('unused chapter titles');
+    state.chapters[0] = 'Renamed first segment';
+    expect(state.chapters[3]).toBe('Created third');
+    expect(source.chapters[2]).toBe('Created third');
+    expect(activeChapter(state, 40)).toBe(4);
+    expect(chapterImportNotice(JSON.parse(toJSON(state)))).toBe('');
+  });
+  it('rejects exporting chapter reuse or missing chapter starts', () => {
+    const state = fromJSON(fixture(3));
+    state.chapter_starts[2].ch = 1;
+    expect(() => toJSON(state)).toThrow('exactly one start');
+    state.chapter_starts[2].ch = 3;
+    state.chapter_starts[0].t = 10;
+    expect(() => toJSON(state)).toThrow('timeline order');
+    state.chapter_starts[0].t = 0;
+    state.chapters.push('Unscheduled');
+    expect(() => toJSON(state)).toThrow('exactly one start');
   });
   it('keeps switch objects intact and preserves titles when times change', () => {
     const state = fromJSON(fixture(3)), moved = state.chapter_starts[2];

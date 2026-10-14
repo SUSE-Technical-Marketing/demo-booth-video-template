@@ -5,7 +5,7 @@ import { fmt, parseClock } from '../timing.js';
 
 const props = defineProps({
   clips: { type: Array, required: true },
-  switches: { type: Array, required: true },
+  starts: { type: Array, required: true },
 });
 const emit = defineEmits(['add', 'update-start', 'remove', 'error']);
 const input = ref(null);
@@ -23,7 +23,7 @@ function commitStart(clip, event) {
   emit('update-start', clip, time);
 }
 function snap(clip, event) {
-  const target = props.switches.find(s => s.id === +event.target.value);
+  const target = props.starts.find(s => s.id === +event.target.value);
   event.target.value = '';
   if (target) emit('update-start', clip, target.t);
 }
@@ -35,12 +35,12 @@ function snap(clip, event) {
     <div id="vlist">
       <div v-for="clip in clips" :key="clip.id" class="vrow">
         <div class="name" :title="clip.name">{{ clip.name }}</div>
-        <span class="meta">{{ fmt(clip.dur) }}<template v-if="chaptersCovered(clip, switches).length"> · ch {{ chaptersCovered(clip, switches).join(', ') }}</template></span>
+        <span class="meta">{{ fmt(clip.dur) }}<template v-if="chaptersCovered(clip, starts).length"> · ch {{ chaptersCovered(clip, starts).join(', ') }}</template></span>
         <input class="time" :value="fmt(clip.start)" aria-label="Video start time" title="Where this video starts on the timeline (m:ss)"
           @focus="$event.target.select()" @change="commitStart(clip, $event)" @keydown.enter="$event.target.blur()">
         <select aria-label="Snap to chapter" title="Start at the beginning of a chapter" @change="snap(clip, $event)">
           <option value="">snap…</option>
-          <option v-for="s in switches" :key="s.id" :value="s.id">ch {{ s.ch }} · {{ fmt(s.t) }}</option>
+          <option v-for="s in starts" :key="s.id" :value="s.id">ch {{ s.ch }} · {{ fmt(s.t) }}</option>
         </select>
         <button class="icon ghost" title="Remove this video" @click="emit('remove', clip)">✕</button>
       </div>

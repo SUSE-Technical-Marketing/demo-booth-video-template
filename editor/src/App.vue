@@ -8,7 +8,7 @@ import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { activeChapter, DEFAULT, duration, fitPx, fmt, fromJSON, newRow, parseClock,
+import { chapterImportNotice, DEFAULT, duration, fitPx, fmt, fromJSON, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE, toJSON } from './timing.js';
 
 const state = ref(fromJSON(DEFAULT));
@@ -82,10 +82,10 @@ async function newVideo() {
   catch (error) { report('Could not forget the previous file', error); }
   toast('New video: edit, then Save to choose where the file goes');
 }
-function toast(text) {
-  message.value = text;
+function toast(text, notice = '') {
+  message.value = notice ? `${text}; ${notice}` : text;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { message.value = ''; }, 3500);
+  toastTimer = setTimeout(() => { message.value = ''; }, notice ? 8000 : 3500);
 }
 function report(prefix, error) {
   if (error.name !== 'AbortError') {
@@ -198,36 +198,10 @@ async function addChapter() {
   await nextTick();
   chapterEditor.value.focusChapter(chapter.ch);
 }
-function addChapterSwitch() {
-  pushHistory();
-  state.value.chapter_starts.push(newRow({
-    t: +cur.value.toFixed(1), ch: Math.min(state.value.chapters.length, activeChapter(state.value, cur.value) + 1),
-  }));
-  sortAll(state.value);
-  markDirty();
-}
-function deleteSwitch(c) {
-  if (state.value.chapter_starts.length < 2) return toast('Keep at least one chapter');
-  pushHistory();
-  state.value.chapter_starts.splice(state.value.chapter_starts.indexOf(c), 1);
-  if (!state.value.chapter_starts.some(other => other.ch === c.ch) && state.value.chapters.length > 1) {
-    removeChapter(state.value, c.ch);
-  }
-  sortAll(state.value);
-  markDirty();
-}
 function deleteChapter(ch) {
-  if (state.value.chapters.length < 2 || !state.value.chapter_starts.some(c => c.ch !== ch)) {
-    return toast('Keep at least one chapter switch');
-  }
+  if (state.value.chapters.length < 2) return toast('Keep at least one chapter');
   pushHistory();
   removeChapter(state.value, ch);
-  markDirty();
-}
-function chooseChapter(c, value) {
-  pushHistory();
-  c.ch = +value;
-  sortAll(state.value);
   markDirty();
 }
 function updateChapterTitle(ch, title) {
@@ -288,28 +262,33 @@ async function remember(fileHandle) {
   try { await rememberHandle(fileHandle); }
   catch (error) { report('File linked, but could not remember it for next visit', error); }
 }
-function loadState(next, fileHandle) {
+function loadState(next, fileHandle, notice = '') {
   clearTimeout(saveTimer);
   stop();
   pushHistory();
   state.value = next;
   handle.value = fileHandle;
   reconnectHandle.value = null;
-  dirty.value = false;
+  dirty.value = Boolean(notice);
   selectedId.value = null;
   revision++;
 }
+function readTiming(text) {
+  const source = JSON.parse(text);
+  return { next: fromJSON(source), notice: chapterImportNotice(source) };
+}
 async function loadFromHandle(fileHandle) {
-  const next = fromJSON(JSON.parse(await (await fileHandle.getFile()).text()));
-  loadState(next, fileHandle);
+  const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
+  loadState(next, fileHandle, notice);
+  return notice;
 }
 async function openFile() {
   if (saving.value) return toast('Wait for the current save to finish');
   if (!window.showOpenFilePicker) return fileInput.value.click();
   try {
     const [fileHandle] = await window.showOpenFilePicker(pickerOptions);
-    await loadFromHandle(fileHandle);
-    toast('Opened ' + fileHandle.name);
+    const notice = await loadFromHandle(fileHandle);
+    toast('Opened ' + fileHandle.name, notice);
     await remember(fileHandle);
   } catch (error) { report('Open failed', error); }
 }
@@ -317,8 +296,9 @@ async function importFile(event) {
   const file = event.target.files[0];
   if (!file) return;
   try {
-    loadState(fromJSON(JSON.parse(await file.text())), null);
-    toast(`Opened ${file.name}; use Download to save changes in this browser`);
+    const { next, notice } = readTiming(await file.text());
+    loadState(next, null, notice);
+    toast(`Opened ${file.name}; use Download to save changes in this browser`, notice);
   } catch (error) { report('Open failed', error); }
   finally { event.target.value = ''; }
 }
@@ -359,8 +339,8 @@ async function reconnect() {
     if (await fileHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
       return toast('File access was not granted');
     }
-    await loadFromHandle(fileHandle);
-    toast('Loaded ' + fileHandle.name);
+    const notice = await loadFromHandle(fileHandle);
+    toast('Loaded ' + fileHandle.name, notice);
   } catch (error) { report('Reconnect failed', error); }
 }
 async function connectRemembered() {
@@ -369,10 +349,10 @@ async function connectRemembered() {
     const fileHandle = await rememberedHandle();
     if (!fileHandle || !fileHandle.queryPermission || !mounted || revision !== initialRevision) return;
     if (await fileHandle.queryPermission({ mode: 'readwrite' }) === 'granted') {
-      const next = fromJSON(JSON.parse(await (await fileHandle.getFile()).text()));
+      const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
       if (mounted && revision === initialRevision) {
-        loadState(next, fileHandle);
-        toast('Loaded ' + fileHandle.name);
+        loadState(next, fileHandle, notice);
+        toast('Loaded ' + fileHandle.name, notice);
       }
     } else if (mounted && revision === initialRevision) reconnectHandle.value = fileHandle;
   } catch (error) { report('Could not reconnect the remembered file', error); }
@@ -382,11 +362,11 @@ async function refreshFile() {
   if (!fileHandle || dirty.value || saving.value) return;
   try {
     if (await fileHandle.queryPermission({ mode: 'read' }) !== 'granted') return;
-    const next = fromJSON(JSON.parse(await (await fileHandle.getFile()).text()));
+    const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
     if (mounted && !dirty.value && revision === initialRevision && handle.value === fileHandle &&
-        toJSON(next) !== toJSON(state.value)) {
-      loadState(next, fileHandle);
-      toast('Updated from file');
+        (notice || toJSON(next) !== toJSON(state.value))) {
+      loadState(next, fileHandle, notice);
+      toast('Updated from file', notice);
     }
   } catch (error) { report('Could not refresh the linked file', error); }
 }
@@ -456,15 +436,14 @@ onUnmounted(() => {
   <EditorWorkspace>
     <template #editor>
       <aside id="editor-panel" class="editor-panel" aria-label="Chapters and headlines" tabindex="0">
-        <VideoList :clips="clips" :switches="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+        <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
           @remove="removeClip" @error="toast" />
 
-        <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :switches="state.chapter_starts"
+        <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :starts="state.chapter_starts"
           :title="state.title" :product="state.product_name" :offset="offset" :end="totalDuration"
           @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-          @select="setCur($event.t + 0.1)" @choose-chapter="chooseChapter" @update-chapter-title="updateChapterTitle"
-          @delete-switch="deleteSwitch" @delete-chapter="deleteChapter" @add-chapter="addChapter"
-          @add-switch="addChapterSwitch" @update-metadata="updateMetadata" />
+          @select="setCur($event.t + 0.1)" @update-chapter-title="updateChapterTitle"
+          @delete-chapter="deleteChapter" @add-chapter="addChapter" @update-metadata="updateMetadata" />
 
         <HeadlineEditor ref="headlineEditor" :headlines="state.headlines" :end="state.headlines_end"
           :wipe="state.wipe_seconds" :offset="offset" :selected-id="selectedId" :text-size-index="headlineFit.idx"
@@ -495,7 +474,6 @@ onUnmounted(() => {
         <div id="stats" class="statline">
           <span class="chip">{{ state.headlines.length }} headlines</span>
           <span class="chip">{{ state.chapters.length }} chapters</span>
-          <span class="chip">{{ state.chapter_starts.length }} chapter switches</span>
           <span class="chip info">headline text ≈ {{ (headlineFit.px / TEXT_SCALE).toFixed(0) }} px{{ headlineFit.idx >= 0 ? ` (set by #${headlineFit.idx + 1})` : '' }}</span>
           <span v-if="shortCount" class="chip warn">{{ shortCount }} shorter than 3 s</span>
         </div>

@@ -62,6 +62,11 @@ export function fromJSON(o) {
 }
 
 export function toJSON(state) {
+  if (state.chapters.length !== state.chapter_starts.length ||
+      state.chapter_starts.some((chapter, i) => chapter.ch !== i + 1 ||
+        (i > 0 && chapter.t < state.chapter_starts[i - 1].t))) {
+    throw new Error('Each chapter must have exactly one start, in timeline order');
+  }
   const n = v => JSON.stringify(+v.toFixed(2));
   return [
     '{',
@@ -81,15 +86,19 @@ export function toJSON(state) {
 export function sortAll(state) {
   state.chapter_starts.sort((a, b) => a.t - b.t);
   state.headlines.sort((a, b) => a.t - b.t);
-  const order = [...new Set([
-    ...state.chapter_starts.map(c => c.ch),
-    ...state.chapters.map((_, i) => i + 1),
-  ])];
-  if (order.some((ch, i) => ch !== i + 1)) {
-    const numbers = new Map(order.map((ch, i) => [ch, i + 1]));
-    state.chapters = order.map(ch => state.chapters[ch - 1]);
-    state.chapter_starts.forEach(c => { c.ch = numbers.get(c.ch); });
+  state.chapters = state.chapter_starts.map(c => state.chapters[c.ch - 1]);
+  state.chapter_starts.forEach((c, i) => { c.ch = i + 1; });
+}
+
+export function chapterImportNotice(source) {
+  const used = new Set(source.chapter_starts.map(([, ch]) => ch)), notices = [];
+  if (used.size < source.chapter_starts.length) {
+    notices.push('Converted repeated chapter switches into independent chapters.');
   }
+  if (used.size < source.chapters.length) {
+    notices.push('Ignored unused chapter titles with no start time.');
+  }
+  return notices.length ? notices.join(' ') + ' Save or Download to keep the converted file.' : '';
 }
 
 export function removeChapter(state, ch) {

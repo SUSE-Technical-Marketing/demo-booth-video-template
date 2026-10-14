@@ -64,6 +64,7 @@ def _find_repo():
 REPO_DIR = _find_repo()
 sys.path.insert(0, os.path.join(REPO_DIR, "render"))
 from chapter_scroll import fusion_scroll_expression, scroll_steps
+from timing import normalize_chapters
 
 print("Using repo: %s   timing file: %s" % (REPO_DIR, TIMING_NAME))
 LOGO_PATH = os.path.join(REPO_DIR, "assets", "SUSE_Logo-hor_Green.png")
@@ -100,6 +101,9 @@ def _validate(tm):
         raise ValueError("%s: %s" % (TIMING_FILE, "; ".join(problems)))
 
 _validate(_tm)
+_notice = normalize_chapters(_tm)
+if _notice:
+    print("Timing import: " + _notice)
 PRODUCT_NAME = _tm.get("product_name", "SUSE AI Factory")   # shown under the logo
 CHAPTERS = _tm["chapters"]
 CHAPTER_STARTS = sorted((float(s), int(c)) for s, c in _tm["chapter_starts"])   # (seconds, chapter number)
