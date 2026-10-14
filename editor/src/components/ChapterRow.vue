@@ -8,7 +8,7 @@ defineProps({
   offset: { type: Number, required: true },
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
-  'choose-chapter', 'delete']);
+  'choose-chapter', 'delete', 'update-title']);
 </script>
 
 <template>
@@ -21,6 +21,9 @@ const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', '
           <option v-for="(title, i) in chapters" :key="i" :value="i + 1">{{ i + 1 }} {{ title }}</option>
         </select>
       </div>
+      <input class="chapter-title" :value="chapters[chapter.ch - 1]" placeholder="Chapter title" :aria-label="`Chapter ${chapter.ch} title`"
+        :data-inline-chapter="chapter.ch" @click.stop @focus="emit('begin-edit')"
+        @input="emit('update-title', $event.target.value)">
     </div>
     <span class="meta">{{ tc(chapter.t, offset) }}</span>
     <button class="icon ghost" title="Delete" @click.stop="emit('delete')">✕</button>

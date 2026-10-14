@@ -4,7 +4,9 @@ import ChapterEditor from './components/ChapterEditor.vue';
 import HeadlineEditor from './components/HeadlineEditor.vue';
 import Preview from './components/Preview.vue';
 import Timeline from './components/Timeline.vue';
+import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
+import { clipEnd, loadClip, releaseClip } from './videos.js';
 import { activeChapter, DEFAULT, duration, fitPx, fmt, fromJSON, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE, toJSON } from './timing.js';
 
@@ -15,10 +17,11 @@ const cur = ref(0), selectedId = ref(null), playing = ref(false);
 const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
 const fileInput = ref(null), headlineEditor = ref(null), chapterEditor = ref(null);
+const clips = ref([]);
 const history = [];
 let timer, saveTimer, toastTimer, lastTimestamp = 0, revision = 0, mounted = false;
 const context = document.createElement('canvas').getContext('2d');
-const totalDuration = computed(() => duration(state.value));
+const totalDuration = computed(() => clips.value.length ? Math.max(...clips.value.map(clipEnd)) : duration(state.value));
 const status = computed(() => dirty.value
   ? (handle.value ? 'unsaved changes…' : 'unsaved (not linked to a file)')
   : (handle.value ? `saved to ${handle.value.name}` : 'sample data: click Open file… and pick a timings/*.json'));
@@ -42,6 +45,42 @@ const shortCount = computed(() => state.value.headlines.filter((h, i) => {
   return end != null && end - h.t < 3;
 }).length);
 
+async function addVideos(files) {
+  stop();
+  let added = 0;
+  for (const file of files) {          // one at a time so they land in the order picked
+    try {
+      const start = clips.value.length ? Math.max(...clips.value.map(clipEnd)) : 0;
+      clips.value.push(await loadClip(file, start));
+      added++;
+    } catch (error) { toast(error.message); }
+  }
+  if (added) toast(`Added ${added} ${added > 1 ? 'videos' : 'video'}`);
+}
+function updateClipStart(clip, time) {
+  clip.start = Math.max(0, time);
+  clips.value.sort((a, b) => a.start - b.start);
+}
+function removeClip(clip) {
+  releaseClip(clip);
+  clips.value.splice(clips.value.indexOf(clip), 1);
+}
+function clearClips() {
+  clips.value.forEach(releaseClip);
+  clips.value = [];
+}
+async function newVideo() {
+  if (dirty.value && !window.confirm('You have unsaved changes. Start a new video anyway?')) return;
+  loadState(fromJSON({
+    title: 'New video', product_name: '', chapters: ['Chapter 1'], chapter_starts: [[0, 1]],
+    headlines: [[0, 'Your first *headline*']], headlines_end: null, wipe_seconds: 0.8,
+  }), null);
+  clearClips();
+  setCur(0);
+  try { await rememberHandle(null); }          // a reload should not reopen the file we just left
+  catch (error) { report('Could not forget the previous file', error); }
+  toast('New video: edit, then Save to choose where the file goes');
+}
 function toast(text) {
   message.value = text;
   clearTimeout(toastTimer);
@@ -398,6 +437,7 @@ onUnmounted(() => {
 <template>
   <header class="top">
     <h1>Timing editor</h1>
+    <button id="btnNew" title="Start a blank timing file and clear the loaded videos" @click="newVideo">New</button>
     <button id="btnOpen" title="Open a timing JSON file" @click="openFile">Open file…</button>
     <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="importFile">
     <button v-if="reconnectHandle" id="btnReconnect" class="primary" @click="reconnect">Reconnect {{ reconnectHandle.name }}</button>
@@ -416,9 +456,12 @@ onUnmounted(() => {
     <div class="stack">
       <section class="card">
         <h2>Timeline <span id="durChip" class="chip">to {{ fmt(totalDuration) }}</span></h2>
-        <Timeline :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" @seek="seek" />
+        <Timeline :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :clips="clips" @seek="seek" />
         <p class="hint">Click or drag on the timeline to scrub. Click a row below to jump to it.</p>
       </section>
+
+      <VideoList :clips="clips" :switches="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+        @remove="removeClip" @error="toast" />
 
       <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :switches="state.chapter_starts"
         :title="state.title" :product="state.product_name" :offset="offset"
@@ -445,7 +488,7 @@ onUnmounted(() => {
     </div>
 
     <aside class="sticky">
-      <Preview :state="state" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx" />
+      <Preview :state="state" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx" :clips="clips" :playing="playing" />
       <div class="transport">
         <button id="btnPlay" class="primary" @click="play">{{ playing ? 'Pause' : 'Play' }}</button>
         <input id="scrub" type="range" min="0" :max="totalDuration" step="0.1" :value="cur" aria-label="Preview time"

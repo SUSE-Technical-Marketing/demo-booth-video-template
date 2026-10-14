@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import AccentText from './AccentText.vue';
+import { clipAt } from '../videos.js';
 import { activeChapter, activeHeadline, chapterScrollAt, chapterScrollSteps, CHAPTER_SCROLL, CHAPTER_VIEW, TEXT_SCALE } from '../timing.js';
 
 const props = defineProps({
@@ -9,6 +10,8 @@ const props = defineProps({
   headlinePx: { type: Number, required: true },
   pillPx: { type: Number, required: true },
   productPx: { type: Number, required: true },
+  clips: { type: Array, default: () => [] },
+  playing: { type: Boolean, default: false },
 });
 const view = ref(null), scale = ref(1), logoFailed = ref(false);
 let observer;
@@ -18,6 +21,22 @@ onMounted(() => {
   scale.value = view.value.clientWidth / 1920;
 });
 onUnmounted(() => observer?.disconnect());
+
+// one <video> per clip; only the clip under the playhead is shown and played
+const videos = new Map();
+const clip = computed(() => clipAt(props.clips, props.cur));
+const setVideo = (id, el) => { if (el) videos.set(id, el); else videos.delete(id); };
+function syncVideo() {
+  const current = clip.value;
+  videos.forEach((el, id) => { if (id !== current?.id && !el.paused) el.pause(); });
+  const el = current && videos.get(current.id);
+  if (!el) return;
+  const want = props.cur - current.start;
+  if (!props.playing || Math.abs(el.currentTime - want) > 0.4) el.currentTime = want;
+  if (props.playing && el.paused) el.play?.()?.catch?.(() => {});
+  else if (!props.playing && !el.paused) el.pause();
+}
+watch([() => props.cur, () => props.playing, clip, () => props.clips.length], syncVideo, { flush: 'post' });
 const steps = computed(() => chapterScrollSteps(props.state));
 const offset = computed(() => chapterScrollAt(props.cur, steps.value));
 const active = computed(() => activeChapter(props.state, props.cur));
@@ -60,7 +79,12 @@ const headlineStyle = computed(() => {
         :style="indicatorStyle(CHAPTER_SCROLL.arrow_x, CHAPTER_SCROLL.arrow_top, 24)">^</div>
       <div v-if="scrolling && offset < state.chapters.length - count - 1e-6" id="chaptersBelow" class="abs chapterIndicator"
         title="More chapters below" :style="indicatorStyle(CHAPTER_SCROLL.arrow_x, CHAPTER_SCROLL.indicator_y, 24)">v</div>
-      <div id="content" class="abs">your video here</div>
+      <div id="content" class="abs">
+        <video v-for="c in clips" v-show="clip?.id === c.id" :key="c.id" :ref="el => setVideo(c.id, el)" :src="c.url"
+          playsinline preload="auto"></video>
+        <span v-if="!clips.length">your video here</span>
+        <span v-else-if="!clip" class="gap">no video at this time</span>
+      </div>
       <div id="bar" class="abs"><div id="hl" :style="headlineStyle"><AccentText :text="headline?.text ?? ''" /></div></div>
     </div>
   </div>

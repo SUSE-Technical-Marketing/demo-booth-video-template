@@ -106,3 +106,11 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--surface2); border: 1px solid var(--green);
   padding: 9px 18px; border-radius: 10px; box-shadow: 0 6px 28px #0006; z-index: 40; opacity: 0; pointer-events: none; transition: opacity .15s; }
 .toast.show { opacity: 1; }
+
+.vclip { position: absolute; top: 40px; height: 4px; background: var(--text); opacity: .55; border-right: 1px solid var(--jungle); }
+.vrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 8px; align-items: center; padding: 5px 6px; }
+.vrow .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.vrow .meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.vrow input.time { width: 78px; text-align: center; font-variant-numeric: tabular-nums; }
+#content video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+#content .gap { font-size: 32px; }

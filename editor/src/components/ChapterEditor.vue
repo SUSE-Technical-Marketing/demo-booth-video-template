@@ -29,7 +29,8 @@ defineExpose({ focusChapter });
       <ChapterRow v-for="chapter in switches" :key="chapter.id" :chapter="chapter" :chapters="chapters" :offset="offset"
         @begin-edit="emit('begin-edit')" @update-time="emit('update-time', chapter, $event)"
         @commit-time="emit('commit-time')" @error="emit('error', $event)" @select="emit('select', chapter)"
-        @choose-chapter="emit('choose-chapter', chapter, $event)" @delete="emit('delete-switch', chapter)" />
+        @choose-chapter="emit('choose-chapter', chapter, $event)"
+        @update-title="emit('update-chapter-title', chapter.ch, $event)" @delete="emit('delete-switch', chapter)" />
     </div>
     <div class="tools">
       <button id="addChapter" @click="emit('add-chapter')">+ Add chapter</button>

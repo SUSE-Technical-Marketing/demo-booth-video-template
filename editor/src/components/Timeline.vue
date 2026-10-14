@@ -7,6 +7,7 @@ const props = defineProps({
   duration: { type: Number, required: true },
   cur: { type: Number, required: true },
   selectedId: { type: Number, default: null },
+  clips: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['seek']);
 const timeline = ref(null);
@@ -37,6 +38,8 @@ function pointerdown(event) {
         background: CH_COLORS[(chapter.ch - 1) % 6] }">{{ state.chapters[chapter.ch - 1] || `Chapter ${chapter.ch}` }}</div>
     <div v-for="headline in state.headlines" :key="headline.id" class="tick" :class="{ sel: selectedId === headline.id }"
       :title="`${fmt(headline.t)}  ${plain(headline.text)}`" :style="{ left: pct(headline.t) }"></div>
+    <div v-for="clip in clips" :key="clip.id" class="vclip" :title="clip.name"
+      :style="{ left: pct(clip.start), width: pct(clip.dur) }"></div>
     <div class="ruler">
       <template v-for="tick in ruler" :key="tick.t">
         <i :style="{ left: pct(tick.t) }"></i>
