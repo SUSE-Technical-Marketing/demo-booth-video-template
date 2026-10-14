@@ -120,6 +120,7 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 <body>
 <header class="top">
   <h1>Timing editor</h1>
+  <button id="btnNew" title="Start a blank timing file (and clear the loaded videos)">New</button>
   <button id="btnOpen" title="Open headline_timing.json so changes save straight to the file">Open file…</button>
   <button id="btnVideo" title="Add one or more videos to preview in the content slot (they stay on your computer, nothing is uploaded)">Add videos…</button>
   <input type="file" id="videoFile" accept="video/*" multiple hidden>
@@ -681,6 +682,17 @@ function jump(dir) {
 }
 
 // ------------------------------------------------------------------ wiring
+$('#btnNew').onclick = () => {
+  if (dirty && !confirm('You have unsaved changes. Start a new video anyway?')) return;
+  stop();
+  VIDS.forEach(v => { v.el.pause(); URL.revokeObjectURL(v.el.src); }); VIDS.length = 0; shown = undefined;
+  $('#content').textContent = 'your video here';
+  S = { title: 'New video', product_name: '', chapters: [1, 2, 3, 4, 5, 6].map(i => 'Chapter ' + i),
+        chapter_starts: [{ t: 0, ch: 1 }], headlines: [{ t: 0, text: 'Your first *headline*' }], headlines_end: null, wipe_seconds: 0.8 };
+  clearTimeout(saveTimer); history = []; handle = null; idb.set('handle', null); dirty = false; selected = null; cur = 0;
+  $('#btnReconnect').hidden = true;
+  rebuildAll(); setStatus('new video: edit, then Save to choose where the file goes');
+};
 $('#btnOpen').onclick = openFile;
 $('#btnVideo').onclick = () => $('#videoFile').click();
 $('#videoFile').addEventListener('change', async e => {
