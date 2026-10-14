@@ -10,12 +10,13 @@ QUICK USE
   2. Turn your video into a compound clip, open it on the Fusion page.
   3. Workspace > Console, switch to Py3, paste this whole file, press Enter.
   4. Everything that changes per video (chapter names, when the orange pill switches, every headline and
-     its start time) lives in timings/<TIMING_NAME>. Edit it in the timing editor (docs/index.html),
+     its start time) lives in timings/<TIMING_NAME>. Edit it in the timing editor (editor/),
      save, and re-run this script - it clears its own old nodes first.
 """
 import json
 import os
 import struct
+import sys
 
 # ----------------------------------------------------------------- BRAND (from SUSE Design System)
 BRAND = {
@@ -61,6 +62,9 @@ def _find_repo():
                        "the folder that contains assets/ and timings/." % (name, "\n  ".join(cands)))
 
 REPO_DIR = _find_repo()
+sys.path.insert(0, os.path.join(REPO_DIR, "render"))
+from chapter_scroll import fusion_scroll_expression, scroll_steps
+
 print("Using repo: %s   timing file: %s" % (REPO_DIR, TIMING_NAME))
 LOGO_PATH = os.path.join(REPO_DIR, "assets", "SUSE_Logo-hor_Green.png")
 # Only used to measure headline word widths. First one that exists wins; without one the script falls
@@ -70,7 +74,7 @@ FONT_FILE = next((f for f in (os.path.join(REPO_DIR, "assets", "fonts", "SUSE-Me
                               "/Library/Fonts/SUSE-Medium.otf") if os.path.isfile(f)), "")
 
 # ---- TIMING: chapters, pill switch times and headlines live in timings/<TIMING_NAME> ----
-# Edit them in the timing editor (docs/index.html). Times are seconds from the start of the clip.
+# Edit them in the timing editor (editor/). Times are seconds from the start of the clip.
 TIMING_FILE = os.path.join(REPO_DIR, "timings", TIMING_NAME)
 try:
     with open(TIMING_FILE) as _f:
@@ -86,8 +90,6 @@ def _validate(tm):
             problems.append('"%s" is missing or empty' % key)
     if not problems:
         n = len(tm["chapters"])
-        if not 1 <= n <= 6:
-            problems.append("the layout fits 1 to 6 chapter buttons, found %d" % n)
         for sec, ch in tm["chapter_starts"]:
             if not 1 <= int(ch) <= n:
                 problems.append("chapter switch at %ss points to chapter %s, but only 1-%d exist" % (sec, ch, n))
@@ -99,8 +101,8 @@ def _validate(tm):
 
 _validate(_tm)
 PRODUCT_NAME = _tm.get("product_name", "SUSE AI Factory")   # shown under the logo
-CHAPTERS = _tm["chapters"]                                                  # the six pill names
-CHAPTER_STARTS = sorted((float(s), int(c)) for s, c in _tm["chapter_starts"])   # (seconds, pill 1-6)
+CHAPTERS = _tm["chapters"]
+CHAPTER_STARTS = sorted((float(s), int(c)) for s, c in _tm["chapter_starts"])   # (seconds, chapter number)
 HEADLINES = sorted((float(s), t) for s, t in _tm["headlines"])             # (seconds, text); *word* = accent
 HEADLINES_END = _tm.get("headlines_end")      # seconds, or None = last headline stays to the end of the clip
 WIPE_SECONDS = _tm.get("wipe_seconds", 0.8)   # left-to-right build-in time
@@ -113,6 +115,9 @@ PANEL   = dict(cx=220,  cy=540, w=412,  h=1051, r=45)   # 14 px of canvas shows 
 # Pills fill the space under the title block: 18 px gaps between pills (grouped), ~60 px between the
 # title group and the list, 34 px bottom margin (same as the panel's top/left margin)
 PILL    = dict(cx=220,  w=380, h=108, r=26, pitch=126, cy_last=977, line=3)
+CHAPTER_VIEW = dict(cx=220, cy=662, w=380, h=738, r=0)
+CHAPTER_SCROLL = dict(visible=6, previous=2, seconds=0.4, indicator_px=20,
+                      indicator_y=1047, arrow_x=390, arrow_top=276)
 BAR     = dict(cx=1184, cy=122, w=1468, h=217, r=30, line=3)
 CONTENT = dict(cx=1181, cy=657, w=1459, h=820,  r=0)
 LOGO_W_PX = 324   # visible width of the logo on the panel
@@ -159,9 +164,11 @@ def solid(name, hexstr):
     bg.SetInput("TopLeftBlue", b); bg.SetInput("TopLeftAlpha", 1.0)
     return bg
 
-def rrect(name, d, cy=None):
+def rrect(name, d, cy=None, cy_expr=None):
     m = add("RectangleMask", name)
     m.SetInput("Center", [nx(d["cx"]), ny(d["cy"] if cy is None else cy)])
+    if cy_expr:
+        m.Center.SetExpression("Point(%.12g, %s)" % (nx(d["cx"]), cy_expr))
     # Mask Width is relative to image width, Height to image height (verified in Resolve)
     m.SetInput("Width", d["w"] / W)
     m.SetInput("Height", d["h"] / H)
@@ -177,28 +184,30 @@ def merge(prev, layer, name, mask=None):
         m.EffectMask = mask
     return m
 
-def boxed(prev, name, d, fill, line_hex=None, cy=None, blend=None):
+def boxed(prev, name, d, fill, line_hex=None, cy=None, blend=None, cy_expr=None):
     """Rounded box with an optional outline (outer shape in line colour, inner shape in fill).
     blend: optional expression (in comp time) that fades the whole box in and out via the Merge Blend."""
     cy = d["cy"] if cy is None else cy
     bw = d.get("line", 0)
     if line_hex and bw:
-        prev = merge(prev, solid(name + "Line", line_hex), name + "LineMerge", rrect(name + "LineMask", d, cy))
+        prev = merge(prev, solid(name + "Line", line_hex), name + "LineMerge", rrect(name + "LineMask", d, cy, cy_expr))
         if blend:
             prev.Blend.SetExpression(blend)
         d = dict(d, w=d["w"] - 2 * bw, h=d["h"] - 2 * bw, r=max(0, d["r"] - bw))
-    m = merge(prev, fill, name + "Merge", rrect(name + "Mask", d, cy))
+    m = merge(prev, fill, name + "Merge", rrect(name + "Mask", d, cy, cy_expr))
     if blend:
         m.Blend.SetExpression(blend)
     return m
 
-def text(name, string, cx, cy, size_px, hexstr, style=None, expr=None):
+def text(name, string, cx, cy, size_px, hexstr, style=None, expr=None, cy_expr=None):
     t = add("TextPlus", name)
     t.SetInput("StyledText", string)
     t.SetInput("Font", BRAND["font"])
     t.SetInput("Style", style or BRAND["style_ui"])
     t.SetInput("Size", size_px / H)
     t.SetInput("Center", [nx(cx), ny(cy)])
+    if cy_expr:
+        t.Center.SetExpression("Point(%.12g, %s)" % (nx(cx), cy_expr))
     r, g, b = rgb(hexstr)
     t.SetInput("Red1", r); t.SetInput("Green1", g); t.SetInput("Blue1", b)
     if expr:
@@ -362,16 +371,41 @@ def window_expr(ws):
     return " + ".join("(%s)" % p for p in parts)
 
 pill_on = {}
+scrolling = n_ch > CHAPTER_SCROLL["visible"]
+scroll_expr = fusion_scroll_expression(scroll_steps(CHAPTER_STARTS, n_ch, CHAPTER_SCROLL),
+                                      FPS, T0, CHAPTER_SCROLL["seconds"])
+chapter_layer = solid("ChapterLayer", BRAND["panel"]) if scrolling else out
+if scrolling:
+    chapter_layer.SetInput("TopLeftAlpha", 0.0)
 for i in range(1, n_ch + 1):
-    cy = PILL["cy_last"] - (n_ch - i) * PILL["pitch"]
-    out = boxed(out, "Pill%d" % i, PILL, solid("PillFill%d" % i, BRAND["pill_base"]), BRAND["pill_line"], cy=cy)
+    cy = PILL["cy_last"] - (min(n_ch, CHAPTER_SCROLL["visible"]) - i) * PILL["pitch"]
+    cy_expr = "%.12g + (%s) * %.12g" % (ny(cy), scroll_expr, PILL["pitch"] / H) if scrolling else None
+    chapter_layer = boxed(chapter_layer, "Pill%d" % i, PILL, solid("PillFill%d" % i, BRAND["pill_base"]),
+                          BRAND["pill_line"], cy=cy, cy_expr=cy_expr)
     if i in chapter_windows:
-        out = boxed(out, "PillOn%d" % i, PILL, solid("PillOnFill%d" % i, BRAND["pill_active"]),
-                    BRAND["pill_line"], cy=cy, blend=window_expr(chapter_windows[i]))
-        pill_on[i] = out
-    out = merge(out, text("PillText%d" % i, CHAPTERS[i - 1], PILL["cx"], cy, PILL_TEXT_PX,
-                          BRAND["pill_text"], expr=("CTRL.Chapter%d" % i) if CTRL_OK else None),
-                "PillTextMerge%d" % i)
+        chapter_layer = boxed(chapter_layer, "PillOn%d" % i, PILL, solid("PillOnFill%d" % i, BRAND["pill_active"]),
+                              BRAND["pill_line"], cy=cy, blend=window_expr(chapter_windows[i]), cy_expr=cy_expr)
+        pill_on[i] = chapter_layer
+    chapter_layer = merge(chapter_layer, text("PillText%d" % i, CHAPTERS[i - 1], PILL["cx"], cy, PILL_TEXT_PX,
+                                             BRAND["pill_text"], expr=("CTRL.Chapter%d" % i) if CTRL_OK else None,
+                                             cy_expr=cy_expr), "PillTextMerge%d" % i)
+out = merge(out, chapter_layer, "ChapterViewportMerge", rrect("ChapterViewportMask", CHAPTER_VIEW)) if scrolling else chapter_layer
+
+if scrolling:
+    active_expr = ACTIVE_EXPR or str(ACTIVE_STATIC)
+    for i in range(1, n_ch + 1):
+        out = merge(out, text("ChapterCount%d" % i, "Chapter %d of %d" % (i, n_ch), PILL["cx"],
+                              CHAPTER_SCROLL["indicator_y"], CHAPTER_SCROLL["indicator_px"], BRAND["product"]),
+                    "ChapterCountMerge%d" % i)
+        out.Blend.SetExpression("iif((%s) == %d, 1, 0)" % (active_expr, i))
+    for name, label, y, visibility in (
+        ("ChaptersAbove", "^", CHAPTER_SCROLL["arrow_top"], "(%s) > 0.000001" % scroll_expr),
+        ("ChaptersBelow", "v", CHAPTER_SCROLL["indicator_y"],
+         "(%s) < %d - 0.000001" % (scroll_expr, n_ch - CHAPTER_SCROLL["visible"])),
+    ):
+        out = merge(out, text(name, label, CHAPTER_SCROLL["arrow_x"], y,
+                              CHAPTER_SCROLL["indicator_px"], BRAND["product"]), name + "Merge")
+        out.Blend.SetExpression("iif(%s, 1, 0)" % visibility)
 
 # self-check: the orange overlay must be ON at the start of its chapter and OFF just before it
 for sec, ch in CHAPTER_STARTS:

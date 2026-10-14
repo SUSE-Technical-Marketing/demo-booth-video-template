@@ -22,6 +22,9 @@ BRAND = {
 
 PANEL   = dict(cx=220,  cy=540, w=412,  h=1051, r=45)
 PILL    = dict(cx=220,  w=380, h=108, r=26, pitch=126, cy_last=977, line=3)
+CHAPTER_VIEW = dict(cx=220, cy=662, w=380, h=738, r=0)
+CHAPTER_SCROLL = dict(visible=6, previous=2, seconds=0.4, indicator_px=20,
+                      indicator_y=1047, arrow_x=390, arrow_top=276)
 BAR     = dict(cx=1184, cy=122, w=1468, h=217, r=30, line=3)
 CONTENT = dict(cx=1181, cy=657, w=1459, h=820,  r=0)
 LOGO_W_PX = 324

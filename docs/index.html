@@ -137,12 +137,14 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
     <section class="card">
       <h2>Chapter buttons <span class="hint" style="margin:0;text-transform:none;letter-spacing:0">when the orange pill switches</span></h2>
       <div id="chapters"></div>
-      <div class="tools"><button id="addChapter">+ Add chapter switch</button>
-        <details style="flex:1"><summary>Names: video title, product, the six buttons</summary>
+      <div class="tools"><button id="addChapter">+ Add chapter</button><button id="addChapterSwitch">+ Add chapter switch</button>
+        <details style="flex:1"><summary>Names: video title, product, chapter buttons</summary>
           <div class="names" id="meta">
             <label class="inline">title <input id="titleIn" placeholder="Video title (for your own reference)"></label>
             <label class="inline">product <input id="productIn" placeholder="Shown under the logo"></label></div>
           <div class="names" id="names"></div></details></div>
+      <p class="hint">Edit a chapter title in its row. Add a switch to revisit an existing chapter; deleting its last switch
+        also removes its button. The layout fits 1 to 6 chapters.</p>
     </section>
 
     <section class="card">
@@ -413,7 +415,6 @@ function buildStage() {
   P.prod = el('div', { id: 'prodname', className: 'abs', textContent: 'SUSE AI Factory' });
   stage.append(P.prod);
   P.pills = [];
-  for (let i = 1; i <= 6; i++) { const p = el('div', { className: 'abs pill', style: `top:${977 - (6 - i) * 126 - 54}px` }); P.pills.push(p); stage.append(p); }
   stage.append(el('div', { id: 'content', className: 'abs', textContent: 'your video here' }));
   P.hl = el('div', { id: 'hl' });
   stage.append(el('div', { id: 'bar', className: 'abs' }, P.hl));
@@ -437,7 +438,16 @@ function renderPreview() {
   P.prod.textContent = S.product_name || '';
   P.prod.style.fontSize = prodPx + 'px'; P.prod.style.top = (197 - prodPx / 2) + 'px';
   const ac = activeChapter(cur);
-  P.pills.forEach((p, i) => { p.textContent = S.chapters[i] || ''; p.style.fontSize = pillPx + 'px'; p.classList.toggle('on', ac === i + 1); });
+  while (P.pills.length > S.chapters.length) P.pills.pop().remove();
+  while (P.pills.length < S.chapters.length) {
+    const p = el('div', { className: 'abs pill' });
+    P.pills.push(p); stage.append(p);
+  }
+  P.pills.forEach((p, i) => {
+    p.textContent = S.chapters[i]; p.style.fontSize = pillPx + 'px';
+    p.style.top = (977 - (S.chapters.length - i - 1) * 126 - 54) + 'px';
+    p.classList.toggle('on', ac === i + 1);
+  });
   const h = activeHeadline(cur);
   P.hl.style.fontSize = fs.px + 'px';
   P.hl.replaceChildren(h ? markup(h.text) : '');
@@ -549,16 +559,44 @@ function rowChips(h, i, next) {
   return out;
 }
 
+function removeChapter(ch) {
+  S.chapters.splice(ch - 1, 1);
+  S.chapter_starts = S.chapter_starts.filter(c => c.ch !== ch);
+  S.chapter_starts.forEach(c => { if (c.ch > ch) c.ch--; });
+}
+
+function chapterTitleInput(ch) {
+  const inp = el('input', { value: S.chapters[ch - 1], placeholder: 'Chapter title' });
+  inp.setAttribute('aria-label', 'Chapter ' + ch + ' title');
+  inp.dataset.chapter = ch;
+  inp.addEventListener('focus', () => pushHistory(true));
+  inp.addEventListener('input', () => {
+    S.chapters[ch - 1] = inp.value;
+    document.querySelectorAll('input[data-chapter]').forEach(other => {
+      if (+other.dataset.chapter === ch && other !== inp) other.value = inp.value;
+    });
+    document.querySelectorAll('#chapters select').forEach(sel => {
+      sel.options[ch - 1].textContent = `${ch}  ${inp.value}`;
+    });
+    renderTimeline(); renderPreview(); markDirty();
+  });
+  return inp;
+}
+
 function chapterRow(c) {
   const row = el('div', { className: 'crow' });
   const sel = el('select');
   S.chapters.forEach((n, i) => sel.append(el('option', { value: i + 1, textContent: `${i + 1}  ${n}`, selected: c.ch === i + 1 })));
   sel.addEventListener('change', () => { pushHistory(true); c.ch = +sel.value; rebuildAll(); markDirty(); });
-  row.append(timeInput(c), el('div', {}, el('span', { className: 'dot', style: `background:${CH_COLORS[(c.ch - 1) % 6]}` }), sel),
+  row.append(timeInput(c), el('div', { className: 'textcell' },
+    el('div', {}, el('span', { className: 'dot', style: `background:${CH_COLORS[(c.ch - 1) % 6]}` }), sel),
+    chapterTitleInput(c.ch)),
     el('span', { className: 'meta', textContent: tc(c.t) }),
     el('button', { className: 'icon ghost', textContent: '✕', title: 'Delete', onclick: () => {
       if (S.chapter_starts.length < 2) return toast('Keep at least one chapter');
-      pushHistory(true); S.chapter_starts.splice(S.chapter_starts.indexOf(c), 1); rebuildAll(); markDirty(); } }));
+      pushHistory(true); S.chapter_starts.splice(S.chapter_starts.indexOf(c), 1);
+      if (!S.chapter_starts.some(other => other.ch === c.ch) && S.chapters.length > 1) removeChapter(c.ch);
+      rebuildAll(); markDirty(); } }));
   row.addEventListener('click', () => setCur(c.t + 0.1));
   return row;
 }
@@ -566,13 +604,13 @@ function chapterRow(c) {
 function renderLists() {
   $('#headlines').replaceChildren(...S.headlines.map(headlineRow));
   $('#chapters').replaceChildren(...S.chapter_starts.map(chapterRow));
-  $('#names').replaceChildren(...S.chapters.map((n, i) => {
-    const inp = el('input', { value: n, placeholder: 'Button ' + (i + 1) });
-    inp.addEventListener('focus', () => pushHistory(true));
-    inp.addEventListener('input', () => { S.chapters[i] = inp.value; renderTimeline(); renderPreview(); markDirty(); });
-    inp.addEventListener('change', () => rebuildAll());
-    return el('label', { className: 'inline' }, (i + 1) + '', inp);
-  }));
+  $('#names').replaceChildren(...S.chapters.map((n, i) =>
+    el('div', { className: 'inline' },
+      el('label', { className: 'inline' }, (i + 1) + '', chapterTitleInput(i + 1)),
+      el('button', { className: 'icon ghost', textContent: '✕', title: 'Delete chapter and all its switches', onclick: () => {
+        if (S.chapters.length < 2 || !S.chapter_starts.some(c => c.ch !== i + 1)) return toast('Keep at least one chapter switch');
+        pushHistory(true); removeChapter(i + 1); rebuildAll(); markDirty();
+      } }))));
   $('#titleIn').value = S.title; $('#productIn').value = S.product_name;
   $('#endAt').value = S.headlines_end == null ? '' : fmt(S.headlines_end);
   $('#wipe').value = S.wipe_seconds;
@@ -582,6 +620,7 @@ function renderStats() {
   const warn = S.headlines.filter((h, i) => { const e = S.headlines[i + 1] ? S.headlines[i + 1].t : S.headlines_end; return e != null && e - h.t < 3; }).length;
   const s = $('#stats'); s.replaceChildren(
     el('span', { className: 'chip', textContent: S.headlines.length + ' headlines' }),
+    el('span', { className: 'chip', textContent: S.chapters.length + ' chapters' }),
     el('span', { className: 'chip', textContent: S.chapter_starts.length + ' chapter switches' }),
     el('span', { className: 'chip info', textContent: `headline text ≈ ${(f.px / TEXT_SCALE).toFixed(0)} px` + (f.idx >= 0 ? ` (set by #${f.idx + 1})` : '') }),
     warn ? el('span', { className: 'chip warn', textContent: warn + ' shorter than 3 s' }) : '');
@@ -626,8 +665,16 @@ $('#addHeadline').onclick = () => {
   ROW.get(n).scrollIntoView({ block: 'center' }); ROW.get(n).querySelector('input:not(.time)').select();
 };
 $('#addChapter').onclick = () => {
+  if (S.chapters.length >= 6) return toast('The layout fits at most 6 chapters');
   pushHistory(true);
-  S.chapter_starts.push({ t: +cur.toFixed(1), ch: Math.min(6, activeChapter(cur) + 1) });
+  S.chapters.push('New chapter');
+  S.chapter_starts.push({ t: +cur.toFixed(1), ch: S.chapters.length });
+  sortAll(); rebuildAll(); markDirty();
+  $(`#chapters input[data-chapter="${S.chapters.length}"]`).select();
+};
+$('#addChapterSwitch').onclick = () => {
+  pushHistory(true);
+  S.chapter_starts.push({ t: +cur.toFixed(1), ch: Math.min(S.chapters.length, activeChapter(cur) + 1) });
   sortAll(); rebuildAll(); markDirty();
 };
 $('#endAt').addEventListener('change', e => {

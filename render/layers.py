@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 import layout as L
+from chapter_scroll import scroll_position, scroll_steps
 
 ROOT = Path(__file__).resolve().parent.parent
 FONT_PATH = ROOT / "assets" / "fonts" / "SUSE-Medium.otf"
@@ -81,6 +82,7 @@ class Layout:
         self.product = timing.get("product_name", "")
         self.wipe = float(timing.get("wipe_seconds", 0.8))
         self.chapter_starts = sorted((float(s), int(c)) for s, c in timing["chapter_starts"])
+        self.scroll_steps = scroll_steps(self.chapter_starts, self.n, L.CHAPTER_SCROLL)
         self.headlines = sorted((float(s), parse_headline(t)) for s, t in timing["headlines"])
         self.hl_end = timing.get("headlines_end")
         S = L.TEXT_SCALE
@@ -113,9 +115,9 @@ class Layout:
         return found
 
     # ---- layers --------------------------------------------------------------------------------
-    @lru_cache(maxsize=8)
-    def chapter_base(self, active):
-        """Canvas + chapter panel (with `active` highlighted) + headline bar. The video slot is left empty."""
+    @lru_cache(maxsize=1)
+    def background(self):
+        """Static branding, chapter panel and headline bar."""
         B = L.BRAND
         img = Image.new("RGB", (L.W, L.H), rgb(B["canvas"]))
         paste_box(img, L.PANEL, B["panel"])
@@ -129,12 +131,43 @@ class Layout:
         if self.product:
             d.text((L.PANEL["cx"], L.PRODUCT_CY), self.product, font=font(self.prod_px),
                    fill=rgb(B["product"]), anchor="mm")
-        for i in range(1, self.n + 1):
-            cy = L.PILL["cy_last"] - (self.n - i) * L.PILL["pitch"]
-            paste_box(img, L.PILL, B["pill_active"] if i == active else B["pill_base"], B["pill_line"], cy=cy)
-            d.text((L.PILL["cx"], cy), self.chapters[i - 1], font=font(self.pill_px),
-                   fill=rgb(B["pill_text"]), anchor="mm")
         paste_box(img, L.BAR, B["bar_fill"], B["bar_line"])
+        return img
+
+    @lru_cache(maxsize=8)
+    def chapter_base(self, active, offset=0):
+        """Draw the chapter viewport at a timeline-derived scroll offset."""
+        B = L.BRAND
+        img = self.background().copy()
+        scrolling = self.n > L.CHAPTER_SCROLL["visible"]
+        count = min(self.n, L.CHAPTER_SCROLL["visible"])
+        view = L.CHAPTER_VIEW
+        left, top = int(view["cx"] - view["w"] / 2), int(view["cy"] - view["h"] / 2)
+        pills = Image.new("RGB", (view["w"], view["h"]), rgb(B["panel"])) if scrolling else img
+        d = ImageDraw.Draw(pills)
+        for i in range(1, self.n + 1):
+            cy = L.PILL["cy_last"] - (count - i + offset) * L.PILL["pitch"]
+            if scrolling:
+                cy -= top
+                if cy + L.PILL["h"] / 2 <= 0 or cy - L.PILL["h"] / 2 >= view["h"]:
+                    continue
+            pill = dict(L.PILL, cx=L.PILL["cx"] - left) if scrolling else L.PILL
+            paste_box(pills, pill, B["pill_active"] if i == active else B["pill_base"], B["pill_line"], cy=cy)
+            d.text((pill["cx"], cy), self.chapters[i - 1], font=font(self.pill_px),
+                   fill=rgb(B["pill_text"]), anchor="mm")
+        if scrolling:
+            img.paste(pills, (left, top))
+            d = ImageDraw.Draw(img)
+            settings = L.CHAPTER_SCROLL
+            indicator_font = font(settings["indicator_px"] * L.TEXT_SCALE)
+            d.text((L.PILL["cx"], settings["indicator_y"]), "Chapter %d of %d" % (active, self.n),
+                   font=indicator_font, fill=rgb(B["product"]), anchor="mm")
+            if offset > 1e-6:
+                d.text((settings["arrow_x"], settings["arrow_top"]), "^",
+                       font=indicator_font, fill=rgb(B["product"]), anchor="mm")
+            if offset < self.n - count - 1e-6:
+                d.text((settings["arrow_x"], settings["indicator_y"]), "v",
+                       font=indicator_font, fill=rgb(B["product"]), anchor="mm")
         return img
 
     @lru_cache(maxsize=64)
@@ -157,9 +190,9 @@ class Layout:
         return img, left, total
 
     @lru_cache(maxsize=4)
-    def with_headline(self, active, idx):
+    def with_headline(self, active, idx, offset=0):
         """chapter_base with headline idx fully drawn."""
-        img = self.chapter_base(active).copy()
+        img = self.chapter_base(active, offset).copy()
         layer, _, _ = self.headline_layer(idx)
         img.paste(layer, (self.bar_x, self.bar_y), layer)
         return img
@@ -168,16 +201,17 @@ class Layout:
     def frame(self, t, video=None):
         """Full 1920x1080 RGB frame at timing-time t. video: a PIL image already sized to the slot, or None."""
         active = self.chapter_at(t)
+        offset = scroll_position(t, self.scroll_steps, L.CHAPTER_SCROLL["seconds"])
         hl = self.headline_at(t)
         if hl is None:
-            img = self.chapter_base(active).copy()
+            img = self.chapter_base(active, offset).copy()
         else:
             idx, start = hl
             p = 1.0 if self.wipe <= 0 else max(0.0, min(1.0, (t - start) / self.wipe))
             if p >= 1.0:
-                img = self.with_headline(active, idx).copy()
+                img = self.with_headline(active, idx, offset).copy()
             else:                                    # left-to-right wipe: reveal a growing slice of the text
-                img = self.chapter_base(active).copy()
+                img = self.chapter_base(active, offset).copy()
                 layer, left, total = self.headline_layer(idx)
                 reveal = int(round(left - PAD + p * (total + 2 * PAD)))
                 if reveal > 0:
