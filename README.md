@@ -212,7 +212,9 @@ switch, titled with the chapter name, which players such as QuickTime, VLC and I
 
 The editor's `App.vue` owns document changes, undo, autosave, and playback. `ChapterEditor`/`ChapterRow` and
 `HeadlineEditor`/`HeadlineRow` handle their editing sections through props and emitted actions; the timeline,
-preview, video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too. Pure timing and JSON helpers live in `timing.js`.
+preview, video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too.
+Chapter and headline rows share `DurationBadge` for length formatting and past-end warnings.
+Pure timing and JSON helpers live in `timing.js`.
 
 On desktop, the editor uses a video-editing workspace: videos, chapters and headlines scroll independently in the left
 panel (about 30% of the width), the large preview fits the remaining space without cropping, and the full-width
@@ -234,12 +236,16 @@ Use **Chrome or Edge** so the page can save straight to your file. Other browser
 2. **Chapter buttons**: use **Add chapter** to create a new button; **Names** opens with its title selected for editing.
    Use **Add chapter switch** to revisit an existing button and pick it from the list. Deleting a chapter's
    last switch removes its button too; **Names** also lets you delete a chapter and all its switches. Keep at least
-   one chapter switch. Edit titles directly below the chapter dropdown or in **Names**; both stay synchronized.
-   The preview updates the button count and titles immediately.
+   one chapter switch. Edit titles in **Names**. Each row's **Length** shows its segment duration until the next switch
+   or preview end; repeated switches have separate durations. The preview end follows loaded videos, or the timeline
+   duration when none are loaded. Switches after that end are marked **Past end**. The start input's tooltip retains
+   the absolute Resolve timecode. The preview updates the button count and titles immediately.
    Buttons follow each chapter's first switch in time order, not creation order. Editing a time or inserting a
    chapter reorders the buttons and their saved numbers together; repeated switches keep the same chapter, and
    chapters without a switch stay at the end.
-3. **Headlines**: one row each. Type the time and the words. Wrap words in `*asterisks*` for the orange accent
+3. **Headlines**: one row each. The **Length** badge uses the same minutes:seconds format as chapter durations,
+   including fractional seconds; it is hidden when the last headline's end is unspecified.
+   Type the time and the words. Wrap words in `*asterisks*` for the orange accent
    (an accent can span several words: `*AI stack*`).
 4. **Times** accept `3:44` (minutes:seconds), `224` (seconds) or the timecode Resolve shows, like `1:03:44`.
    `↑` / `↓` nudge by 1 second (`Shift` 5 s, `Alt` 0.1 s).

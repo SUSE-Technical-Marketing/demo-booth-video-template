@@ -460,7 +460,7 @@ onUnmounted(() => {
           @remove="removeClip" @error="toast" />
 
         <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :switches="state.chapter_starts"
-          :title="state.title" :product="state.product_name" :offset="offset"
+          :title="state.title" :product="state.product_name" :offset="offset" :end="totalDuration"
           @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
           @select="setCur($event.t + 0.1)" @choose-chapter="chooseChapter" @update-chapter-title="updateChapterTitle"
           @delete-switch="deleteSwitch" @delete-chapter="deleteChapter" @add-chapter="addChapter"

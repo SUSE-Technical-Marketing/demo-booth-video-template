@@ -2,17 +2,21 @@
 import { ref } from 'vue';
 import ChapterRow from './ChapterRow.vue';
 
-defineProps({
+const props = defineProps({
   chapters: { type: Array, required: true },
   switches: { type: Array, required: true },
   title: { type: String, required: true },
   product: { type: String, required: true },
   offset: { type: Number, required: true },
+  end: { type: Number, required: true },
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
   'choose-chapter', 'update-chapter-title', 'delete-switch', 'delete-chapter', 'add-chapter',
   'add-switch', 'update-metadata']);
 const namesList = ref(null), namesDetails = ref(null);
+function rowDuration(i) {
+  return Math.min(props.switches[i + 1]?.t ?? props.end, props.end) - props.switches[i].t;
+}
 function focusChapter(ch) {
   namesDetails.value.open = true;
   const input = namesList.value.querySelector(`input[data-chapter="${ch}"]`);
@@ -26,7 +30,8 @@ defineExpose({ focusChapter });
   <section class="card">
     <h2>Chapter buttons <span class="heading-hint">when the orange pill switches</span></h2>
     <div id="chapters">
-      <ChapterRow v-for="chapter in switches" :key="chapter.id" :chapter="chapter" :chapters="chapters" :offset="offset"
+      <ChapterRow v-for="(chapter, i) in switches" :key="chapter.id" :chapter="chapter" :chapters="chapters" :offset="offset"
+        :duration="rowDuration(i)"
         @begin-edit="emit('begin-edit')" @update-time="emit('update-time', chapter, $event)"
         @commit-time="emit('commit-time')" @error="emit('error', $event)" @select="emit('select', chapter)"
         @choose-chapter="emit('choose-chapter', chapter, $event)"
@@ -52,7 +57,8 @@ defineExpose({ focusChapter });
         </div>
       </details>
     </div>
-    <p class="hint">Edit chapter titles below the dropdown or in Names. Add a switch to revisit an existing chapter; deleting its last switch
+    <p class="hint">Edit chapter titles in Names. Length is the time until the next switch or preview end.
+      Add a switch to revisit an existing chapter; deleting its last switch
       also removes its button. More than six chapters scroll automatically with the active chapter.</p>
   </section>
 </template>

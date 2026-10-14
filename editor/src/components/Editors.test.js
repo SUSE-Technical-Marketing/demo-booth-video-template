@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import ChapterEditor from './ChapterEditor.vue';
 import ChapterRow from './ChapterRow.vue';
+import DurationBadge from './DurationBadge.vue';
 import HeadlineEditor from './HeadlineEditor.vue';
 import HeadlineRow from './HeadlineRow.vue';
 import { DEFAULT, fromJSON } from '../timing.js';
@@ -9,7 +10,7 @@ import { DEFAULT, fromJSON } from '../timing.js';
 describe('chapter components', () => {
   it('emits row edits without mutating chapter props', async () => {
     const chapter = { id: 1, t: 0, ch: 1 }, chapters = ['Intro', 'Details'];
-    const row = mount(ChapterRow, { props: { chapter, chapters, offset: 3600 } });
+    const row = mount(ChapterRow, { props: { chapter, chapters, offset: 3600, duration: 30 } });
     await row.get('.time').trigger('focus');
     await row.get('select').setValue('2');
     await row.get('.time').setValue('0:30');
@@ -21,7 +22,7 @@ describe('chapter components', () => {
     row.unmount();
   });
   it('does not seek when deleting a row', async () => {
-    const row = mount(ChapterRow, { props: { chapter: { id: 1, t: 0, ch: 1 }, chapters: ['Intro'], offset: 3600 } });
+    const row = mount(ChapterRow, { props: { chapter: { id: 1, t: 0, ch: 1 }, chapters: ['Intro'], offset: 3600, duration: 30 } });
     await row.get('button').trigger('click');
     expect(row.emitted('delete')).toHaveLength(1);
     expect(row.emitted('select')).toBeUndefined();
@@ -31,7 +32,7 @@ describe('chapter components', () => {
     const state = fromJSON(DEFAULT);
     const editor = mount(ChapterEditor, { props: {
       chapters: state.chapters, switches: state.chapter_starts, title: state.title,
-      product: state.product_name, offset: 3600,
+      product: state.product_name, offset: 3600, end: 195,
     } });
     await editor.get('#names input[data-chapter="1"]').setValue('Edited in names');
     await editor.get('#productIn').setValue('New product');
@@ -45,6 +46,38 @@ describe('chapter components', () => {
     expect(editor.emitted('add-chapter')).toHaveLength(1);
     expect(editor.emitted('add-switch')).toHaveLength(1);
     expect(state.chapters[0]).toBe(DEFAULT.chapters[0]);
+    editor.unmount();
+  });
+  it('shows a segment length rather than duplicating the starting timecode', async () => {
+    const row = mount(ChapterRow, { props: {
+      chapter: { id: 1, t: 15, ch: 1 }, chapters: ['Intro'], offset: 3600, duration: 10.5,
+    } });
+    expect(row.get('.time').element.value).toBe('0:15');
+    expect(row.get('.time').attributes('title')).toBe('01:00:15');
+    expect(row.get('.chapter-duration').text()).toBe('Length 0:10.5');
+    expect(row.findComponent(DurationBadge).props('duration')).toBe(10.5);
+    await row.setProps({ duration: 0 });
+    expect(row.get('.chapter-duration').text()).toBe('Length 0:00');
+    await row.setProps({ duration: -5 });
+    expect(row.get('.chapter-duration').text()).toBe('Past end');
+    expect(row.get('.chapter-duration').classes()).toContain('warn');
+    row.unmount();
+  });
+  it('updates segment lengths for repeated chapters, time edits and preview end changes', async () => {
+    const switches = [{ id: 1, t: 0, ch: 1 }, { id: 2, t: 30, ch: 2 }, { id: 3, t: 45, ch: 1 }];
+    const editor = mount(ChapterEditor, { props: {
+      chapters: ['Intro', 'Details'], switches, title: 'Video', product: 'Product', offset: 3600, end: 75,
+    } });
+    const lengths = () => editor.findAll('.chapter-duration').map(badge => badge.text());
+    expect(lengths()).toEqual(['Length 0:30', 'Length 0:15', 'Length 0:30']);
+    await editor.setProps({ switches: [switches[0], { ...switches[1], t: 10 }, switches[2]] });
+    expect(lengths()).toEqual(['Length 0:10', 'Length 0:35', 'Length 0:30']);
+    await editor.setProps({ end: 60 });
+    expect(lengths()).toEqual(['Length 0:10', 'Length 0:35', 'Length 0:15']);
+    await editor.setProps({ end: 35 });
+    expect(lengths()).toEqual(['Length 0:10', 'Length 0:25', 'Past end']);
+    await editor.setProps({ switches: [{ ...switches[0], t: 0 }, { ...switches[1], t: 0 }] });
+    expect(lengths()).toEqual(['Length 0:00', 'Length 0:35']);
     editor.unmount();
   });
 });
@@ -69,11 +102,26 @@ describe('headline components', () => {
       setsTextSize: true, selected: true,
     } });
     expect(row.classes()).toContain('sel');
+    expect(row.findComponent(DurationBadge).text()).toBe('Length 0:02');
+    expect(row.findComponent(DurationBadge).classes()).toContain('warn');
     expect(row.get('.meta').text()).toContain('short');
     expect(row.get('.meta').text()).toContain('sets text size');
     await row.setProps({ duration: 30, setsTextSize: false });
     expect(row.get('.meta').text()).toContain('long');
     expect(row.get('.meta').text()).not.toContain('sets text size');
+    expect(row.findComponent(DurationBadge).classes()).not.toContain('warn');
+    await row.setProps({ duration: 3 });
+    expect(row.get('.meta').text()).not.toContain('short');
+    await row.setProps({ duration: 25 });
+    expect(row.get('.meta').text()).not.toContain('long');
+    await row.setProps({ duration: 1.5 });
+    expect(row.findComponent(DurationBadge).text()).toBe('Length 0:01.5');
+    expect(row.get('.meta').text()).toContain('short');
+    await row.setProps({ duration: -1 });
+    expect(row.findComponent(DurationBadge).text()).toBe('Past end');
+    expect(row.get('.meta').text()).not.toContain('short');
+    await row.setProps({ duration: null });
+    expect(row.findComponent(DurationBadge).exists()).toBe(false);
     row.unmount();
   });
   it('calculates durations and forwards the affected headline', async () => {
@@ -82,8 +130,9 @@ describe('headline components', () => {
       headlines: state.headlines, end: state.headlines_end, wipe: 0.8, offset: 3600, textSizeIndex: 1,
     } });
     const rows = editor.findAll('.row');
-    expect(rows[0].get('.meta').text()).toContain('10 s');
-    expect(rows[1].get('.meta').text()).toContain('2 sshort');
+    expect(rows[0].get('.meta').text()).toContain('Length 0:10');
+    expect(rows[1].get('.meta').text()).toContain('Length 0:02');
+    expect(rows[1].get('.meta').text()).toContain('short');
     await rows[1].get('input:not(.time)').trigger('keydown', { key: 'Enter' });
     await rows[1].get('button[title="Delete"]').trigger('click');
     expect(editor.emitted('add-headline')).toEqual([[state.headlines[1]]]);

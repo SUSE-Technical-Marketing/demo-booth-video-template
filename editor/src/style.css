@@ -97,6 +97,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .mini { font-size: 12px; color: var(--muted); padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini b { color: var(--orange); font-weight: 600; }
 .chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.duration-badge { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chip.warn { color: var(--orange); border-color: var(--orange); }
 .chip.info { color: var(--green); border-color: var(--green); }
 .crow { display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 3px 8px; align-items: center; padding: 5px 6px; border-radius: 8px; }
@@ -106,6 +107,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .crow select { flex: 1; width: 100%; min-width: 0; }
 .crow > .chapter-title { grid-column: 1 / -1; grid-row: 2; width: 100%; }
 .crow .meta { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; }
+.crow .chapter-duration { grid-column: 1; grid-row: 2; justify-self: start; }
 .crow > button { grid-column: 3; grid-row: 1; }
 .crow .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
 .crow .dot { flex-shrink: 0; }

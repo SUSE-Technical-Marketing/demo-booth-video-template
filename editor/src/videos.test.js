@@ -57,6 +57,8 @@ describe('videos and New in the editor', () => {
     expect(rows[1].get('input.time').element.value).toBe('0:40');
     expect(wrapper.findAll('#tl .vclip')).toHaveLength(2);
     expect(wrapper.get('#durChip').text()).toBe('to 1:20');
+    expect(wrapper.findAll('.chapter-duration').map(badge => badge.text()))
+      .toEqual(['Length 0:30', 'Length 0:30', 'Length 0:20', 'Past end', 'Past end', 'Past end']);
   });
   it('integrates local clips with the sidebar, fitted preview and docked playback controls', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
@@ -111,12 +113,12 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnNew').trigger('click'); await flushPromises();
     expect(wrapper.findAll('#headlines .row')).toHaveLength(12);
   });
-  it('renames a chapter from its switch row', async () => {
-    const input = wrapper.get('#chapters .crow input.chapter-title');
+  it('renames a chapter from Names', async () => {
+    const input = wrapper.get('#names input[data-chapter="1"]');
     await input.setValue('Renamed');
     expect(wrapper.get('#stage .pill').text()).toBe('Renamed');
     expect(wrapper.get('#names input[data-chapter="1"]').element.value).toBe('Renamed');
     await wrapper.get('#names input[data-chapter="1"]').setValue('Edited in Names');
-    expect(input.element.value).toBe('Edited in Names');
+    expect(wrapper.get('#stage .pill').text()).toBe('Edited in Names');
   });
 });

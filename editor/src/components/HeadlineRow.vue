@@ -1,5 +1,6 @@
 <script setup>
 import AccentText from './AccentText.vue';
+import DurationBadge from './DurationBadge.vue';
 import TimeInput from './TimeInput.vue';
 
 defineProps({
@@ -25,8 +26,9 @@ const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', '
     </div>
     <div class="meta">
       <template v-if="duration != null">
-        <span class="chip" :class="{ warn: duration < 3 }" title="time on screen">{{ duration.toFixed(0) }} s</span>
-        <span v-if="duration < 3" class="chip warn">short</span>
+        <DurationBadge :duration="duration" :warning="duration < 3"
+          title="Time on screen until the next headline or headline end." />
+        <span v-if="duration >= 0 && duration < 3" class="chip warn">short</span>
         <span v-if="duration > 25" class="chip warn">long</span>
       </template>
       <span v-if="setsTextSize" class="chip info" title="The longest headline sets the shared text size">sets text size</span>
