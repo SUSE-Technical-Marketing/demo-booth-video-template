@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import ChapterRow from './ChapterRow.vue';
 import DurationBadge from './DurationBadge.vue';
 import HeadlineEditor from './HeadlineEditor.vue';
-import { fmt } from '../timing.js';
+import { fmt, tc } from '../timing.js';
 
 const props = defineProps({
   chapters: { type: Array, required: true },
@@ -12,6 +12,7 @@ const props = defineProps({
   end: { type: Number, required: true },
   headlines: { type: Array, default: () => [] },
   headlineEnd: { type: Number, default: null },
+  chaptersEnd: { type: Number, default: null },
   selectedId: { type: Number, default: null },
   textSizeId: { type: Number, default: null },
   selectedChapterId: { type: Number, default: null },
@@ -20,14 +21,14 @@ const props = defineProps({
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
   'update-chapter-title', 'delete-chapter', 'add-chapter', 'select-headline', 'update-follow',
-  'update-text', 'add-headline', 'set-playhead', 'delete-headline']);
+  'update-text', 'add-headline', 'set-playhead', 'delete-headline', 'change-chapters-end']);
 const chaptersList = ref(null);
 const headlineEditor = ref(null);
 const ownedHeadlines = chapter => props.headlines.filter(h => h.chapterId === chapter.id);
 const selectedChapter = computed(() => props.starts.find(c => c.id === props.selectedChapterId) ?? props.starts[0]);
 const selectedHeadlines = computed(() => ownedHeadlines(selectedChapter.value));
 function rowDuration(i) {
-  return Math.min(props.starts[i + 1]?.t ?? props.end, props.end) - props.starts[i].t;
+  return Math.min(props.starts[i + 1]?.t ?? props.end, props.end, props.chaptersEnd ?? Infinity) - props.starts[i].t;
 }
 function headlineBoundary(chapter) {
   return Math.min(chapter.t + rowDuration(props.starts.indexOf(chapter)), props.headlineEnd ?? Infinity) - chapter.t;
@@ -70,7 +71,14 @@ defineExpose({ focusChapter, focusHeadline });
         <h3>{{ chapters[selectedChapter.ch - 1] }}</h3>
         <div class="inspector-timing"><span>Starts {{ fmt(selectedChapter.t) }}</span>
           <DurationBadge :duration="rowDuration(starts.indexOf(selectedChapter))" class="chapter-duration"
-            title="Duration until the next chapter or preview end." /></div>
+            title="Duration until the next chapter, configured end or preview end." />
+          <label v-if="selectedChapter.id === starts.at(-1).id" class="inline chapter-end-control">
+            Ends at <input id="chapterEndAt" class="time" aria-label="Last chapter end" size="7"
+              :value="chaptersEnd == null ? '' : fmt(chaptersEnd)" :placeholder="`Auto: ${fmt(end)}`"
+              :title="chaptersEnd == null ? 'Leave blank to use the video end or estimated preview end. Accepts elapsed time or Resolve timecode.' : `${tc(chaptersEnd, offset)} in Resolve. Clear to use the automatic end.`"
+              @focus="emit('begin-edit')" @change="emit('change-chapters-end', $event)">
+          </label>
+        </div>
         <div class="headline-columns"><span>Within chapter</span><span>Headlines · {{ selectedHeadlines.length }}</span></div>
       </div>
         <HeadlineEditor ref="headlineEditor" :key="selectedChapter.id"

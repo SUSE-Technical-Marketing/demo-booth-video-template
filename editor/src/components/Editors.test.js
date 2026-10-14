@@ -8,6 +8,24 @@ import HeadlineRow from './HeadlineRow.vue';
 import { DEFAULT, fromJSON } from '../timing.js';
 
 describe('chapter components', () => {
+  it('offers an explicit end only for the final chapter and caps lengths and warnings', async () => {
+    const state = fromJSON(DEFAULT);
+    const editor = mount(ChapterEditor, { props: {
+      chapters: state.chapters, starts: state.chapter_starts, headlines: state.headlines,
+      offset: 3600, end: 195,
+    } });
+    expect(editor.find('#chapterEndAt').exists()).toBe(false);
+    await editor.setProps({ selectedChapterId: state.chapter_starts.at(-1).id, chaptersEnd: 160 });
+    expect(editor.get('.chapter-duration').text()).toBe('Length 0:10');
+    expect(editor.get('#chapterEndAt').element.value).toBe('2:40');
+    expect(editor.get('.headline-error').text()).toContain('Outside chapter');
+    await editor.get('#chapterEndAt').setValue('2:45');
+    expect(editor.emitted('change-chapters-end')).toHaveLength(1);
+    await editor.setProps({ chaptersEnd: null });
+    expect(editor.get('#chapterEndAt').element.value).toBe('');
+    expect(editor.get('.chapter-duration').text()).toBe('Length 0:45');
+    editor.unmount();
+  });
   it('separates chapter navigation and selected headlines into sibling cards', async () => {
     const state = fromJSON(DEFAULT);
     const editor = mount(ChapterEditor, { props: {
@@ -83,7 +101,7 @@ describe('chapter components', () => {
     await row.setProps({ duration: 0 });
     expect(row.attributes('title')).toBe('Length 0:00');
     await row.setProps({ duration: -5 });
-    expect(row.attributes('title')).toBe('Chapter starts after the video end');
+    expect(row.attributes('title')).toBe('Chapter starts after the effective chapter end');
     expect(row.get('.chapter-count').classes()).toContain('warn');
     row.unmount();
   });

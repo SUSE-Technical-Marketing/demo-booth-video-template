@@ -35,6 +35,9 @@ const history = [];
 let timer, saveTimer, toastTimer, lastTimestamp = 0, revision = 0, mounted = false;
 const context = document.createElement('canvas').getContext('2d');
 const totalDuration = computed(() => clips.value.length ? Math.max(...clips.value.map(clipEnd)) : duration(state.value));
+watch(totalDuration, end => {
+  if (!clips.value.length && state.value.chapters_end != null && cur.value > end) seek(end);
+});
 const previewState = computed(() => ({ ...state.value, preview_end: totalDuration.value }));
 const status = computed(() => dirty.value
   ? (handle.value ? 'unsaved changes…' : 'unsaved (not linked to a file)')
@@ -258,6 +261,17 @@ function updateEnd(event) {
   state.value.headlines_end = time;
   markDirty();
 }
+function updateChaptersEnd(event) {
+  const text = event.target.value.trim(), time = text === '' ? null : parseTime(text, offset.value);
+  if (time !== null && (!Number.isFinite(time) || time < 0.01 || time <= state.value.chapter_starts.at(-1).t)) {
+    event.target.value = state.value.chapters_end == null ? '' : fmt(state.value.chapters_end);
+    return toast('Enter an end after the last chapter starts, or leave it blank for automatic end');
+  }
+  event.target.value = time == null ? '' : fmt(time);
+  pushHistory();
+  state.value.chapters_end = time;
+  markDirty();
+}
 function updateWipe(event) {
   const seconds = +event.target.value;
   if (event.target.value === '' || !Number.isFinite(seconds) || seconds < 0) {
@@ -282,8 +296,11 @@ function ripple() {
   const by = +rippleBy.value;
   if (!Number.isFinite(by)) return toast('Enter a valid ripple amount');
   if (!by) return;
-  pushHistory();
   const at = cur.value - 1e-6;
+  if (state.value.chapters_end != null && state.value.chapters_end >= at && state.value.chapters_end + by < 0.01) {
+    return toast('Ripple would move the last chapter end before 0.01 seconds; use a smaller amount');
+  }
+  pushHistory();
   const move = row => { if (row.t >= at) row.t = Math.max(0, +(row.t + by).toFixed(2)); };
   const headlineTimes = state.value.headlines.map(h => [h, headlineTime(state.value, h)]);
   state.value.chapter_starts.forEach(move);
@@ -293,6 +310,9 @@ function ripple() {
   });
   if (state.value.headlines_end != null && state.value.headlines_end >= at) {
     state.value.headlines_end = Math.max(0, state.value.headlines_end + by);
+  }
+  if (state.value.chapters_end != null && state.value.chapters_end >= at) {
+    state.value.chapters_end = +(state.value.chapters_end + by).toFixed(2);
   }
   sortAll(state.value);
   markDirty();
@@ -482,6 +502,7 @@ onUnmounted(() => {
           :offset="offset" :end="totalDuration" :selected-chapter-id="selectedChapterId"
           :playing-chapter-id="playingChapter.id" :follow-playhead="followPlayhead"
           :headline-end="state.headlines_end" :selected-id="selectedId"
+          :chapters-end="state.chapters_end" @change-chapters-end="updateChaptersEnd"
           :text-size-id="state.headlines[headlineFit.idx]?.id"
           @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
           @select="selectChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"

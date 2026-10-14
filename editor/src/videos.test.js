@@ -64,6 +64,21 @@ describe('videos and New in the editor', () => {
     }
     expect(lengths).toEqual(['Length 0:30', 'Length 0:30', 'Length 0:20', 'Past end', 'Past end', 'Past end']);
   });
+  it('keeps loaded video duration while capping chapter and headline bands at the configured end', async () => {
+    await wrapper.get('#btnNew').trigger('click');
+    await addFiles('a.mp4');
+    await wrapper.get('#chapterEndAt').setValue('0:20');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:40');
+    expect(wrapper.get('.chapter-duration').text()).toBe('Length 0:20');
+    expect(parseFloat(wrapper.get('#tl .band').element.style.width)).toBe(50);
+    expect(parseFloat(wrapper.get('#tl .headline-band').element.style.width)).toBe(50);
+    await wrapper.get('#scrub').setValue('21');
+    expect(wrapper.get('#hl').text()).toBe('');
+    expect(wrapper.get('#content video').element.currentTime).toBe(21);
+    await wrapper.get('#chapterEndAt').setValue('0:50');
+    expect(wrapper.get('.chapter-duration').text()).toBe('Length 0:40');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:40');
+  });
   it('integrates local clips with the sidebar, fitted preview and docked playback controls', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});

@@ -111,6 +111,10 @@ def grab_frame(ffmpeg, video, t, fps, matrix="auto"):
 def chapter_metadata(lay, start, dur):
     """ffmetadata text with one MP4 chapter per chapter switch, in output time (0 = first frame written)."""
     esc = lambda x: re.sub(r"([=;#\\\n])", r"\\\1", str(x))
+    if lay.t.get("chapters_end") is not None:
+        dur = min(dur, max(0.0, lay.t["chapters_end"] - start))
+        if dur <= 0:
+            return None
     marks = [(max(0.0, t - start), c) for t, c in lay.chapter_starts if t - start < dur]
     if not marks:
         return None

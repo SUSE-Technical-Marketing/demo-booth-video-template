@@ -109,6 +109,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .inspector-heading { flex-shrink: 0; }
 .inspector-heading h3 { margin: 0 0 6px; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .inspector-timing { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 11px; }
+.chapter-end-control .time { width: 100px; }
 .headline-columns { display: flex; gap: 12px; color: var(--muted); font-size: 10px; margin: 8px 0 3px; }
 .headline-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .headline-list { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; padding-right: 3px; }

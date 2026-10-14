@@ -355,6 +355,53 @@ describe('Vue editor', () => {
       { title: 'Later', start: 20, headlines: [[3, 'Delayed']] },
     ],
   };
+  it('sets, exports, undoes and clears the last chapter end without loaded videos', async () => {
+    await openLinkedFile(ownedDocument);
+    await chooseChapter(2);
+    await wrapper.get('#scrub').setValue('40');
+    const end = wrapper.get('#chapterEndAt');
+    await end.trigger('focus');
+    await end.setValue('01:00:25');
+    expect(end.element.value).toBe('0:25');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:25');
+    expect(wrapper.get('.chapter-duration').text()).toBe('Length 0:05');
+    expect(wrapper.get('#scrub').element.value).toBe('25');
+    expect(wrapper.get('#hl').text()).toBe('');
+    expect(wrapper.findAll('#tl .band').at(-1).attributes('title')).toBe('0:20 – 0:25');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters_end).toBe(25);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#chapterEndAt').element.value).toBe('');
+    expect(wrapper.get('#durChip').text()).toBe('to 1:30');
+    await wrapper.get('#chapterEndAt').setValue('0:24');
+    await wrapper.get('#chapterEndAt').setValue('');
+    expect(wrapper.get('#durChip').text()).toBe('to 1:30');
+  });
+  it('rejects invalid or non-positive final chapter lengths without replacing the end', async () => {
+    await openLinkedFile({ ...ownedDocument, chapters_end: 30 });
+    await chooseChapter(2);
+    for (const invalid of ['invalid', '20', '0', '-1']) {
+      await wrapper.get('#chapterEndAt').setValue(invalid);
+      expect(wrapper.get('#chapterEndAt').element.value).toBe('0:30');
+      expect(wrapper.get('#toast').text()).toContain('end after the last chapter starts');
+      expect(wrapper.get('#durChip').text()).toBe('to 0:30');
+    }
+  });
+  it('ripples the configured end once and refuses to shift it before zero', async () => {
+    await openLinkedFile({ ...ownedDocument, chapters_end: 30 });
+    await wrapper.get('#scrub').setValue('5');
+    await wrapper.get('#rippleBy').setValue('2');
+    await wrapper.get('#btnRipple').trigger('click');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:32');
+    await chooseChapter(2);
+    expect(wrapper.get('.chapter-duration').text()).toBe('Length 0:10');
+    await wrapper.get('#rippleBy').setValue('-40');
+    await wrapper.get('#btnRipple').trigger('click');
+    expect(wrapper.get('#toast').text()).toContain('last chapter end before 0.01 seconds');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:32');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:30');
+  });
   it('shows only selected chapter headlines without duplicate DOM IDs', async () => {
     await openLinkedFile(ownedDocument);
     expect(wrapper.findAll('.crow')).toHaveLength(3);

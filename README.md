@@ -246,6 +246,12 @@ Use **Chrome or Edge** so the page can save straight to your file. Other browser
    have duration tooltips. The preview end follows loaded videos,
    or the timeline duration when none are loaded; chapters after that end are marked **Past end**.
    The start input's tooltip retains the absolute Resolve timecode.
+   Select the **last chapter** to set **Ends at** in its headline card. This is an absolute elapsed end time
+   (or a full Resolve timecode), not a chapter-relative offset. Leave it blank for automatic end.
+   Without loaded videos, it defines the preview timeline's duration; with videos, their actual duration stays
+   unchanged while chapter/headline bands stop at this end or the video end, whichever comes first.
+   Late headlines are retained with warnings. Undo, Save, Download and Ripple preserve this setting.
+   The final chapter button stays highlighted through any remaining video; setting an end does not trim video.
 3. **Headlines** shows only the selected chapter's headlines. **Add headline** adds to that chapter;
    each time is measured **from the chapter's start**, so `0:05` means five seconds into that chapter.
    A headline ends at the next headline in the same chapter, the chapter boundary, or the video end,
@@ -337,6 +343,7 @@ words and timings live in the JSON file and the script rebuilds the whole layout
     }
   ],
   "headlines_end": null,
+  "chapters_end": null,
   "wipe_seconds": 0.8
 }
 ```
@@ -348,6 +355,7 @@ words and timings live in the JSON file and the script rebuilds the whole layout
 | `chapters[].start` | Seconds from the start of the compound clip. |
 | `chapters[].headlines` | `[chapter-relative seconds, "text"]` pairs, or `[]` for no headlines. `*word*` = accent. Each headline is clipped at its chapter's end. |
 | `headlines_end` | Optional absolute cutoff for all headlines, or `null` to use chapter/video boundaries. |
+| `chapters_end` | Optional absolute end of the chapter sequence (at least 0.01 seconds), or `null` for automatic end. Caps chapter/headline ranges and MP4 chapter markers without trimming the rendered video. Also defines preview duration when no videos are loaded. |
 | `wipe_seconds` | How long each headline takes to wipe in. |
 | `product_name` | Text under the logo. |
 | `title`, `schema_version` | For your reference and for future format changes. |

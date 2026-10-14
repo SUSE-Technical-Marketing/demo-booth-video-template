@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeChapter, activeHeadline, chapterImportNotice, chapterScrollAt, chapterScrollSteps, DEFAULT, fromJSON,
+import { activeChapter, activeHeadline, chapterEnd, chapterImportNotice, chapterScrollAt, chapterScrollSteps, DEFAULT, duration, fromJSON,
   headlineEnd, headlineOutside, headlineTime, headlineWords, parseTime, removeChapter, sortAll, toJSON } from './timing.js';
 
 const fixture = count => ({
@@ -37,6 +37,10 @@ describe('timing JSON', () => {
     { headlines: [[0, '']] },
     { wipe_seconds: -1 },
     { headlines_end: NaN },
+    { chapters_end: 0 },
+    { chapters_end: -1 },
+    { chapters_end: Infinity },
+    { chapters_end: '20' },
   ])('rejects invalid imports: %j', overrides => {
     expect(() => fromJSON({ ...DEFAULT, ...overrides })).toThrow();
   });
@@ -87,6 +91,46 @@ describe('timing JSON', () => {
     const serialized = toJSON(state);
     sortAll(state);
     expect(toJSON(state)).toBe(serialized);
+  });
+});
+
+describe('explicit chapter sequence end', () => {
+  const document = { schema_version: 2, chapters: [
+    { title: 'Intro', start: 0, headlines: [[0, 'Intro headline']] },
+    { title: 'Last', start: 10, headlines: [[0, 'Final headline'], [8, 'Too late']] },
+  ], chapters_end: 15 };
+  it('uses the configured end for preview duration and caps the final chapter and headlines', () => {
+    const state = fromJSON(document), final = state.chapter_starts[1];
+    expect(duration(state)).toBe(15);
+    expect(chapterEnd(state, state.chapter_starts[0])).toBe(10);
+    expect(chapterEnd(state, final, 30)).toBe(15);
+    expect(headlineEnd(state, state.headlines[1], 30)).toBe(15);
+    expect(headlineOutside(state, state.headlines[2], 30)).toBe(true);
+    expect(activeHeadline(state, 14.99).text).toBe('Final headline');
+    expect(activeHeadline(state, 15)).toBeNull();
+    state.preview_end = 30;
+    expect(activeHeadline(state, 20)).toBeNull();
+    expect(activeChapter(state, 20)).toBe(2);
+  });
+  it('round-trips the end and retains out-of-range timings after moving chapters', () => {
+    const state = fromJSON(document);
+    expect(JSON.parse(toJSON(state)).chapters_end).toBe(15);
+    state.chapter_starts[1].t = 20;
+    sortAll(state);
+    expect(chapterEnd(state, state.chapter_starts[1], 30)).toBe(15);
+    expect(fromJSON(JSON.parse(toJSON(state))).chapters_end).toBe(15);
+  });
+  it('restores automatic duration when cleared and clips earlier loaded videos', () => {
+    const state = fromJSON(document);
+    expect(chapterEnd(state, state.chapter_starts[1], 12)).toBe(12);
+    state.chapters_end = null;
+    expect(duration(state)).toBe(90);
+    expect(JSON.parse(toJSON(state)).chapters_end).toBeNull();
+  });
+  it('does not silently serialize invalid ends to null', () => {
+    const state = fromJSON(document);
+    state.chapters_end = NaN;
+    expect(() => toJSON(state)).toThrow('chapters_end');
   });
 });
 

@@ -30,6 +30,7 @@ export const DEFAULT = {
 let nextId = 0;
 export const newRow = (values) => ({ id: ++nextId, ...values });
 const validTime = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const validChapterEnd = value => validTime(value) && value >= 0.01;
 const validHeadline = (row, relative = false) => Array.isArray(row) && row.length === 2 &&
   typeof row[0] === 'number' && Number.isFinite(row[0]) && (relative || row[0] >= 0) &&
   typeof row[1] === 'string' && Boolean(row[1].trim());
@@ -53,6 +54,9 @@ export function fromJSON(o) {
     throw new Error('headlines must contain valid times and non-empty text');
   }
   if (o.headlines_end != null && !validTime(o.headlines_end)) throw new Error('headlines_end must be a non-negative time');
+  if (o.chapters_end != null && !validChapterEnd(o.chapters_end)) {
+    throw new Error('chapters_end must be at least 0.01 seconds or null');
+  }
   if (o.wipe_seconds != null && !validTime(o.wipe_seconds)) throw new Error('wipe_seconds must be non-negative');
   if (o.title != null && typeof o.title !== 'string') throw new Error('title must be text');
   if (o.product_name != null && typeof o.product_name !== 'string') throw new Error('product_name must be text');
@@ -64,6 +68,7 @@ export function fromJSON(o) {
       o.chapter_starts.map(([t, ch]) => newRow({ t, ch })),
     headlines: [],
     headlines_end: o.headlines_end ?? null,
+    chapters_end: o.chapters_end ?? null,
     wipe_seconds: o.wipe_seconds ?? 0.8,
   };
   if (nested) {
@@ -82,6 +87,9 @@ export function fromJSON(o) {
 }
 
 export function toJSON(state) {
+  if (state.chapters_end != null && !validChapterEnd(state.chapters_end)) {
+    throw new Error('chapters_end must be at least 0.01 seconds or null');
+  }
   if (state.chapters.length !== state.chapter_starts.length ||
       state.chapter_starts.some((chapter, i) => chapter.ch !== i + 1 ||
         (i > 0 && chapter.t < state.chapter_starts[i - 1].t))) {
@@ -98,6 +106,7 @@ export function toJSON(state) {
       headlines: state.headlines.filter(h => h.chapterId === c.id).map(h => [n(h.t), h.text]),
     })),
     headlines_end: state.headlines_end == null ? null : n(state.headlines_end),
+    chapters_end: state.chapters_end == null ? null : n(state.chapters_end),
     wipe_seconds: n(state.wipe_seconds),
   }, null, 2) + '\n';
 }
@@ -131,7 +140,7 @@ export function removeChapter(state, ch) {
   sortAll(state);
 }
 
-export const duration = state => Math.max(60, ...state.headlines.map(h => headlineTime(state, h)),
+export const duration = state => state.chapters_end ?? Math.max(60, ...state.headlines.map(h => headlineTime(state, h)),
   ...state.chapter_starts.map(c => c.t), state.headlines_end || 0) + 30;
 
 export function headlineChapter(state, headline) {
@@ -142,7 +151,7 @@ export function headlineChapter(state, headline) {
 export const headlineTime = (state, headline) => headlineChapter(state, headline).t + headline.t;
 export function chapterEnd(state, chapter, end = duration(state)) {
   const i = state.chapter_starts.indexOf(chapter);
-  return Math.min(state.chapter_starts[i + 1]?.t ?? end, end);
+  return Math.min(state.chapter_starts[i + 1]?.t ?? end, end, state.chapters_end ?? Infinity);
 }
 export function headlineEnd(state, headline, end = duration(state)) {
   const chapter = headlineChapter(state, headline);

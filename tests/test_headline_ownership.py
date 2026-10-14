@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import runpy
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -14,7 +16,7 @@ from unittest.mock import patch
 from test_chapter_scroll import FakeComp, ROOT, expression_value
 import layout as L
 from layers import Layout, fit_px, parse_headline
-from render import load_timing
+from render import chapter_metadata, find_ffmpeg, load_timing, probe
 from timing import normalize_chapters
 
 
@@ -44,6 +46,58 @@ def build_fusion(source):
 
 
 class HeadlineOwnershipTests(unittest.TestCase):
+    def test_encoded_chapter_end_does_not_trim_the_video(self):
+        ffmpeg = find_ffmpeg()
+        with tempfile.TemporaryDirectory() as tmp:
+            clip, output = Path(tmp) / "source.mp4", Path(tmp) / "ended.mp4"
+            subprocess.run([ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                            "color=c=gray:s=320x180:r=25:d=1", "-c:v", "libx264", str(clip)], check=True)
+            timing_file = Path(tmp) / "timing.json"
+            timing_file.write_text(json.dumps({
+                "schema_version": 2, "chapters_end": 0.8,
+                "chapters": [{"title": "Intro", "start": 0, "headlines": [[0, "Headline"]]}],
+            }))
+            rendered = subprocess.run([sys.executable, str(ROOT / "render" / "render.py"), str(clip),
+                                       "-t", str(timing_file), "-o", str(output),
+                                       "--preset", "veryfast"], capture_output=True, text=True)
+            self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
+            self.assertAlmostEqual(probe(ffmpeg, output)[3], 1)
+            inspected = subprocess.run([ffmpeg, "-i", str(output), "-f", "null", "-"],
+                                       capture_output=True, text=True, check=True)
+            self.assertIn("start 0.000000, end 0.800000", inspected.stderr)
+
+    def test_explicit_chapter_end_caps_python_and_fusion_headlines(self):
+        source = {**owned_timing(), "chapters_end": 25}
+        layout = Layout(source)
+        self.assertEqual(layout.headline_at(24.99), (2, 23))
+        self.assertIsNone(layout.headline_at(25))
+        self.assertIsNone(layout.headline_at(30))
+        comp, result, _ = build_fusion(source)
+        self.assertEqual(result["HEADLINE_ENDS"], [8, 10, 25])
+        self.assertEqual(comp.FindTool("H3_Merge1").GetInput("Blend", 100 + 24 * 25), 1)
+        self.assertEqual(comp.FindTool("H3_Merge1").GetInput("Blend", 100 + 25 * 25), 0)
+        bar = (layout.bar_x, layout.bar_y, layout.bar_x + L.BAR["w"], layout.bar_y + L.BAR["h"])
+        self.assertEqual(layout.frame(25).crop(bar).tobytes(), layout.background().crop(bar).tobytes())
+
+    def test_chapter_metadata_obeys_configured_end_and_partial_renders(self):
+        layout = Layout({**owned_timing(), "chapters_end": 25})
+        metadata = chapter_metadata(layout, 0, 40)
+        self.assertIn("START=20000\nEND=25000\ntitle=Later", metadata)
+        self.assertIn("START=0\nEND=3000\ntitle=Later", chapter_metadata(layout, 22, 10))
+        self.assertIsNone(chapter_metadata(layout, 26, 10))
+        self.assertIn("END=24000\ntitle=Later", chapter_metadata(layout, 0, 24))
+
+    def test_missing_or_null_chapter_end_preserves_automatic_behavior(self):
+        for source in (owned_timing(), {**owned_timing(), "chapters_end": None}):
+            layout = Layout(source)
+            self.assertEqual(layout.headline_at(50), (2, 23))
+            self.assertIn("END=40000\ntitle=Later", chapter_metadata(layout, 0, 40))
+
+    def test_invalid_chapter_ends_are_rejected(self):
+        for end in (0, -1, 0.001, float("inf"), "25", True):
+            with self.subTest(end=end), self.assertRaisesRegex(ValueError, "chapters_end"):
+                normalize_chapters({**owned_timing(), "chapters_end": end})
+
     def test_schema_two_loads_with_owned_windows_and_does_not_rewrite_source(self):
         source = owned_timing()
         with tempfile.TemporaryDirectory() as tmp:

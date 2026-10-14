@@ -27,6 +27,9 @@ def normalize_chapters(timing):
     end = timing.get("headlines_end")
     if end is not None and not _time(end):
         raise ValueError("headlines_end must be a non-negative time or null")
+    chapters_end = timing.get("chapters_end")
+    if chapters_end is not None and (not _time(chapters_end) or chapters_end < 0.01):
+        raise ValueError("chapters_end must be at least 0.01 seconds or null")
     wipe = timing.get("wipe_seconds")
     if wipe is None:
         wipe = 0.8
@@ -69,7 +72,8 @@ def normalize_chapters(timing):
     outside = 0
     for i, chapter in enumerate(owned):
         boundary = min(owned[i + 1]["start"] if i + 1 < len(owned) else math.inf,
-                       end if end is not None else math.inf)
+                       end if end is not None else math.inf,
+                       chapters_end if chapters_end is not None else math.inf)
         rows = sorted(chapter["headlines"], key=lambda row: row[0])
         for j, (relative, text) in enumerate(rows):
             start = chapter["start"] + relative
