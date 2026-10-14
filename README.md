@@ -133,6 +133,20 @@ Other options: `--start 30 --duration 60` renders just that part (timing times s
 source), `--fps 30`, `--crf 18` (quality; lower is better) and `--preset medium`. `--selftest` renders a generated
 clip to prove the install works.
 
+### Using mise
+
+If you have [mise](https://mise.jdx.dev/) installed, the repository's [`mise.toml`](mise.toml) selects Python 3.13
+(the version used in CI) and provides tasks for setup, rendering, testing, and the local editor. From the repository
+root:
+
+```bash
+mise install
+mise run build my-edit.mp4 -t my-video.json -o my-video-final.mp4
+```
+
+The build task installs the renderer dependencies automatically. To check the project, run `mise run test`. To serve
+the timing editor locally, run `mise run run` and open <http://127.0.0.1:8765/>; press Ctrl+C to stop the server.
+
 **Colours:** the output is converted with the HD (BT.709) matrix and tagged as such, so SUSE green and orange come
 out within a few levels of the brand values in any player. (ffmpeg's default would have turned SUSE green visibly
 duller.) `--selftest` measures this and fails if it drifts. Source videos that don't declare their colours are
@@ -179,7 +193,10 @@ Use **Chrome or Edge** so the page can save straight to your file.
 1. Click **Open file…** and pick your `timings/<video>.json` from your clone. The page remembers it, and
    **autosave** writes every change to that file. (First time for a new video? Copy `timings/example.json`, rename
    it, and open the copy.)
-2. **Chapter buttons**: add a row for each moment the orange button should switch, and pick which button.
+2. **Chapter buttons**: use **Add chapter** to create a new button (up to six), then edit its title directly in the
+   row. Use **Add chapter switch** to revisit an existing button and pick it from the list. Deleting a chapter's
+   last switch removes its button too; **Names** also lets you delete a chapter and all its switches. Keep at least
+   one chapter switch. The preview updates the button count and titles immediately.
 3. **Headlines**: one row each. Type the time and the words. Wrap words in `*asterisks*` for the orange accent
    (an accent can span several words: `*AI stack*`).
 4. **Times** accept `3:44` (minutes:seconds), `224` (seconds) or the timecode Resolve shows, like `1:03:44`.
@@ -191,7 +208,7 @@ Use **Chrome or Edge** so the page can save straight to your file.
    them bigger.
 
 Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **last headline ends at**,
-**wipe** (how long the left-to-right build-in takes), and **Names** (video title, product name, the six button
+**wipe** (how long the left-to-right build-in takes), and **Names** (video title, product name, chapter button
 labels).
 
 After saving, re-run the script in Resolve (Path A) or the render command (Path B).
