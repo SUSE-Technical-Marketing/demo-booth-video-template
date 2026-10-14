@@ -38,7 +38,11 @@ async function editTitle(ch, text) {
   await input.trigger('focus');
   await input.setValue(text);
 }
-async function openLinkedFile(data = DEFAULT) {
+async function chooseChapter(index) {
+  await wrapper.findAll('.chapter-count')[index].trigger('click');
+  return wrapper.get('.chapter-inspector');
+}
+async function openLinkedFile(data = JSON.parse(toJSON(fromJSON(DEFAULT)))) {
   const writable = { write: vi.fn().mockResolvedValue(), close: vi.fn().mockResolvedValue() };
   const fileHandle = {
     name: 'linked.json', getFile: vi.fn().mockResolvedValue({ text: async () => JSON.stringify(data) }),
@@ -53,7 +57,7 @@ async function openLinkedFile(data = DEFAULT) {
 describe('Vue editor', () => {
   it('keeps timeline and playback separate from the scrolling editing workspace', () => {
     expect(wrapper.find('.editor-panel #chapters').exists()).toBe(true);
-    expect(wrapper.find('.editor-panel #headlines').exists()).toBe(true);
+    expect(wrapper.find('.editor-panel .chapter-inspector .headline-list').exists()).toBe(true);
     expect(wrapper.find('.preview-canvas #view').exists()).toBe(true);
     expect(wrapper.find('.workspace #tl').exists()).toBe(false);
     expect(wrapper.find('.timeline-dock #tl').exists()).toBe(true);
@@ -62,7 +66,8 @@ describe('Vue editor', () => {
   });
   it('renders sample chapters, headlines, accents and timeline', () => {
     expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
-    expect(wrapper.findAll('#headlines .row')).toHaveLength(12);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(2);
+    expect(wrapper.findAll('#tl .headline-band')).toHaveLength(12);
     expect(wrapper.findAll('#tl .band')).toHaveLength(6);
     expect(wrapper.get('#hl b').text()).toBe('Kubernetes,');
   });
@@ -77,7 +82,7 @@ describe('Vue editor', () => {
     expect(wrapper.get('#chapterCounter').text()).toContain('of 12');
   });
   it('deletes middle chapters, renumbers, and restores them with undo', async () => {
-    await wrapper.findAll('#chapters .crow')[2].get('button').trigger('click');
+    await wrapper.findAll('#chapters .crow')[2].get('button[title="Delete chapter"]').trigger('click');
     expect(wrapper.findAll('#stage .pill')).toHaveLength(5);
     expect(wrapper.findAll('#stage .pill')[2].text()).toBe('SUSE Security');
     expect(wrapper.findAll('#chapters .chapter-number')[2].text()).toBe('3');
@@ -86,7 +91,7 @@ describe('Vue editor', () => {
     expect(wrapper.findAll('#stage .pill')[2].text()).toBe('SUSE Virtualization');
   });
   it('matches preview, editor and saved chapter order after moving a chapter', async () => {
-    const time = wrapper.findAll('#chapters .time')[2];
+    const time = wrapper.findAll('#chapters .crow .time')[2];
     await time.trigger('focus');
     await time.setValue('0:10');
     const orderedTitles = [DEFAULT.chapters[0], DEFAULT.chapters[2], DEFAULT.chapters[1], ...DEFAULT.chapters.slice(3)];
@@ -95,8 +100,8 @@ describe('Vue editor', () => {
     expect(wrapper.get('.pill.on').text()).toBe(DEFAULT.chapters[2]);
     await wrapper.get('#btnDownload').trigger('click');
     const saved = JSON.parse(downloadJSON.mock.calls[0][0]);
-    expect(saved.chapters).toEqual(orderedTitles);
-    expect(saved.chapter_starts.slice(0, 3)).toEqual([[0, 1], [10, 2], [30, 3]]);
+    expect(saved.chapters.map(c => c.title)).toEqual(orderedTitles);
+    expect(saved.chapters.slice(0, 3).map(c => c.start)).toEqual([0, 10, 30]);
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(DEFAULT.chapters);
   });
@@ -122,13 +127,13 @@ describe('Vue editor', () => {
     expect(writable.write).not.toHaveBeenCalled();
     await editTitle(2, 'Renamed details');
     expect(wrapper.findAll('#stage .pill').at(-1).text()).toBe('Details');
-    await wrapper.findAll('#chapters .crow')[1].get('button').trigger('click');
+    await wrapper.findAll('#chapters .crow')[1].get('button[title="Delete chapter"]').trigger('click');
     expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Wrap up', 'Details']);
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3]]);
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters.map(c => c.start)).toEqual([0, 20, 30]);
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls[0][0]).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3]]);
+    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters.map(c => c.start)).toEqual([0, 20, 30]);
     expect(wrapper.get('#status').text()).toBe('saved to linked.json');
   });
   it('offers only direct chapter editing, with no switch or reuse controls', () => {
@@ -154,46 +159,47 @@ describe('Vue editor', () => {
     expect(wrapper.findAll('#stage .pill')[1].text()).toBe(DEFAULT.chapters[1]);
   });
   it('forwards row time edits and playhead actions with undo', async () => {
-    const time = wrapper.findAll('#chapters .time')[1];
+    const time = wrapper.findAll('#chapters .crow .time')[1];
     await time.trigger('focus');
     await time.setValue('0:35');
-    expect(wrapper.findAll('#chapters .time')[1].element.value).toBe('0:35');
+    expect(wrapper.findAll('#chapters .crow .time')[1].element.value).toBe('0:35');
     expect(wrapper.get('#status').text()).toContain('unsaved');
     await wrapper.get('#btnUndo').trigger('click');
-    expect(wrapper.findAll('#chapters .time')[1].element.value).toBe('0:30');
+    expect(wrapper.findAll('#chapters .crow .time')[1].element.value).toBe('0:30');
+    await chooseChapter(0);
     await wrapper.get('#scrub').setValue('7');
-    await wrapper.get('#headlines button[title="Set time to the playhead"]').trigger('click');
-    expect(wrapper.get('#headlines .time').element.value).toBe('0:07');
+    await wrapper.get('.headline-list button[title="Set time to the playhead"]').trigger('click');
+    expect(wrapper.get('.headline-list .time').element.value).toBe('0:07');
     await wrapper.get('#btnUndo').trigger('click');
-    expect(wrapper.get('#headlines .time').element.value).toBe('0:00');
+    expect(wrapper.get('.headline-list .time').element.value).toBe('0:00');
   });
-  it('keeps at least one chapter and headline', async () => {
+  it('keeps at least one chapter but allows removing every headline', async () => {
     while (wrapper.findAll('#chapters .crow').length > 1) {
-      await wrapper.findAll('#chapters .crow').at(-1).get('button').trigger('click');
+      await wrapper.findAll('#chapters .crow').at(-1).get('button[title="Delete chapter"]').trigger('click');
     }
-    await wrapper.get('#chapters .crow button').trigger('click');
+    await wrapper.get('#chapters .crow button[title="Delete chapter"]').trigger('click');
     expect(wrapper.findAll('#stage .pill')).toHaveLength(1);
     expect(wrapper.get('#toast').text()).toContain('Keep at least one');
-    while (wrapper.findAll('#headlines .row').length > 1) {
-      await wrapper.findAll('#headlines .row').at(-1).get('button[title="Delete"]').trigger('click');
+    while (wrapper.findAll('.headline-list .row').length) {
+      await wrapper.findAll('.headline-list .row').at(-1).get('button[title="Delete"]').trigger('click');
     }
-    await wrapper.get('#headlines button[title="Delete"]').trigger('click');
-    expect(wrapper.get('#toast').text()).toBe('Keep at least one headline');
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(0);
+    expect(wrapper.get('#hl').text()).toBe('');
   });
   it('edits headlines, adds with Enter, and applies ripple with undo', async () => {
-    const text = wrapper.get('#headlines input:not(.time)');
+    const text = wrapper.get('.headline-list input:not(.time)');
     await text.trigger('focus');
     await text.setValue('A *new accent* headline');
     expect(wrapper.get('#hl').text()).toBe('A new accent headline');
     expect(wrapper.findAll('#hl b')).toHaveLength(2);
     await text.trigger('keydown', { key: 'Enter' });
-    expect(wrapper.findAll('#headlines .row')).toHaveLength(13);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(3);
     await wrapper.get('#scrub').setValue('30');
     await wrapper.get('#rippleBy').setValue('-5');
     await wrapper.get('#btnRipple').trigger('click');
-    expect(wrapper.findAll('#chapters .time')[1].element.value).toBe('0:25');
+    expect(wrapper.findAll('#chapters .crow .time')[1].element.value).toBe('0:25');
     await wrapper.get('#btnUndo').trigger('click');
-    expect(wrapper.findAll('#chapters .time')[1].element.value).toBe('0:30');
+    expect(wrapper.findAll('#chapters .crow .time')[1].element.value).toBe('0:30');
   });
   it('links, remembers, saves and autosaves files without a backend', async () => {
     const { writable } = await openLinkedFile();
@@ -201,13 +207,13 @@ describe('Vue editor', () => {
     await editTitle(1, 'Renamed');
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters[0]).toBe('Renamed');
+    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters[0].title).toBe('Renamed');
     expect(wrapper.get('#status').text()).toBe('saved to linked.json');
     vi.useFakeTimers();
     await editTitle(1, 'Autosaved');
     await vi.advanceTimersByTimeAsync(700);
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).chapters[0]).toBe('Autosaved');
+    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).chapters[0].title).toBe('Autosaved');
   });
   it('preserves edits made during an asynchronous save', async () => {
     const { writable } = await openLinkedFile();
@@ -228,7 +234,7 @@ describe('Vue editor', () => {
     await editTitle(1, 'New file title');
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters[0]).toBe('New file title');
+    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters[0].title).toBe('New file title');
     expect(rememberHandle).toHaveBeenCalledWith(fileHandle);
     expect(wrapper.get('#status').text()).toBe('saved to new.json');
   });
@@ -243,7 +249,7 @@ describe('Vue editor', () => {
     const fileHandle = {
       name: 'remembered.json', queryPermission: vi.fn().mockResolvedValue('prompt'),
       requestPermission: vi.fn().mockResolvedValue('granted'),
-      getFile: vi.fn().mockResolvedValue({ text: async () => JSON.stringify({ ...DEFAULT, title: 'Remembered title' }) }),
+      getFile: vi.fn().mockResolvedValue({ text: async () => toJSON(fromJSON({ ...DEFAULT, title: 'Remembered title' })) }),
     };
     rememberedHandle.mockResolvedValue(fileHandle);
     wrapper = mount(App, { attachTo: document.body });
@@ -318,7 +324,7 @@ describe('Vue editor', () => {
     await editTitle(1, 'Download me');
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls[0][0])).toMatchObject({
-      schema_version: 1, chapters: ['Download me', ...DEFAULT.chapters.slice(1)],
+      schema_version: 2, chapters: [{ title: 'Download me', start: 0 }, ...DEFAULT.chapters.slice(1).map(title => ({ title }))],
     });
   });
   it('rejects malformed imported files without replacing state', async () => {
@@ -339,6 +345,160 @@ describe('Vue editor', () => {
     expect(wrapper.get('#toast').text()).toContain('use Download');
     expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
     expect(wrapper.findAll('#chapters .chapter-title').map(title => title.element.value)).toEqual(['Intro', 'Details', 'Intro']);
+  });
+
+  const ownedDocument = {
+    schema_version: 2,
+    chapters: [
+      { title: 'Intro', start: 0, headlines: [[0, 'First'], [8, 'Last'], [12, 'Outside']] },
+      { title: 'Empty', start: 10, headlines: [] },
+      { title: 'Later', start: 20, headlines: [[3, 'Delayed']] },
+    ],
+  };
+  it('shows only selected chapter headlines without duplicate DOM IDs', async () => {
+    await openLinkedFile(ownedDocument);
+    expect(wrapper.findAll('.crow')).toHaveLength(3);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(3);
+    expect(wrapper.findAll('.chapter-count').map(button => button.text())).toEqual(['3!', '0', '1']);
+    const inspector = await chooseChapter(2);
+    expect(inspector.get('.headline-list .time').element.value).toBe('0:03');
+    expect(inspector.get('.headline-list .time').attributes('title')).toBe('01:00:23');
+    await chooseChapter(0);
+    const ids = wrapper.findAll('[id]').map(element => element.attributes('id'));
+    expect(new Set(ids).size).toBe(ids.length);
+    await wrapper.get('#scrub').setValue('9');
+    expect(wrapper.get('#hl').text()).toBe('Last');
+    for (const time of ['10', '12', '20', '22']) {
+      await wrapper.get('#scrub').setValue(time);
+      expect(wrapper.get('#hl').text()).toBe('');
+    }
+    await wrapper.get('#scrub').setValue('24');
+    expect(wrapper.get('#hl').text()).toBe('Delayed');
+  });
+  it('moves chapter-owned headlines and projects their new absolute timeline times', async () => {
+    await openLinkedFile(ownedDocument);
+    const row = wrapper.findAll('.crow')[2];
+    await row.get('.time').trigger('focus');
+    await row.get('.time').setValue('0:05');
+    expect(wrapper.findAll('.chapter-title').map(input => input.element.value)).toEqual(['Intro', 'Later', 'Empty']);
+    expect(wrapper.get('.chapter-inspector .headline-list .time').element.value).toBe('0:03');
+    expect(wrapper.findAll('#tl .headline-band').some(band => band.attributes('title').startsWith('0:08 – 0:10  Delayed'))).toBe(true);
+    await wrapper.get('#scrub').setValue('9');
+    expect(wrapper.get('#hl').text()).toBe('Delayed');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters[1]).toEqual({
+      title: 'Later', start: 5, headlines: [[3, 'Delayed']],
+    });
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('.chapter-title').map(input => input.element.value)).toEqual(['Intro', 'Empty', 'Later']);
+  });
+  it('retains shortened-chapter headlines with warnings instead of deleting or spilling them', async () => {
+    await openLinkedFile(ownedDocument);
+    const time = wrapper.findAll('.crow .time')[1];
+    await time.trigger('focus');
+    await time.setValue('0:05');
+    await chooseChapter(0);
+    const rows = wrapper.findAll('.headline-list .row');
+    expect(rows).toHaveLength(3);
+    expect(rows[1].get('.headline-error').text()).toContain('Outside chapter');
+    expect(rows[1].get('input:not(.time)').element.value).toBe('Last');
+    await wrapper.get('#scrub').setValue('8');
+    expect(wrapper.get('#hl').text()).toBe('');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters[0].headlines).toEqual(ownedDocument.chapters[0].headlines);
+  });
+  it('adds, edits and sets headline times relative to the chosen chapter', async () => {
+    await openLinkedFile(ownedDocument);
+    const group = await chooseChapter(1);
+    await wrapper.get('#scrub').setValue('17');
+    await group.get('.add-headline').trigger('click');
+    const input = group.get('.headline-list input:not(.time)');
+    expect(document.activeElement).toBe(input.element);
+    expect(group.get('.headline-list .time').element.value).toBe('0:07');
+    await input.setValue('Owned by empty');
+    await group.get('.headline-list .time').setValue('01:00:14');
+    expect(group.get('.headline-list .time').element.value).toBe('0:04');
+    expect(wrapper.get('#hl').text()).toBe('Owned by empty');
+    await wrapper.get('#scrub').setValue('12');
+    await group.get('button[title="Set time to the playhead"]').trigger('click');
+    expect(group.get('.headline-list .time').element.value).toBe('0:02');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters[1].headlines).toEqual([[2, 'Owned by empty']]);
+  });
+  it('selects the owning chapter when jumping to its next headline', async () => {
+    await openLinkedFile(ownedDocument);
+    await wrapper.get('#scrub').setValue('15');
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '.', bubbles: true }));
+    await nextTick();
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Later');
+    expect(wrapper.get('#hl').text()).toBe('Delayed');
+    expect(wrapper.get('.headline-list .row.sel input:not(.time)').element.value).toBe('Delayed');
+  });
+  it('removes chapter children and restores ownership with undo', async () => {
+    await openLinkedFile(ownedDocument);
+    await wrapper.findAll('.crow')[0].get('button[title="Delete chapter"]').trigger('click');
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Empty');
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(0);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('.chapter-count').map(button => button.text())).toEqual(['3!', '0', '1']);
+    await chooseChapter(0);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(3);
+  });
+  it('undoes adding a focused headline in one step', async () => {
+    await openLinkedFile(ownedDocument);
+    const group = await chooseChapter(1);
+    await wrapper.get('#scrub').setValue('12');
+    await group.get('.add-headline').trigger('click');
+    expect(group.findAll('.headline-list .row')).toHaveLength(1);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(0);
+  });
+  it('ripples absolute cue times without shifting chapter children twice', async () => {
+    await openLinkedFile(ownedDocument);
+    await wrapper.get('#scrub').setValue('5');
+    await wrapper.get('#rippleBy').setValue('2');
+    await wrapper.get('#btnRipple').trigger('click');
+    await wrapper.get('#btnDownload').trigger('click');
+    const saved = JSON.parse(downloadJSON.mock.calls[0][0]);
+    expect(saved.chapters[0].headlines).toEqual([[0, 'First'], [10, 'Last'], [14, 'Outside']]);
+    expect(saved.chapters[1].start).toBe(12);
+    expect(saved.chapters[2]).toEqual({ title: 'Later', start: 22, headlines: [[3, 'Delayed']] });
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('.crow .time').map(input => input.element.value)).toEqual(['0:00', '0:10', '0:20']);
+  });
+  it('keeps editing selection independent from scrubbing and follows only when requested', async () => {
+    await openLinkedFile(ownedDocument);
+    await chooseChapter(1);
+    await wrapper.get('#scrub').setValue('24');
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Empty');
+    expect(wrapper.get('.crow .dot.playing').element.closest('.crow').querySelector('.chapter-title').value).toBe('Later');
+    await wrapper.get('#followPlayhead').setValue(true);
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Later');
+    await wrapper.get('.headline-list input:not(.time)').trigger('focus');
+    expect(wrapper.get('#followPlayhead').element.checked).toBe(false);
+    await wrapper.get('#scrub').setValue('0');
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Later');
+  });
+  it('selects timeline chapter and headline bands without changing document data', async () => {
+    await openLinkedFile(ownedDocument);
+    const before = wrapper.get('#status').text();
+    await wrapper.findAll('#tl .band')[1].trigger('click');
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Empty');
+    const band = wrapper.findAll('#tl .headline-band').find(band => band.text() === 'Delayed');
+    await band.trigger('click');
+    await nextTick();
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('Later');
+    expect(wrapper.get('.headline-list .row.sel input:not(.time)').element.value).toBe('Delayed');
+    expect(wrapper.get('#scrub').element.value).toBe('23');
+    expect(wrapper.get('#status').text()).toBe(before);
+  });
+  it('preserves native Space activation on timeline buttons instead of starting playback', () => {
+    const band = wrapper.findAll('#tl .headline-band')[0];
+    band.element.focus();
+    const event = new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true });
+    band.element.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(wrapper.get('#btnPlay').text()).toBe('Play');
   });
 });
 
@@ -374,6 +534,17 @@ describe('Vue preview and time inputs', () => {
     expect(time.emitted('error')).toHaveLength(1);
     await nextTick();
     expect(time.get('input').element.value).toBe('3:44');
+    time.unmount();
+  });
+  it('converts absolute timecode to chapter-relative time, including an out-of-chapter warning value', async () => {
+    const time = mount(TimeInput, { props: { modelValue: -5, offset: 3660, relative: true } });
+    expect(time.get('input').element.value).toBe('-0:05');
+    expect(time.get('input').attributes('title')).toBe('01:00:55');
+    await time.get('input').setValue('01:01:03');
+    expect(time.emitted('update:modelValue')[0]).toEqual([3]);
+    await time.get('input').setValue('01:00:55');
+    expect(time.emitted('update:modelValue')[1]).toEqual([-5]);
+    expect(time.get('input').element.value).toBe('-0:05');
     time.unmount();
   });
 });

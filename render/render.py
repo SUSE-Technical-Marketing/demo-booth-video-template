@@ -79,21 +79,10 @@ def load_timing(arg):
     if not p.exists():
         sys.exit("Timing file not found: %s (looked in timings/ too)" % arg)
     tm = json.loads(p.read_text())
-    problems = []
-    for key in ("chapters", "chapter_starts", "headlines"):
-        if not tm.get(key):
-            problems.append('"%s" is missing or empty' % key)
-    if not problems:
-        n = len(tm["chapters"])
-        for sec, ch in tm["chapter_starts"]:
-            if not 1 <= int(ch) <= n:
-                problems.append("chapter switch at %ss points to chapter %s, but only 1-%d exist" % (sec, ch, n))
-        for sec, text in tm["headlines"]:
-            if float(sec) < 0 or not str(text).strip():
-                problems.append("bad headline at %ss: %r" % (sec, text))
-    if problems:
-        sys.exit("%s: %s" % (p, "; ".join(problems)))
-    notice = normalize_chapters(tm)
+    try:
+        notice = normalize_chapters(tm)
+    except ValueError as error:
+        sys.exit("%s: %s" % (p, error))
     if notice:
         print("Timing import: " + notice, file=sys.stderr)
     return tm

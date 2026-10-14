@@ -7,11 +7,12 @@ defineProps({
   duration: { type: Number, required: true },
   cur: { type: Number, required: true },
   selectedId: { type: Number, default: null },
+  selectedChapterId: { type: Number, default: null },
   playing: { type: Boolean, required: true },
   offset: { type: Number, required: true },
   clips: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['seek', 'toggle-play']);
+const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headline']);
 </script>
 
 <template>
@@ -25,12 +26,15 @@ const emit = defineEmits(['seek', 'toggle-play']);
         <div id="timelabel" class="timelabel">{{ fmt(cur) }}<small>{{ tc(cur, offset) }}</small></div>
       </div>
     </div>
-    <Timeline :state="state" :duration="duration" :cur="cur" :selected-id="selectedId" :clips="clips" @seek="emit('seek', $event)" />
+    <Timeline :state="state" :duration="duration" :cur="cur" :selected-id="selectedId" :clips="clips"
+      :selected-chapter-id="selectedChapterId" @seek="emit('seek', $event)"
+      @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)" />
     <div class="timeline-legend">
       <span><i class="chapter-key"></i> Chapters</span>
-      <span><i class="headline-key"></i> Headline cues</span>
+      <span><i class="headline-key"></i> Headlines</span>
+      <span><i class="invalid-key"></i> Outside chapter</span>
       <span v-if="clips.length"><i class="video-key"></i> Videos</span>
-      <span class="timeline-help">Click or drag to scrub; click an editor row to jump to it.</span>
+      <span class="timeline-help">Select a band to edit; drag to scrub. Gaps mean no headline.</span>
     </div>
   </section>
 </template>

@@ -233,27 +233,50 @@ Use **Chrome or Edge** so the page can save straight to your file. Other browser
 1. Click **Open file…** and pick your `timings/<video>.json` from your clone. The page remembers it, and
    **autosave** writes every change to that file. (First time for a new video? Copy `timings/example.json`, rename
    it, and open the copy.)
-2. **Chapters**: each row is one chapter and one button, with its start time and title edited directly in the row.
-   **Add chapter** inserts a chapter at the playhead and selects its title for editing. Delete removes the chapter
-   and its button; keep at least one. There is no chapter reuse: buttons advance once in chronological order
-   through each pass of the looping video. Changing a start time reorders the titles and saved numbers together.
-   **Length** shows the duration until the next chapter or preview end. The preview end follows loaded videos,
+2. **Chapters**: the compact list shows each chapter's start, directly editable title and headline count.
+   Select a chapter to edit its headlines in the separate **selected-chapter headlines** card below.
+   The chapter list and headlines have their own bordered cards and scroll independently.
+   An outlined row is the editing selection; a bright dot marks the chapter currently playing.
+   Selecting a chapter does not seek or interrupt the preview. Enable **Follow playhead** to switch the
+   editing panel as playback or scrubbing crosses chapters; focusing an edit field turns following off.
+   **+ Chapter** inserts a chapter at the playhead and selects its title for editing. Delete removes the chapter
+   and all its headlines; keep at least one chapter. There is no chapter reuse: buttons advance once in chronological order
+   through each pass of the looping video. Changing a start time moves its headlines with it and reorders the titles together.
+   The selected chapter's **Length** shows its duration until the next chapter or preview end; other rows
+   have duration tooltips. The preview end follows loaded videos,
    or the timeline duration when none are loaded; chapters after that end are marked **Past end**.
    The start input's tooltip retains the absolute Resolve timecode.
-3. **Headlines**: one row each. The **Length** badge uses the same minutes:seconds format as chapter durations,
-   including fractional seconds; it is hidden when the last headline's end is unspecified.
-   Type the time and the words. Wrap words in `*asterisks*` for the orange accent
+3. **Headlines** shows only the selected chapter's headlines. **Add headline** adds to that chapter;
+   each time is measured **from the chapter's start**, so `0:05` means five seconds into that chapter.
+   A headline ends at the next headline in the same chapter, the chapter boundary, or the video end,
+   whichever comes first. Empty chapters and gaps before a chapter's first headline show no text.
+   The **Length** badge includes fractional seconds and is capped at the chapter boundary.
+   The text appears once, with an explicit **Within chapter** timing label and a `+` before relative times.
+   Shortening a chapter retains late headlines with an **outside chapter** warning and a warning on the
+   chapter's count; they are not shown
+   until you adjust their times or the chapter boundary. Deleting every headline is allowed.
+   Wrap words in `*asterisks*` for the orange accent
    (an accent can span several words: `*AI stack*`).
 4. **Times** accept `3:44` (minutes:seconds), `224` (seconds) or the timecode Resolve shows, like `1:03:44`.
-   `↑` / `↓` nudge by 1 second (`Shift` 5 s, `Alt` 0.1 s).
-5. Click a row, drag the timeline or press `Space` to preview. The preview shows the real layout with the active
+   For headline fields, full Resolve timecodes are converted to that chapter's relative time;
+   the tooltip shows the absolute Resolve timecode. `↑` / `↓` nudge by 1 second (`Shift` 5 s, `Alt` 0.1 s).
+5. Use a headline's **Preview** button, drag the timeline or press `Space` to preview.
+   The timeline has chapter bands and a second track of **headline duration bands**. Each headline band ends
+   at its chapter boundary or video end; gaps mean no headline. Selecting a band seeks there and opens its
+   chapter/ headline editor. Bands are keyboard-accessible; dragging scrubs without moving document timings.
+   Invalid or zero-length cues remain selectable as narrow markers, not misleading duration bands.
+   The preview shows the real layout with the active
    button and the wipe. It's close to Fusion's result but not identical, so do the final check in Resolve.
-6. Watch the chips: **short** (under 3 s on screen) and **long** (over 25 s) are worth a second look, and the
-   headline marked **sets text size** is the longest, which shrinks every headline. Shortening it makes all of
+6. A highlighted **Length** badge indicates **short** (under 3 s) or **long** (over 25 s); its tooltip explains why.
+   The longest headline's text-field tooltip says it **sets the shared text size**, which shrinks every headline.
+   The preview's size summary also identifies it. Shortening it makes all of
    them bigger.
 
-Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **last headline ends at**,
+Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
 **wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).
+Videos, metadata, headline settings and ripple controls are grouped under **Videos and project settings**
+so they do not crowd the chapter/headline editor. Secondary row actions appear on hover or keyboard focus
+(and stay visible on touch devices).
 
 For more than six chapters, the sidebar becomes a six-button viewport. At each chapter start it scrolls smoothly
 over 0.4 seconds, keeping two previous chapters above the active button and three next chapters below it whenever
@@ -298,12 +321,21 @@ words and timings live in the JSON file and the script rebuilds the whole layout
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "title": "SUSE AI Factory demo",
   "product_name": "SUSE AI Factory",
-  "chapters": ["Apps from SUSE & NVIDIA", "Blueprints", "..."],
-  "chapter_starts": [[0, 1], [121, 2]],
-  "headlines": [[0, "Tested, supported *applications* for AI"], [18, "..."]],
+  "chapters": [
+    {
+      "title": "Apps from SUSE & NVIDIA",
+      "start": 0,
+      "headlines": [[0, "Tested, supported *applications* for AI"], [18, "..."]]
+    },
+    {
+      "title": "Blueprints",
+      "start": 121,
+      "headlines": [[5, "Start with a *blueprint*"]]
+    }
+  ],
   "headlines_end": null,
   "wipe_seconds": 0.8
 }
@@ -311,21 +343,27 @@ words and timings live in the JSON file and the script rebuilds the whole layout
 
 | Key | Meaning |
 |---|---|
-| `chapters` | Names of the left-hand buttons (at least one). More than six scroll automatically. Long names are shrunk to fit. |
-| `chapter_starts` | One `[seconds, chapter number]` per chapter, ordered by start time with numbers `1, 2, 3, ...`. |
-| `headlines` | `[seconds, "text"]`: shown from that second until the next headline. `*word*` = accent. |
-| `headlines_end` | Second at which the last headline goes away, or `null` to keep it to the end of the clip. |
+| `chapters` | At least one chapter object, ordered by `start`. More than six buttons scroll automatically. |
+| `chapters[].title` | Chapter/button name; long names are shrunk to fit. |
+| `chapters[].start` | Seconds from the start of the compound clip. |
+| `chapters[].headlines` | `[chapter-relative seconds, "text"]` pairs, or `[]` for no headlines. `*word*` = accent. Each headline is clipped at its chapter's end. |
+| `headlines_end` | Optional absolute cutoff for all headlines, or `null` to use chapter/video boundaries. |
 | `wipe_seconds` | How long each headline takes to wipe in. |
 | `product_name` | Text under the logo. |
 | `title`, `schema_version` | For your reference and for future format changes. |
 
-Seconds are measured from the start of the compound clip. The script checks the file when it starts and stops with a
-plain message if, for example, a chapter start points at a title that doesn't exist.
+Chapter starts are absolute elapsed seconds; headline times are chapter-relative seconds. For example,
+the Blueprint headline above appears at `121 + 5 = 126` seconds. Negative offsets or headlines past a chapter
+boundary remain editable with warnings but are never rendered. The script validates the file before building
+and reports skipped out-of-chapter headlines explicitly.
 
-The JSON keys remain compatible with existing timing files. On import, the editor and both renderers convert
+The editor saves schema 2. The editor and both renderers also accept legacy schema-1 files with string chapter
+titles, `chapter_starts` and global absolute `headlines`. On import they convert
 legacy repeated chapter references into independent chapters, preserving every segment's title and start time.
-Titles with no start time are omitted, with an explicit import notice. The editor marks converted files as
-unsaved; use **Save** or **Download** to persist the forward-only sequence. Renderers normalize in memory without
+Titles with no start time are omitted, with an explicit import notice. Each legacy headline is assigned to the chapter
+active at its start; no text is carried into the following chapter. Headlines before the first chapter are retained
+there as negative offsets and flagged outside the chapter. The editor marks converted files as
+unsaved; use **Save** or **Download** to persist the nested schema. Renderers normalize in memory without
 rewriting the source file.
 
 ## Troubleshooting
@@ -333,10 +371,11 @@ rewriting the source file.
 | Symptom | Fix |
 |---|---|
 | The orange button never changes | Re-run the latest script and read the `check` lines. Each must say **ok**. If one says **WRONG**, send the Console output to whoever maintains this repo. |
-| Headlines show at the wrong time | Times are from the start of the compound clip. Re-check that the clip starts at the timeline start, and use **Ripple** after cuts. |
+| Headlines show at the wrong time | Headline times are relative to their chapter; chapter starts are relative to the compound clip. Check both, and use **Ripple** after cuts. |
 | Console: `Could not find the demo-booth-video-template folder` | Set `REPO_DIR` at the top to the folder that contains `assets/` and `timings/`. |
 | Console: `Could not read ... timings/...json` | `TIMING_NAME` at the top of the script doesn't match a file in `timings/`. |
 | Console: `chapter switch ... points to chapter ...` | A legacy chapter number refers to a missing title. Correct the timing file, then reopen it. |
+| A headline is marked **outside chapter** | Move its relative time inside the chapter or extend the chapter. The editor keeps its text but both renderers omit it until corrected. |
 | Text is Times/serif or the wrong font | Path A: the SUSE font isn't installed, or Resolve wasn't restarted after installing it. Path B needs no installed font. |
 | Path B: `ffmpeg not found` | Run `pip install -r render/requirements.txt` inside your virtual environment (the renderer uses the ffmpeg that package bundles). |
 | Path B: colours look different from the preview | Run `--selftest`; its `colour check` line shows the measured error (expect 4 or less). A larger number means a changed encoder setting. |

@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import layout as L
 from chapter_scroll import scroll_position, scroll_steps
+from timing import headline_intervals, normalize_chapters
 
 ROOT = Path(__file__).resolve().parent.parent
 FONT_PATH = ROOT / "assets" / "fonts" / "SUSE-Medium.otf"
@@ -34,7 +35,7 @@ def text_width(text, px):
 
 def fit_px(texts, base_px, max_w):
     """Largest size <= base_px at which the widest of texts is no wider than max_w."""
-    widest = max(text_width(t, base_px) for t in texts)
+    widest = max((text_width(t, base_px) for t in texts), default=0)
     return min(base_px, base_px * max_w / max(1.0, widest))
 
 
@@ -76,6 +77,9 @@ class Layout:
     """Pre-computes sizes and draws the layers for one timing file."""
 
     def __init__(self, timing):
+        if timing.get("schema_version") == 2:
+            timing = dict(timing)
+            normalize_chapters(timing)
         self.t = timing
         self.chapters = timing["chapters"]
         self.n = len(self.chapters)
@@ -83,12 +87,13 @@ class Layout:
         self.wipe = float(timing.get("wipe_seconds", 0.8))
         self.chapter_starts = sorted((float(s), int(c)) for s, c in timing["chapter_starts"])
         self.scroll_steps = scroll_steps(self.chapter_starts, self.n, L.CHAPTER_SCROLL)
-        self.headlines = sorted((float(s), parse_headline(t)) for s, t in timing["headlines"])
-        self.hl_end = timing.get("headlines_end")
+        intervals = headline_intervals(timing)
+        self.headlines = [(start, parse_headline(text)) for start, text, _ in intervals]
+        self.hl_ends = [end for _, _, end in intervals]
         S = L.TEXT_SCALE
         self.pill_px = fit_px(self.chapters, L.PILL_TEXT_PX * S, L.PILL["w"] - 2 * L.PILL_TEXT_PAD)
         self.prod_px = fit_px([self.product or " "], L.PRODUCT_PX * S, L.PRODUCT_MAX_W)
-        plains = [" ".join(w for w, _ in ws) for _, ws in self.headlines]
+        plains = [" ".join(w for w, _ in parse_headline(text)) for _, text in timing["headlines"]]
         self.hl_px = fit_px(plains, L.HEADLINE_PX * S, L.HEADLINE_MAX_W)
         self.bar_x = int(round(L.BAR["cx"] - L.BAR["w"] / 2))
         self.bar_y = int(round(L.BAR["cy"] - L.BAR["h"] / 2))
@@ -108,10 +113,8 @@ class Layout:
         """(index, start_seconds) of the headline showing at t, or None."""
         found = None
         for i, (s, _) in enumerate(self.headlines):
-            if s <= t + 1e-6:
+            if s <= t + 1e-6 and (self.hl_ends[i] is None or t < self.hl_ends[i]):
                 found = (i, s)
-        if found and self.hl_end is not None and t >= float(self.hl_end):
-            return None
         return found
 
     # ---- layers --------------------------------------------------------------------------------

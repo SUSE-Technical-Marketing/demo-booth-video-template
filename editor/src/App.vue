@@ -1,28 +1,41 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
-import HeadlineEditor from './components/HeadlineEditor.vue';
 import Preview from './components/Preview.vue';
 import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { chapterImportNotice, DEFAULT, duration, fitPx, fmt, fromJSON, newRow, parseClock,
+import { activeChapter, chapterImportNotice, DEFAULT, duration, fitPx, fmt, fromJSON, headlineChapter, headlineEnd,
+  headlineOutside, headlineTime, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE, toJSON } from './timing.js';
 
 const state = ref(fromJSON(DEFAULT));
 const handle = shallowRef(null), reconnectHandle = shallowRef(null);
 const dirty = ref(false), saving = ref(false), autosave = ref(true);
 const cur = ref(0), selectedId = ref(null), playing = ref(false);
+const selectedChapterId = ref(state.value.chapter_starts[0].id), followPlayhead = ref(false);
+const playingChapter = computed(() => state.value.chapter_starts.find(c => c.ch === activeChapter(state.value, cur.value)));
+watch(() => state.value.chapter_starts.map(c => c.id), ids => {
+  if (!ids.includes(selectedChapterId.value)) selectedChapterId.value = ids[0];
+  if (!state.value.headlines.some(h => h.id === selectedId.value)) selectedId.value = null;
+});
+watch([followPlayhead, playingChapter], ([follow, chapter]) => {
+  if (follow && selectedChapterId.value !== chapter.id) {
+    selectedChapterId.value = chapter.id;
+    selectedId.value = null;
+  }
+});
 const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
-const fileInput = ref(null), headlineEditor = ref(null), chapterEditor = ref(null);
+const fileInput = ref(null), chapterEditor = ref(null);
 const clips = ref([]);
 const history = [];
 let timer, saveTimer, toastTimer, lastTimestamp = 0, revision = 0, mounted = false;
 const context = document.createElement('canvas').getContext('2d');
 const totalDuration = computed(() => clips.value.length ? Math.max(...clips.value.map(clipEnd)) : duration(state.value));
+const previewState = computed(() => ({ ...state.value, preview_end: totalDuration.value }));
 const status = computed(() => dirty.value
   ? (handle.value ? 'unsaved changes…' : 'unsaved (not linked to a file)')
   : (handle.value ? `saved to ${handle.value.name}` : 'sample data: click Open file… and pick a timings/*.json'));
@@ -41,10 +54,8 @@ const headlineFit = computed(() => {
 });
 const pillPx = computed(() => fitPx(Math.max(...state.value.chapters.map(c => measure(c, 28))), 28, 324));
 const productPx = computed(() => fitPx(measure(state.value.product_name || 'SUSE AI Factory', 56), 56, 350));
-const shortCount = computed(() => state.value.headlines.filter((h, i) => {
-  const end = state.value.headlines[i + 1]?.t ?? state.value.headlines_end;
-  return end != null && end - h.t < 3;
-}).length);
+const shortCount = computed(() => state.value.headlines.filter(h => !headlineOutside(state.value, h, totalDuration.value) &&
+  headlineEnd(state.value, h, totalDuration.value) - headlineTime(state.value, h) < 3).length);
 
 async function addVideos(files) {
   stop();
@@ -98,6 +109,22 @@ function pushHistory() {
   if (history[history.length - 1] !== snapshot) history.push(snapshot);
   if (history.length > 100) history.shift();
 }
+function beginEdit() {
+  followPlayhead.value = false;
+  pushHistory();
+}
+function selectChapter(chapter) {
+  followPlayhead.value = false;
+  selectedChapterId.value = chapter.id;
+  selectedId.value = null;
+}
+async function selectTimelineHeadline(h) {
+  followPlayhead.value = false;
+  selectedChapterId.value = h.chapterId;
+  selectedId.value = h.id;
+  await nextTick();
+  chapterEditor.value.focusHeadline(h.id);
+}
 function scheduleSave() {
   clearTimeout(saveTimer);
   if (mounted && dirty.value && handle.value && autosave.value) saveTimer = setTimeout(save, 700);
@@ -108,6 +135,8 @@ function markDirty() {
   scheduleSave();
 }
 function undo() {
+  const current = JSON.stringify(state.value);
+  while (history.length && history.at(-1) === current) history.pop();
   if (!history.length) return toast('Nothing to undo');
   state.value = JSON.parse(history.pop());
   selectedId.value = null;
@@ -139,39 +168,42 @@ function play() {
   timer = requestAnimationFrame(tick);
 }
 function activateHeadline(h) {
+  stop();
+  followPlayhead.value = false;
+  selectedChapterId.value = h.chapterId;
   selectedId.value = h.id;
-  setCur(h.t + state.value.wipe_seconds + 0.2);
+  setCur(headlineTime(state.value, h) + state.value.wipe_seconds + 0.2);
 }
 async function selectHeadline(h, focus = false) {
   activateHeadline(h);
   await nextTick();
-  headlineEditor.value?.focusHeadline(h.id, focus);
+  chapterEditor.value?.focusHeadline(h.id, focus);
 }
 function jump(direction) {
-  const rows = state.value.headlines;
-  const h = direction > 0 ? rows.find(h => h.t > cur.value + 0.5)
-    : [...rows].reverse().find(h => h.t < cur.value - 0.5);
+  const rows = state.value.headlines.filter(h => !headlineOutside(state.value, h, totalDuration.value));
+  const h = direction > 0 ? rows.find(h => headlineTime(state.value, h) > cur.value + 0.5)
+    : [...rows].reverse().find(h => headlineTime(state.value, h) < cur.value - 0.5);
   if (h) selectHeadline(h);
 }
 function updateTime(row, time) {
   row.t = time;
   sortAll(state.value);
-  setCur(time + state.value.wipe_seconds + 0.2);
+  setCur((row.chapterId == null ? time : headlineTime(state.value, row)) + state.value.wipe_seconds + 0.2);
   markDirty();
 }
 function commitTime() {
   sortAll(state.value);
 }
-async function addHeadline(after = null) {
+async function addHeadline(chapter, after = null) {
   pushHistory();
-  const h = newRow({ t: after ? +(after.t + 5).toFixed(1) : +cur.value.toFixed(1), text: 'New headline' });
+  const h = newRow({ t: after ? +(after.t + 5).toFixed(1) : Math.max(0, +(cur.value - chapter.t).toFixed(1)),
+    text: 'New headline', chapterId: chapter.id });
   state.value.headlines.push(h);
   sortAll(state.value);
   markDirty();
   await selectHeadline(h, true);
 }
 function deleteHeadline(h) {
-  if (state.value.headlines.length < 2) return toast('Keep at least one headline');
   pushHistory();
   state.value.headlines.splice(state.value.headlines.indexOf(h), 1);
   selectedId.value = null;
@@ -183,7 +215,7 @@ function updateHeadline(h, text) {
 }
 function setHeadlineToPlayhead(h) {
   pushHistory();
-  h.t = +cur.value.toFixed(1);
+  h.t = +(cur.value - headlineChapter(state.value, h).t).toFixed(1);
   commitTime();
   markDirty();
 }
@@ -193,6 +225,7 @@ async function addChapter() {
   const ch = state.value.chapters.length;
   const chapter = newRow({ t: +cur.value.toFixed(1), ch });
   state.value.chapter_starts.push(chapter);
+  selectChapter(chapter);
   sortAll(state.value);
   markDirty();
   await nextTick();
@@ -201,7 +234,10 @@ async function addChapter() {
 function deleteChapter(ch) {
   if (state.value.chapters.length < 2) return toast('Keep at least one chapter');
   pushHistory();
+  const index = state.value.chapter_starts.findIndex(c => c.ch === ch);
+  const deletingSelected = state.value.chapter_starts[index].id === selectedChapterId.value;
   removeChapter(state.value, ch);
+  if (deletingSelected) selectChapter(state.value.chapter_starts[Math.min(index, state.value.chapter_starts.length - 1)]);
   markDirty();
 }
 function updateChapterTitle(ch, title) {
@@ -249,8 +285,12 @@ function ripple() {
   pushHistory();
   const at = cur.value - 1e-6;
   const move = row => { if (row.t >= at) row.t = Math.max(0, +(row.t + by).toFixed(2)); };
-  state.value.headlines.forEach(move);
+  const headlineTimes = state.value.headlines.map(h => [h, headlineTime(state.value, h)]);
   state.value.chapter_starts.forEach(move);
+  headlineTimes.forEach(([h, time]) => {
+    const shifted = time >= at ? Math.max(0, +(time + by).toFixed(2)) : time;
+    h.t = +(shifted - headlineChapter(state.value, h).t).toFixed(2);
+  });
   if (state.value.headlines_end != null && state.value.headlines_end >= at) {
     state.value.headlines_end = Math.max(0, state.value.headlines_end + by);
   }
@@ -271,6 +311,8 @@ function loadState(next, fileHandle, notice = '') {
   reconnectHandle.value = null;
   dirty.value = Boolean(notice);
   selectedId.value = null;
+  selectedChapterId.value = next.chapter_starts[0].id;
+  followPlayhead.value = false;
   revision++;
 }
 function readTiming(text) {
@@ -378,7 +420,7 @@ function keydown(event) {
   } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' &&
       !(typing && target.type === 'text' && !target.classList.contains('time'))) {
     event.preventDefault(); undo();
-  } else if (!typing && event.code === 'Space') {
+  } else if (!typing && !target.closest('button, summary, a, [role="separator"]') && event.code === 'Space') {
     event.preventDefault(); play();
   } else if (!typing && event.key === ',') jump(-1);
   else if (!typing && event.key === '.') jump(1);
@@ -436,22 +478,40 @@ onUnmounted(() => {
   <EditorWorkspace>
     <template #editor>
       <aside id="editor-panel" class="editor-panel" aria-label="Chapters and headlines" tabindex="0">
-        <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
-          @remove="removeClip" @error="toast" />
-
-        <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :starts="state.chapter_starts"
-          :title="state.title" :product="state.product_name" :offset="offset" :end="totalDuration"
-          @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-          @select="setCur($event.t + 0.1)" @update-chapter-title="updateChapterTitle"
-          @delete-chapter="deleteChapter" @add-chapter="addChapter" @update-metadata="updateMetadata" />
-
-        <HeadlineEditor ref="headlineEditor" :headlines="state.headlines" :end="state.headlines_end"
-          :wipe="state.wipe_seconds" :offset="offset" :selected-id="selectedId" :text-size-index="headlineFit.idx"
-          @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-          @select="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
+        <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :starts="state.chapter_starts" :headlines="state.headlines"
+          :offset="offset" :end="totalDuration" :selected-chapter-id="selectedChapterId"
+          :playing-chapter-id="playingChapter.id" :follow-playhead="followPlayhead"
+          :headline-end="state.headlines_end" :selected-id="selectedId"
+          :text-size-id="state.headlines[headlineFit.idx]?.id"
+          @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
+          @select="selectChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
+          @delete-chapter="deleteChapter" @add-chapter="addChapter"
+          @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
           @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
-          @change-end="updateEnd" @change-wipe="updateWipe" />
+        />
 
+        <details class="project-settings">
+          <summary>Videos and project settings<span v-if="clips.length"> · {{ clips.length }} videos</span></summary>
+          <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+            @remove="removeClip" @error="toast" />
+          <section class="card">
+            <h2>Video title and product</h2>
+            <div id="meta" class="names">
+              <label class="inline">title <input id="titleIn" :value="state.title" placeholder="Video title (for your own reference)"
+                @focus="beginEdit" @input="updateMetadata('title', $event.target.value)"></label>
+              <label class="inline">product <input id="productIn" :value="state.product_name" placeholder="Shown under the logo"
+                @focus="beginEdit" @input="updateMetadata('product_name', $event.target.value)"></label>
+            </div>
+          </section>
+        <section class="card">
+          <h2>Headline settings</h2>
+          <div class="tools">
+            <label class="inline">headlines end at <input id="endAt" :value="state.headlines_end == null ? '' : fmt(state.headlines_end)"
+              size="7" placeholder="video end" @change="updateEnd"></label>
+            <label class="inline">wipe <input id="wipe" :value="state.wipe_seconds" type="number"
+              min="0" max="3" step="0.1" @change="updateWipe"> s</label>
+          </div>
+        </section>
         <section class="card">
           <h2>Ripple <span class="heading-hint">cut dead space? slide everything after the playhead</span></h2>
           <div class="tools ripple-tools">
@@ -460,6 +520,7 @@ onUnmounted(() => {
             <button id="btnRipple" @click="ripple">Apply</button>
           </div>
         </section>
+        </details>
       </aside>
     </template>
     <template #preview>
@@ -468,7 +529,7 @@ onUnmounted(() => {
           <h2>Preview</h2><span class="chip">1920 × 1080</span>
         </div>
         <div class="preview-canvas">
-          <Preview :state="state" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx"
+          <Preview :state="previewState" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx"
             :clips="clips" :playing="playing" />
         </div>
         <div id="stats" class="statline">
@@ -482,6 +543,7 @@ onUnmounted(() => {
     </template>
   </EditorWorkspace>
   <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
-    :offset="offset" :clips="clips" @seek="seek" @toggle-play="play" />
+    :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
+    @select-chapter="selectChapter" @select-headline="selectTimelineHeadline" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>

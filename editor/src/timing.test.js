@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { activeChapter, activeHeadline, chapterImportNotice, chapterScrollAt, chapterScrollSteps, DEFAULT, fromJSON,
-  headlineWords, parseTime, removeChapter, sortAll, toJSON } from './timing.js';
+  headlineEnd, headlineOutside, headlineTime, headlineWords, parseTime, removeChapter, sortAll, toJSON } from './timing.js';
 
 const fixture = count => ({
   chapters: Array.from({ length: count }, (_, i) => `Chapter ${i + 1}`),
@@ -9,10 +9,18 @@ const fixture = count => ({
 });
 
 describe('timing JSON', () => {
-  it('round-trips existing schema without UI IDs', () => {
-    const saved = JSON.parse(toJSON(fromJSON(DEFAULT)));
-    expect(saved).toEqual({ schema_version: 1, ...DEFAULT });
-    expect(saved.chapter_starts[0]).toEqual([0, 1]);
+  it('migrates existing schema to nested chapter-relative headlines without UI IDs', () => {
+    const state = fromJSON(DEFAULT), saved = JSON.parse(toJSON(state));
+    expect(saved.schema_version).toBe(2);
+    expect(saved.chapters[1]).toEqual({
+      title: DEFAULT.chapters[1], start: 30,
+      headlines: [[0, DEFAULT.headlines[2][1]], [15, DEFAULT.headlines[3][1]]],
+    });
+    expect(state.headlines.map(h => [headlineTime(state, h), h.text])).toEqual(DEFAULT.headlines);
+    expect(JSON.parse(toJSON(fromJSON(saved)))).toEqual(saved);
+    expect(saved.chapter_starts).toBeUndefined();
+    expect(saved.headlines).toBeUndefined();
+    expect(toJSON(state)).not.toContain('chapterId');
   });
   it('sorts imported times and accepts more than six chapters', () => {
     const data = fixture(12);
@@ -48,7 +56,7 @@ describe('timing JSON', () => {
     };
     const state = fromJSON(source);
     expect(state.chapters).toEqual(['Created third', 'Created second', 'Created first', 'Created third']);
-    expect(JSON.parse(toJSON(state)).chapter_starts).toEqual([[0, 1], [20, 2], [30, 3], [40, 4]]);
+    expect(JSON.parse(toJSON(state)).chapters.map(c => c.start)).toEqual([0, 20, 30, 40]);
     expect(chapterImportNotice(source)).toContain('Converted repeated chapter switches');
     expect(chapterImportNotice(source)).toContain('unused chapter titles');
     state.chapters[0] = 'Renamed first segment';
@@ -79,6 +87,73 @@ describe('timing JSON', () => {
     const serialized = toJSON(state);
     sortAll(state);
     expect(toJSON(state)).toBe(serialized);
+  });
+});
+
+describe('chapter-owned headlines', () => {
+  const source = {
+    schema_version: 2,
+    chapters: [
+      { title: 'Intro', start: 0, headlines: [[0, 'First'], [8, 'Last'], [12, 'Outside']] },
+      { title: 'Empty', start: 10, headlines: [] },
+      { title: 'Later', start: 20, headlines: [[3, 'Delayed']] },
+    ],
+  };
+  it('clips at the chapter boundary and clears empty or delayed chapters', () => {
+    const state = fromJSON(source), last = state.headlines.find(h => h.text === 'Last');
+    expect(headlineEnd(state, last)).toBe(10);
+    expect(activeHeadline(state, 9.99).text).toBe('Last');
+    for (const time of [10, 12, 19.99, 20, 22.99]) expect(activeHeadline(state, time)).toBeNull();
+    expect(activeHeadline(state, 23)).toMatchObject({ text: 'Delayed', t: 23 });
+    expect(headlineOutside(state, state.headlines.find(h => h.text === 'Outside'))).toBe(true);
+    expect(JSON.parse(toJSON(state)).chapters[0].headlines).toEqual(source.chapters[0].headlines);
+  });
+  it('moves and reorders chapters without changing headline ownership or relative times', () => {
+    const state = fromJSON(source), chapter = state.chapter_starts[2];
+    const headline = state.headlines.find(h => h.text === 'Delayed');
+    chapter.t = 5;
+    sortAll(state);
+    expect(state.chapters).toEqual(['Intro', 'Later', 'Empty']);
+    expect(headline.t).toBe(3);
+    expect(headline.chapterId).toBe(chapter.id);
+    expect(headlineTime(state, headline)).toBe(8);
+    expect(activeHeadline(state, 5)).toBeNull();
+    expect(activeHeadline(state, 8).text).toBe('Delayed');
+    expect(headlineOutside(state, state.headlines.find(h => h.text === 'Last'))).toBe(true);
+  });
+  it('removes only owned headlines when deleting a chapter and allows all-empty documents', () => {
+    const state = fromJSON(source);
+    removeChapter(state, 1);
+    expect(state.headlines.map(h => h.text)).toEqual(['Delayed']);
+    const empty = fromJSON({ schema_version: 2, chapters: [{ title: 'Empty', start: 0, headlines: [] }] });
+    expect(activeHeadline(empty, 5)).toBeNull();
+    expect(fromJSON(JSON.parse(toJSON(empty))).headlines).toEqual([]);
+    expect(fromJSON({ ...DEFAULT, headlines: [] }).headlines).toEqual([]);
+  });
+  it('retains and flags legacy headlines before the first chapter', () => {
+    const state = fromJSON({ chapters: ['Starts later'], chapter_starts: [[10, 1]], headlines: [[5, 'Early']] });
+    expect(state.headlines[0].t).toBe(-5);
+    expect(headlineOutside(state, state.headlines[0])).toBe(true);
+    expect(activeHeadline(state, 5)).toBeNull();
+    expect(activeHeadline(state, 20)).toBeNull();
+    expect(JSON.parse(toJSON(state)).chapters[0].headlines).toEqual([[-5, 'Early']]);
+  });
+  it('caps at the loaded video end and optional global headline end', () => {
+    const state = fromJSON(source);
+    state.preview_end = 25;
+    expect(activeHeadline(state, 24.99).text).toBe('Delayed');
+    expect(activeHeadline(state, 25)).toBeNull();
+    state.headlines_end = 24;
+    expect(activeHeadline(state, 24)).toBeNull();
+    expect(headlineEnd(state, state.headlines.at(-1), 25)).toBe(24);
+  });
+  it.each([
+    { schema_version: 3, chapters: [] },
+    { schema_version: 2, chapters: [{ title: 'Bad', start: -1, headlines: [] }] },
+    { schema_version: 2, chapters: [{ title: 'Bad', start: 0, headlines: [[NaN, 'Text']] }] },
+    { schema_version: 2, chapters: [{ title: 'Bad', start: 0, headlines: [[0, '']] }] },
+  ])('rejects invalid chapter documents: %j', document => {
+    expect(() => fromJSON(document)).toThrow();
   });
 });
 

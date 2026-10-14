@@ -30,18 +30,26 @@ export const DEFAULT = {
 let nextId = 0;
 export const newRow = (values) => ({ id: ++nextId, ...values });
 const validTime = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const validHeadline = (row, relative = false) => Array.isArray(row) && row.length === 2 &&
+  typeof row[0] === 'number' && Number.isFinite(row[0]) && (relative || row[0] >= 0) &&
+  typeof row[1] === 'string' && Boolean(row[1].trim());
 
 export function fromJSON(o) {
-  if (!o || !Array.isArray(o.chapters) || !o.chapters.length || o.chapters.some(c => typeof c !== 'string')) {
-    throw new Error('chapters must contain at least one chapter title');
+  if (o?.schema_version != null && ![1, 2].includes(o.schema_version)) throw new Error('Unsupported timing schema version');
+  const nested = o?.schema_version === 2;
+  if (!o || !Array.isArray(o.chapters) || !o.chapters.length ||
+      o.chapters.some(c => nested ? !c || typeof c.title !== 'string' || !validTime(c.start) ||
+        !Array.isArray(c.headlines) || c.headlines.some(h => !validHeadline(h, true)) : typeof c !== 'string')) {
+    throw new Error(nested ?
+      'Each chapter needs a title, non-negative start and headline list with finite relative times and non-empty text' :
+      'chapters must contain at least one chapter title');
   }
-  if (!Array.isArray(o.chapter_starts) || !o.chapter_starts.length ||
-      o.chapter_starts.some(r => !Array.isArray(r) || !validTime(r[0]) ||
-        !Number.isInteger(r[1]) || r[1] < 1 || r[1] > o.chapters.length)) {
+  if (!nested && (!Array.isArray(o.chapter_starts) || !o.chapter_starts.length ||
+      o.chapter_starts.some(r => !Array.isArray(r) || r.length !== 2 || !validTime(r[0]) ||
+        !Number.isInteger(r[1]) || r[1] < 1 || r[1] > o.chapters.length))) {
     throw new Error('chapter_starts must contain valid times and chapter numbers');
   }
-  if (!Array.isArray(o.headlines) || !o.headlines.length ||
-      o.headlines.some(r => !Array.isArray(r) || !validTime(r[0]) || typeof r[1] !== 'string' || !r[1].trim())) {
+  if (!nested && (!Array.isArray(o.headlines) || o.headlines.some(r => !validHeadline(r)))) {
     throw new Error('headlines must contain valid times and non-empty text');
   }
   if (o.headlines_end != null && !validTime(o.headlines_end)) throw new Error('headlines_end must be a non-negative time');
@@ -51,13 +59,25 @@ export function fromJSON(o) {
   const state = {
     title: o.title || '',
     product_name: o.product_name ?? '',
-    chapters: o.chapters.slice(),
-    chapter_starts: o.chapter_starts.map(([t, ch]) => newRow({ t, ch })),
-    headlines: o.headlines.map(([t, text]) => newRow({ t, text })),
+    chapters: nested ? o.chapters.map(c => c.title) : o.chapters.slice(),
+    chapter_starts: nested ? o.chapters.map((c, i) => newRow({ t: c.start, ch: i + 1 })) :
+      o.chapter_starts.map(([t, ch]) => newRow({ t, ch })),
+    headlines: [],
     headlines_end: o.headlines_end ?? null,
     wipe_seconds: o.wipe_seconds ?? 0.8,
   };
+  if (nested) {
+    state.headlines = o.chapters.flatMap((c, i) => c.headlines.map(([t, text]) =>
+      newRow({ t, text, chapterId: state.chapter_starts[i].id })));
+  }
   sortAll(state);
+  if (!nested) {
+    state.headlines = o.headlines.map(([time, text]) => {
+      const chapter = state.chapter_starts.findLast(c => c.t <= time) ?? state.chapter_starts[0];
+      return newRow({ t: time - chapter.t, text, chapterId: chapter.id });
+    });
+    sortAll(state);
+  }
   return state;
 }
 
@@ -67,30 +87,30 @@ export function toJSON(state) {
         (i > 0 && chapter.t < state.chapter_starts[i - 1].t))) {
     throw new Error('Each chapter must have exactly one start, in timeline order');
   }
-  const n = v => JSON.stringify(+v.toFixed(2));
-  return [
-    '{',
-    '  "schema_version": 1,',
-    '  "title": ' + JSON.stringify(state.title || '') + ',',
-    '  "product_name": ' + JSON.stringify(state.product_name || '') + ',',
-    '  "chapters": ' + JSON.stringify(state.chapters) + ',',
-    '  "chapter_starts": [\n' + state.chapter_starts.map(r => `    [${n(r.t)}, ${r.ch}]`).join(',\n') + '\n  ],',
-    '  "headlines": [\n' + state.headlines.map(r => `    [${n(r.t)}, ${JSON.stringify(r.text)}]`).join(',\n') + '\n  ],',
-    '  "headlines_end": ' + (state.headlines_end == null ? 'null' : n(state.headlines_end)) + ',',
-    '  "wipe_seconds": ' + n(state.wipe_seconds),
-    '}',
-    '',
-  ].join('\n');
+  state.headlines.forEach(h => headlineChapter(state, h));
+  const n = value => +value.toFixed(2);
+  return JSON.stringify({
+    schema_version: 2,
+    title: state.title || '',
+    product_name: state.product_name || '',
+    chapters: state.chapter_starts.map((c, i) => ({
+      title: state.chapters[i], start: n(c.t),
+      headlines: state.headlines.filter(h => h.chapterId === c.id).map(h => [n(h.t), h.text]),
+    })),
+    headlines_end: state.headlines_end == null ? null : n(state.headlines_end),
+    wipe_seconds: n(state.wipe_seconds),
+  }, null, 2) + '\n';
 }
 
 export function sortAll(state) {
   state.chapter_starts.sort((a, b) => a.t - b.t);
-  state.headlines.sort((a, b) => a.t - b.t);
   state.chapters = state.chapter_starts.map(c => state.chapters[c.ch - 1]);
   state.chapter_starts.forEach((c, i) => { c.ch = i + 1; });
+  state.headlines.sort((a, b) => headlineTime(state, a) - headlineTime(state, b));
 }
 
 export function chapterImportNotice(source) {
+  if (source.schema_version === 2) return '';
   const used = new Set(source.chapter_starts.map(([, ch]) => ch)), notices = [];
   if (used.size < source.chapter_starts.length) {
     notices.push('Converted repeated chapter switches into independent chapters.');
@@ -98,18 +118,43 @@ export function chapterImportNotice(source) {
   if (used.size < source.chapters.length) {
     notices.push('Ignored unused chapter titles with no start time.');
   }
-  return notices.length ? notices.join(' ') + ' Save or Download to keep the converted file.' : '';
+  notices.push('Assigned headlines to their chapters using chapter-relative times.');
+  return notices.join(' ') + ' Save or Download to keep the converted file.';
 }
 
 export function removeChapter(state, ch) {
+  const removed = state.chapter_starts.find(c => c.ch === ch);
+  state.headlines = state.headlines.filter(h => h.chapterId !== removed.id);
   state.chapters.splice(ch - 1, 1);
   state.chapter_starts = state.chapter_starts.filter(c => c.ch !== ch);
   state.chapter_starts.forEach(c => { if (c.ch > ch) c.ch--; });
   sortAll(state);
 }
 
-export const duration = state => Math.max(60, ...state.headlines.map(h => h.t),
+export const duration = state => Math.max(60, ...state.headlines.map(h => headlineTime(state, h)),
   ...state.chapter_starts.map(c => c.t), state.headlines_end || 0) + 30;
+
+export function headlineChapter(state, headline) {
+  const chapter = state.chapter_starts.find(c => c.id === headline.chapterId);
+  if (!chapter) throw new Error('Headline has no owning chapter');
+  return chapter;
+}
+export const headlineTime = (state, headline) => headlineChapter(state, headline).t + headline.t;
+export function chapterEnd(state, chapter, end = duration(state)) {
+  const i = state.chapter_starts.indexOf(chapter);
+  return Math.min(state.chapter_starts[i + 1]?.t ?? end, end);
+}
+export function headlineEnd(state, headline, end = duration(state)) {
+  const chapter = headlineChapter(state, headline);
+  const owned = state.headlines.filter(h => h.chapterId === chapter.id).sort((a, b) => a.t - b.t);
+  const next = owned[owned.indexOf(headline) + 1];
+  return Math.min(next ? headlineTime(state, next) : Infinity,
+    chapterEnd(state, chapter, end), state.headlines_end ?? Infinity);
+}
+export function headlineOutside(state, headline, end = duration(state)) {
+  return headline.t < 0 || headlineTime(state, headline) >=
+    Math.min(chapterEnd(state, headlineChapter(state, headline), end), state.headlines_end ?? Infinity);
+}
 
 const pad = n => String(n).padStart(2, '0');
 export function parseClock(s) {
@@ -128,7 +173,7 @@ export function fmt(t) {
   return `${m}:${Number.isInteger(s) ? pad(s) : s.toFixed(1).padStart(4, '0')}`;
 }
 export function tc(t, offset = 3600) {
-  const total = Math.floor(Math.max(0, t) + offset + 1e-6);
+  const total = Math.floor(Math.max(0, t + offset) + 1e-6);
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
 }
 
@@ -152,8 +197,13 @@ export function activeChapter(state, t) {
 }
 export function activeHeadline(state, t) {
   let headline = null;
-  state.headlines.forEach(h => { if (h.t <= t + 1e-6) headline = h; });
-  return state.headlines_end != null && t >= state.headlines_end ? null : headline;
+  const chapter = state.chapter_starts.find(c => c.ch === activeChapter(state, t));
+  state.headlines.forEach(h => {
+    const start = headlineTime(state, h);
+    if (h.chapterId === chapter.id && h.t >= 0 && start <= t + 1e-6 &&
+        t < headlineEnd(state, h, state.preview_end ?? duration(state))) headline = { ...h, t: start };
+  });
+  return headline;
 }
 export function scrollPosition(t, step) {
   const p = Math.max(0, Math.min(1, (t - step.t) / CHAPTER_SCROLL.seconds));

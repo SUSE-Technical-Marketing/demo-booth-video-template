@@ -83,32 +83,17 @@ try:
 except Exception as _e:
     raise RuntimeError("Could not read %s (%s). Check REPO_DIR and TIMING_NAME at the top of the script." % (TIMING_FILE, _e))
 
-def _validate(tm):
-    """Stop early with a readable message instead of a confusing Fusion error half-way through a build."""
-    problems = []
-    for key in ("chapters", "chapter_starts", "headlines"):
-        if not tm.get(key):
-            problems.append('"%s" is missing or empty' % key)
-    if not problems:
-        n = len(tm["chapters"])
-        for sec, ch in tm["chapter_starts"]:
-            if not 1 <= int(ch) <= n:
-                problems.append("chapter switch at %ss points to chapter %s, but only 1-%d exist" % (sec, ch, n))
-        for sec, text in tm["headlines"]:
-            if float(sec) < 0 or not str(text).strip():
-                problems.append("bad headline at %ss: %r" % (sec, text))
-    if problems:
-        raise ValueError("%s: %s" % (TIMING_FILE, "; ".join(problems)))
-
-_validate(_tm)
-_notice = normalize_chapters(_tm)
+try:
+    _notice = normalize_chapters(_tm)
+except ValueError as _e:
+    raise ValueError("%s: %s" % (TIMING_FILE, _e)) from _e
 if _notice:
     print("Timing import: " + _notice)
 PRODUCT_NAME = _tm.get("product_name", "SUSE AI Factory")   # shown under the logo
 CHAPTERS = _tm["chapters"]
 CHAPTER_STARTS = sorted((float(s), int(c)) for s, c in _tm["chapter_starts"])   # (seconds, chapter number)
-HEADLINES = sorted((float(s), t) for s, t in _tm["headlines"])             # (seconds, text); *word* = accent
-HEADLINES_END = _tm.get("headlines_end")      # seconds, or None = last headline stays to the end of the clip
+HEADLINES = [(sec, text) for sec, text, _ in _tm["_headline_intervals"]]
+HEADLINE_ENDS = [end for _, _, end in _tm["_headline_intervals"]]
 WIPE_SECONDS = _tm.get("wipe_seconds", 0.8)   # left-to-right build-in time
 ACTIVE_CHAPTER = CHAPTER_STARTS[0][1]
 # -----------------------------------------------------------------------------------------
@@ -449,14 +434,15 @@ def parse_headline(s):
 parsed = [(sec, parse_headline(s)) for sec, s in HEADLINES]
 # one text size for every headline, fitted to the longest, so the size doesn't jump between headlines
 size = min([HEADLINE_PX] + [HEADLINE_PX * HEADLINE_MAX_W /
-                            max(1.0, measure(" ".join(w for w, _ in ws), HEADLINE_PX)) for _, ws in parsed])
+                            max(1.0, measure(" ".join(w for w, _ in parse_headline(text)), HEADLINE_PX))
+                            for _, text in _tm["headlines"]])
 space = measure("a a", size) - measure("aa", size)
 wipe_frames = max(1, int(round(WIPE_SECONDS * FPS)))
 PAD = 12   # px of slack so the wipe doesn't clip glyph overhang
 
 for k, (sec, words) in enumerate(parsed, 1):
     start = frames(sec)
-    end = frames(parsed[k][0]) if k < len(parsed) else (frames(HEADLINES_END) if HEADLINES_END else None)
+    end = frames(HEADLINE_ENDS[k - 1]) if HEADLINE_ENDS[k - 1] is not None else None
     widths = [measure(w, size) for w, _ in words]
     total = sum(widths) + space * (len(words) - 1)
     x0 = BAR["cx"] - total / 2.0
@@ -470,7 +456,7 @@ for k, (sec, words) in enumerate(parsed, 1):
     wm.Width.SetExpression("(%s) * %.6f" % (prog, full / W))
     wm.Center.SetExpression("Point(%.6f + (%s) * %.6f, %.6f)" % (nx(x0 - PAD), prog, full / 2.0 / W, ny(BAR["cy"])))
 
-    # visibility window: this headline shows from its start until the next headline starts
+    # The visibility window never extends beyond the owning chapter.
     if end is None:
         vis = "iif(time < %d, 0, 1)" % start
     else:

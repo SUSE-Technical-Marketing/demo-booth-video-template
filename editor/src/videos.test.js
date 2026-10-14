@@ -57,8 +57,12 @@ describe('videos and New in the editor', () => {
     expect(rows[1].get('input.time').element.value).toBe('0:40');
     expect(wrapper.findAll('#tl .vclip')).toHaveLength(2);
     expect(wrapper.get('#durChip').text()).toBe('to 1:20');
-    expect(wrapper.findAll('.chapter-duration').map(badge => badge.text()))
-      .toEqual(['Length 0:30', 'Length 0:30', 'Length 0:20', 'Past end', 'Past end', 'Past end']);
+    const lengths = [];
+    for (const chapter of wrapper.findAll('.chapter-count')) {
+      await chapter.trigger('click');
+      lengths.push(wrapper.get('.chapter-duration').text());
+    }
+    expect(lengths).toEqual(['Length 0:30', 'Length 0:30', 'Length 0:20', 'Past end', 'Past end', 'Past end']);
   });
   it('integrates local clips with the sidebar, fitted preview and docked playback controls', async () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
@@ -97,21 +101,21 @@ describe('videos and New in the editor', () => {
   it('New starts a blank video, clears clips, and forgets the linked file', async () => {
     await addFiles('a.mp4');
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    await wrapper.get('#headlines input:not(.time)').setValue('Changed');   // makes it dirty
+    await wrapper.get('.headline-list input:not(.time)').setValue('Changed');   // makes it dirty
     await wrapper.get('#btnNew').trigger('click'); await flushPromises();
     expect(window.confirm).toHaveBeenCalled();
-    expect(wrapper.findAll('#headlines .row')).toHaveLength(1);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(1);
     expect(wrapper.findAll('#stage .pill')).toHaveLength(1);
     expect(wrapper.findAll('#vlist .vrow')).toHaveLength(0);
     expect(rememberHandle).toHaveBeenCalledWith(null);
     await wrapper.get('#btnUndo').trigger('click');                         // undo brings the previous video back
-    expect(wrapper.findAll('#headlines .row')).toHaveLength(12);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(2);
   });
   it('New keeps everything if the unsaved-changes prompt is declined', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false);
-    await wrapper.get('#headlines input:not(.time)').setValue('Changed');
+    await wrapper.get('.headline-list input:not(.time)').setValue('Changed');
     await wrapper.get('#btnNew').trigger('click'); await flushPromises();
-    expect(wrapper.findAll('#headlines .row')).toHaveLength(12);
+    expect(wrapper.findAll('.headline-list .row')).toHaveLength(2);
   });
   it('renames a chapter directly from its row', async () => {
     const input = wrapper.get('#chapters input[data-chapter="1"]');

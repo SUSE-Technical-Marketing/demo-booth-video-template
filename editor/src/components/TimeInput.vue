@@ -1,24 +1,27 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { fmt, parseTime, tc } from '../timing.js';
+import { fmt, parseClock, parseTime, tc } from '../timing.js';
 
 const props = defineProps({
   modelValue: { type: Number, required: true },
   offset: { type: Number, required: true },
+  relative: { type: Boolean, default: false },
 });
 const emit = defineEmits(['update:modelValue', 'begin-edit', 'commit', 'error']);
-const value = ref(fmt(props.modelValue));
-watch(() => props.modelValue, time => { value.value = fmt(time); });
+const format = time => time < 0 ? `-${fmt(-time)}` : fmt(time);
+const value = ref(format(props.modelValue));
+watch(() => props.modelValue, time => { value.value = format(time); });
 function commit() {
-  const time = parseTime(value.value, props.offset);
+  const time = props.relative && value.value.trim().split(':').length === 3 ?
+    parseClock(value.value) - props.offset : parseTime(value.value, props.offset);
   if (!Number.isFinite(time)) {
-    value.value = fmt(props.modelValue);
+    value.value = format(props.modelValue);
     emit('error', 'Enter a valid time, such as 3:44, 224 or 1:03:44');
     return;
   }
   emit('update:modelValue', time);
   emit('commit');
-  value.value = fmt(time);
+  value.value = format(time);
 }
 function keydown(event) {
   if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
