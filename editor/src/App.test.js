@@ -51,6 +51,15 @@ async function openLinkedFile(data = DEFAULT) {
 }
 
 describe('Vue editor', () => {
+  it('keeps timeline and playback separate from the scrolling editing workspace', () => {
+    expect(wrapper.find('.editor-panel #chapters').exists()).toBe(true);
+    expect(wrapper.find('.editor-panel #headlines').exists()).toBe(true);
+    expect(wrapper.find('.preview-canvas #view').exists()).toBe(true);
+    expect(wrapper.find('.workspace #tl').exists()).toBe(false);
+    expect(wrapper.find('.timeline-dock #tl').exists()).toBe(true);
+    expect(wrapper.find('.timeline-dock #btnPlay').exists()).toBe(true);
+    expect(wrapper.find('.timeline-dock #scrub').exists()).toBe(true);
+  });
   it('renders sample chapters, headlines, accents and timeline', () => {
     expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
     expect(wrapper.findAll('#headlines .row')).toHaveLength(12);

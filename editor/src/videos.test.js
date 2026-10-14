@@ -1,6 +1,7 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
+import Preview from './components/Preview.vue';
 import { chaptersCovered, clipAt } from './videos.js';
 import { rememberHandle } from './fileAccess.js';
 
@@ -57,6 +58,25 @@ describe('videos and New in the editor', () => {
     expect(wrapper.findAll('#tl .vclip')).toHaveLength(2);
     expect(wrapper.get('#durChip').text()).toBe('to 1:20');
   });
+  it('integrates local clips with the sidebar, fitted preview and docked playback controls', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    await addFiles('a.mp4', 'b.mp4');
+    expect(wrapper.findAll('.editor-panel #vlist .vrow')).toHaveLength(2);
+    expect(wrapper.findAll('.preview-canvas #content video')).toHaveLength(2);
+    expect(wrapper.findAll('.timeline-dock .vclip')).toHaveLength(2);
+    await wrapper.get('.timeline-dock #scrub').setValue('55');
+    const videos = wrapper.findAll('#content video');
+    expect(videos[0].element.style.display).toBe('none');
+    expect(videos[1].element.style.display).not.toBe('none');
+    expect(videos[1].element.currentTime).toBe(15);
+    const preview = wrapper.findComponent(Preview);
+    await wrapper.get('.timeline-dock #btnPlay').trigger('click');
+    expect(preview.props('playing')).toBe(true);
+    expect(videos[1].element.play).toHaveBeenCalled();
+    await wrapper.get('.timeline-dock #btnPlay').trigger('click');
+    expect(preview.props('playing')).toBe(false);
+  });
   it('moves a clip with its start time and by snapping to a chapter', async () => {
     await addFiles('a.mp4');
     const row = wrapper.get('#vlist .vrow');
@@ -95,5 +115,8 @@ describe('videos and New in the editor', () => {
     const input = wrapper.get('#chapters .crow input.chapter-title');
     await input.setValue('Renamed');
     expect(wrapper.get('#stage .pill').text()).toBe('Renamed');
+    expect(wrapper.get('#names input[data-chapter="1"]').element.value).toBe('Renamed');
+    await wrapper.get('#names input[data-chapter="1"]').setValue('Edited in Names');
+    expect(input.element.value).toBe('Edited in Names');
   });
 });

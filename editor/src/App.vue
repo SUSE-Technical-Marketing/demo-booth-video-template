@@ -1,9 +1,10 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue';
 import ChapterEditor from './components/ChapterEditor.vue';
+import EditorWorkspace from './components/EditorWorkspace.vue';
 import HeadlineEditor from './components/HeadlineEditor.vue';
 import Preview from './components/Preview.vue';
-import Timeline from './components/Timeline.vue';
+import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
@@ -452,58 +453,57 @@ onUnmounted(() => {
     <a href="https://github.com/SUSE-Technical-Marketing/demo-booth-video-template#readme" target="_blank" rel="noopener" class="help">Help</a>
   </header>
 
-  <main>
-    <div class="stack">
-      <section class="card">
-        <h2>Timeline <span id="durChip" class="chip">to {{ fmt(totalDuration) }}</span></h2>
-        <Timeline :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :clips="clips" @seek="seek" />
-        <p class="hint">Click or drag on the timeline to scrub. Click a row below to jump to it.</p>
-      </section>
+  <EditorWorkspace>
+    <template #editor>
+      <aside id="editor-panel" class="editor-panel" aria-label="Chapters and headlines" tabindex="0">
+        <VideoList :clips="clips" :switches="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+          @remove="removeClip" @error="toast" />
 
-      <VideoList :clips="clips" :switches="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
-        @remove="removeClip" @error="toast" />
+        <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :switches="state.chapter_starts"
+          :title="state.title" :product="state.product_name" :offset="offset"
+          @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
+          @select="setCur($event.t + 0.1)" @choose-chapter="chooseChapter" @update-chapter-title="updateChapterTitle"
+          @delete-switch="deleteSwitch" @delete-chapter="deleteChapter" @add-chapter="addChapter"
+          @add-switch="addChapterSwitch" @update-metadata="updateMetadata" />
 
-      <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :switches="state.chapter_starts"
-        :title="state.title" :product="state.product_name" :offset="offset"
-        @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-        @select="setCur($event.t + 0.1)" @choose-chapter="chooseChapter" @update-chapter-title="updateChapterTitle"
-        @delete-switch="deleteSwitch" @delete-chapter="deleteChapter" @add-chapter="addChapter"
-        @add-switch="addChapterSwitch" @update-metadata="updateMetadata" />
+        <HeadlineEditor ref="headlineEditor" :headlines="state.headlines" :end="state.headlines_end"
+          :wipe="state.wipe_seconds" :offset="offset" :selected-id="selectedId" :text-size-index="headlineFit.idx"
+          @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
+          @select="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
+          @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
+          @change-end="updateEnd" @change-wipe="updateWipe" />
 
-      <HeadlineEditor ref="headlineEditor" :headlines="state.headlines" :end="state.headlines_end"
-        :wipe="state.wipe_seconds" :offset="offset" :selected-id="selectedId" :text-size-index="headlineFit.idx"
-        @begin-edit="pushHistory" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-        @select="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
-        @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
-        @change-end="updateEnd" @change-wipe="updateWipe" />
-
-      <section class="card">
-        <h2>Ripple <span class="heading-hint">cut dead space? slide everything after the playhead</span></h2>
-        <div class="tools ripple-tools">
-          <span>Shift all chapters &amp; headlines at or after <b id="rippleAt">{{ fmt(cur) }}</b> by</span>
-          <input id="rippleBy" v-model="rippleBy" type="number" step="0.5" aria-label="Ripple seconds"> s
-          <button id="btnRipple" @click="ripple">Apply</button>
+        <section class="card">
+          <h2>Ripple <span class="heading-hint">cut dead space? slide everything after the playhead</span></h2>
+          <div class="tools ripple-tools">
+            <span>Shift all chapters &amp; headlines at or after <b id="rippleAt">{{ fmt(cur) }}</b> by</span>
+            <input id="rippleBy" v-model="rippleBy" type="number" step="0.5" aria-label="Ripple seconds"> s
+            <button id="btnRipple" @click="ripple">Apply</button>
+          </div>
+        </section>
+      </aside>
+    </template>
+    <template #preview>
+      <section class="preview-pane" aria-label="Layout preview">
+        <div class="preview-heading">
+          <h2>Preview</h2><span class="chip">1920 × 1080</span>
         </div>
+        <div class="preview-canvas">
+          <Preview :state="state" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx"
+            :clips="clips" :playing="playing" />
+        </div>
+        <div id="stats" class="statline">
+          <span class="chip">{{ state.headlines.length }} headlines</span>
+          <span class="chip">{{ state.chapters.length }} chapters</span>
+          <span class="chip">{{ state.chapter_starts.length }} chapter switches</span>
+          <span class="chip info">headline text ≈ {{ (headlineFit.px / TEXT_SCALE).toFixed(0) }} px{{ headlineFit.idx >= 0 ? ` (set by #${headlineFit.idx + 1})` : '' }}</span>
+          <span v-if="shortCount" class="chip warn">{{ shortCount }} shorter than 3 s</span>
+        </div>
+        <div class="hint preview-hint">Preview is an approximation of the Fusion result. <kbd>Space</kbd> play/pause · <kbd>,</kbd> <kbd>.</kbd> previous / next headline.</div>
       </section>
-    </div>
-
-    <aside class="sticky">
-      <Preview :state="state" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx" :clips="clips" :playing="playing" />
-      <div class="transport">
-        <button id="btnPlay" class="primary" @click="play">{{ playing ? 'Pause' : 'Play' }}</button>
-        <input id="scrub" type="range" min="0" :max="totalDuration" step="0.1" :value="cur" aria-label="Preview time"
-          @input="seek(+$event.target.value)">
-        <div id="timelabel" class="timelabel">{{ fmt(cur) }}<small>{{ tc(cur, offset) }}</small></div>
-      </div>
-      <div id="stats" class="statline">
-        <span class="chip">{{ state.headlines.length }} headlines</span>
-        <span class="chip">{{ state.chapters.length }} chapters</span>
-        <span class="chip">{{ state.chapter_starts.length }} chapter switches</span>
-        <span class="chip info">headline text ≈ {{ (headlineFit.px / TEXT_SCALE).toFixed(0) }} px{{ headlineFit.idx >= 0 ? ` (set by #${headlineFit.idx + 1})` : '' }}</span>
-        <span v-if="shortCount" class="chip warn">{{ shortCount }} shorter than 3 s</span>
-      </div>
-      <div class="hint preview-hint">Preview is an approximation of the Fusion result. <kbd>Space</kbd> play/pause · <kbd>,</kbd> <kbd>.</kbd> previous / next headline.</div>
-    </aside>
-  </main>
+    </template>
+  </EditorWorkspace>
+  <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
+    :offset="offset" :clips="clips" @seek="seek" @toggle-play="play" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>

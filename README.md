@@ -214,6 +214,17 @@ The editor's `App.vue` owns document changes, undo, autosave, and playback. `Cha
 `HeadlineEditor`/`HeadlineRow` handle their editing sections through props and emitted actions; the timeline,
 preview, video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too. Pure timing and JSON helpers live in `timing.js`.
 
+On desktop, the editor uses a video-editing workspace: videos, chapters and headlines scroll independently in the left
+panel (about 30% of the width), the large preview fits the remaining space without cropping, and the full-width
+timeline and playback controls stay docked at the bottom. Headline text fields use the full panel width, with timing,
+duration warnings and actions above them. On smaller screens the preview and editing panels stack, while the timeline
+remains available at the bottom.
+
+Drag the handle between the editing panel and preview to resize the sidebar (minimum 300 px, maximum 60% of
+the desktop workspace). The focused handle also supports Left/Right arrows (10 px), Shift+Left/Right (50 px),
+and Home/End for the limits. Double-click it or press Enter to reset to the default 30% split. The divider is
+hidden in the stacked small-screen layout. Scrollbars use the editor's dark green theme.
+
 Use **Chrome or Edge** so the page can save straight to your file. Other browsers can open a JSON file and use
 **Download** to save a replacement, but cannot link it for autosave or reconnect.
 
@@ -223,7 +234,8 @@ Use **Chrome or Edge** so the page can save straight to your file. Other browser
 2. **Chapter buttons**: use **Add chapter** to create a new button; **Names** opens with its title selected for editing.
    Use **Add chapter switch** to revisit an existing button and pick it from the list. Deleting a chapter's
    last switch removes its button too; **Names** also lets you delete a chapter and all its switches. Keep at least
-   one chapter switch. The preview updates the button count and titles immediately.
+   one chapter switch. Edit titles directly below the chapter dropdown or in **Names**; both stay synchronized.
+   The preview updates the button count and titles immediately.
    Buttons follow each chapter's first switch in time order, not creation order. Editing a time or inserting a
    chapter reorders the buttons and their saved numbers together; repeated switches keep the same chapter, and
    chapters without a switch stay at the end.

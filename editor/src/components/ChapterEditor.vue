@@ -52,7 +52,7 @@ defineExpose({ focusChapter });
         </div>
       </details>
     </div>
-    <p class="hint">Edit chapter titles in Names. Add a switch to revisit an existing chapter; deleting its last switch
+    <p class="hint">Edit chapter titles below the dropdown or in Names. Add a switch to revisit an existing chapter; deleting its last switch
       also removes its button. More than six chapters scroll automatically with the active chapter.</p>
   </section>
 </template>
