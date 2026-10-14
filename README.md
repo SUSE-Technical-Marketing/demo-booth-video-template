@@ -205,9 +205,14 @@ browser and on your own disk, with no backend or uploads.
 For a production build, run `bun run build` (output: `dist/`). Run `bun run preview` to serve that build locally.
 Run `bun run test` for the editor's Vitest regression tests (not `bun test`, which selects Bun's own test runner).
 
+**New** starts a blank timing file. **Add videos…** loads one or more local videos to preview in the content slot (one per
+chapter, or one spanning several): set each one's start time or **snap** it to a chapter. They never leave your computer and
+are not saved in the timing file; the renderer still takes a single video. Rendered MP4s get one chapter marker per chapter
+switch, titled with the chapter name, which players such as QuickTime, VLC and IINA show in their chapter menus.
+
 The editor's `App.vue` owns document changes, undo, autosave, and playback. `ChapterEditor`/`ChapterRow` and
 `HeadlineEditor`/`HeadlineRow` handle their editing sections through props and emitted actions; the timeline,
-preview, time input, and accent text are separate components too. Pure timing and JSON helpers live in `timing.js`.
+preview, video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too. Pure timing and JSON helpers live in `timing.js`.
 
 Use **Chrome or Edge** so the page can save straight to your file. Other browsers can open a JSON file and use
 **Download** to save a replacement, but cannot link it for autosave or reconnect.
