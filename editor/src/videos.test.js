@@ -31,8 +31,9 @@ describe('clip helpers', () => {
 });
 
 describe('videos and New in the editor', () => {
-  let wrapper;
+  let wrapper, videoLength;
   beforeEach(() => {
+    videoLength = 40;
     vi.clearAllMocks();
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     vi.stubGlobal('showDirectoryPicker', undefined);
@@ -45,7 +46,7 @@ describe('videos and New in the editor', () => {
     vi.spyOn(document, 'createElement').mockImplementation(tag => {
       const el = create(tag);
       if (tag === 'video') Object.defineProperty(el, 'src', { set() {
-        Object.defineProperty(el, 'duration', { value: 40 }); setTimeout(() => el.onloadedmetadata?.(), 0); } });
+        Object.defineProperty(el, 'duration', { value: videoLength }); setTimeout(() => el.onloadedmetadata?.(), 0); } });
       return el;
     });
     wrapper = mount(App, { attachTo: document.body });
@@ -465,6 +466,33 @@ describe('videos and New in the editor', () => {
     expect(wrapper.findAll('#content video')).toHaveLength(1);
     expect(wrapper.get('#content video').element.currentTime).toBe(7);
     expect(wrapper.findAll('#vlist .vrow')[0].get('.clip-path input').element.value).toBe('media/a.mp4');
+  });
+  it('follows a re-exported file when it is relinked: longer pushes later clips, shorter shortens, trims are kept', async () => {
+    async function relink(row, length) {
+      videoLength = length;
+      await wrapper.findAll('#vlist .vrow')[row].get('.relink-media').trigger('click');
+      const input = wrapper.get('#relinkFile');
+      Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.mp4')], configurable: true });
+      await input.trigger('change');
+      await new Promise(resolve => setTimeout(resolve, 20));
+      await flushPromises();
+    }
+    const clips = async () => { await wrapper.get('#btnDownload').trigger('click');
+      return JSON.parse(downloadJSON.mock.calls.at(-1)[0]).clips; };
+    await addFiles('a.mp4', 'b.mp4');                       // 0-40 and 40-80
+    await wrapper.get('#settings-tab').trigger('click');
+    await relink(0, 25);                                    // edited down to 25 s
+    expect(wrapper.get('#toast').text()).toContain('clip length updated');
+    expect((await clips()).map(c => [c.start, c.source_out])).toEqual([[0, 25], [40, 40]]);
+    await relink(0, 50);                                    // and later extended to 50 s: b moves along
+    expect((await clips()).map(c => [c.start, c.source_out])).toEqual([[0, 50], [65, 40]]);
+    await wrapper.findAll('#vlist .vrow')[0].get('[aria-label="Source in"]').setValue('5');
+    await wrapper.findAll('#vlist .vrow')[0].get('[aria-label="Source out"]').setValue('20');
+    await relink(0, 30);                                    // a trim that still fits is left alone
+    expect((await clips())[0]).toMatchObject({ source_in: 5, source_out: 20 });
+    await relink(0, 4);                                     // shorter than the In point: refused
+    expect(wrapper.get('#toast').text()).toContain('shorter than where the clip starts');
+    expect((await clips())[0]).toMatchObject({ source_in: 5, source_out: 20 });
   });
   it('applies the media folder to all videos and updates every reference when it changes, with undo', async () => {
     await wrapper.get('#settings-tab').trigger('click');
