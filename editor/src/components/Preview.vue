@@ -166,7 +166,7 @@ const headlineStyle = computed(() => {
         <span>{{ state.chapters[active - 1] }}</span>
       </div>
       <div id="bar" class="abs" :style="{ ...boxStyle(design.BAR), background: cinematic ? 'transparent' : design.BRAND.bar_fill,
-        borderColor: design.BRAND.bar_line, justifyContent: modern ? 'flex-start' : 'center' }">
+        borderColor: design.BRAND.bar_line, justifyContent: 'center' }">
         <div id="hl" :style="headlineStyle"><AccentText :text="headline?.text ?? ''" /></div>
       </div>
       <div v-if="design.PROGRESS && !horizontal" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
