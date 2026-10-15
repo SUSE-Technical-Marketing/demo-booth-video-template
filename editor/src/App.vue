@@ -116,6 +116,33 @@ function beginEdit() {
   followPlayhead.value = false;
   pushHistory();
 }
+function chooseChapter(chapter) {      // from the chapter list: the editing panel and the timeline both go there
+  selectChapter(chapter);
+  setCur(chapter.t + 0.1);
+}
+function moveHeadline(h, time) {       // dragged on the timeline: h.t is relative to its chapter
+  const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
+  h.t = +(time - chapter.t).toFixed(2);
+  selectedChapterId.value = chapter.id;
+  selectedId.value = h.id;
+  setCur(time);
+  markDirty();
+}
+function moveChapter(chapter, time) {  // its headlines are relative to it, so they move with it
+  chapter.t = time;
+  selectedChapterId.value = chapter.id;
+  selectedId.value = null;
+  setCur(time + 0.1);
+  markDirty();
+}
+function moveHeadlineEnd(h, time) {    // time = null puts the end back to automatic
+  const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
+  h.end = time == null ? null : +(time - chapter.t).toFixed(2);
+  selectedChapterId.value = chapter.id;
+  selectedId.value = h.id;
+  setCur(Math.max(headlineTime(state.value, h), (time ?? headlineEnd(state.value, h, totalDuration.value)) - 0.5));
+  markDirty();
+}
 function selectChapter(chapter) {
   followPlayhead.value = false;
   selectedChapterId.value = chapter.id;
@@ -375,23 +402,30 @@ function download() {
     toast('Downloaded headline_timing.json');
   } catch (error) { report('Download failed', error); }
 }
-async function save() {
+// Save writes to the linked file, asking for one the first time. Save As always asks, then links to the new file
+// (the old file is left as it was); cancelling the picker changes nothing.
+async function save(saveAs = false) {
   if (saving.value) return;
   clearTimeout(saveTimer);
   saving.value = true;
   try {
     const text = checkedJSON(), savedRevision = revision;
-    if (!handle.value) {
+    let target = handle.value;
+    if (!target || saveAs === true) {
       if (!window.showSaveFilePicker) return download();
-      handle.value = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: 'headline_timing.json' });
-      await remember(handle.value);
+      target = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: handle.value?.name ?? 'headline_timing.json' });
     }
-    const writable = await handle.value.createWritable();
+    const writable = await target.createWritable();
     await writable.write(text);
     await writable.close();
+    if (target !== handle.value) {
+      handle.value = target;
+      reconnectHandle.value = null;
+      await remember(target);
+    }
     if (revision === savedRevision) dirty.value = false;
     else scheduleSave();
-    toast('Saved ' + handle.value.name);
+    toast('Saved ' + target.name);
   } catch (error) { report('Save failed', error); }
   finally { saving.value = false; }
 }
@@ -436,7 +470,7 @@ function keydown(event) {
   const target = document.activeElement;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-    event.preventDefault(); save();
+    event.preventDefault(); save(event.shiftKey);
   } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' &&
       !(typing && target.type === 'text' && !target.classList.contains('time'))) {
     event.preventDefault(); undo();
@@ -484,7 +518,8 @@ onUnmounted(() => {
     <button id="btnOpen" title="Open a timing JSON file" @click="openFile">Open file…</button>
     <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="importFile">
     <button v-if="reconnectHandle" id="btnReconnect" class="primary" @click="reconnect">Reconnect {{ reconnectHandle.name }}</button>
-    <button id="btnSave" class="primary" title="Cmd/Ctrl+S" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</button>
+    <button id="btnSave" class="primary" title="Cmd/Ctrl+S" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
+    <button id="btnSaveAs" title="Save a copy under a new name and keep working in it (Cmd/Ctrl+Shift+S)" :disabled="saving" @click="save(true)">Save as…</button>
     <button id="btnDownload" class="ghost" @click="download">Download</button>
     <label class="inline"><input id="autosave" v-model="autosave" type="checkbox" @change="scheduleSave"> autosave</label>
     <span id="status" class="status" :class="{ dirty, ok: !dirty && handle }">{{ status }}</span>
@@ -505,7 +540,7 @@ onUnmounted(() => {
           :chapters-end="state.chapters_end" @change-chapters-end="updateChaptersEnd"
           :text-size-id="state.headlines[headlineFit.idx]?.id"
           @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-          @select="selectChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
+          @select="chooseChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
           @delete-chapter="deleteChapter" @add-chapter="addChapter"
           @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
           @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
@@ -565,6 +600,7 @@ onUnmounted(() => {
   </EditorWorkspace>
   <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
     :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
-    @select-chapter="selectChapter" @select-headline="selectTimelineHeadline" />
+    @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
+    @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>

@@ -7,6 +7,18 @@ small JSON file per video, and a command-line renderer turns that file and your 
 
 You still **cut your video in whatever editor you like**. This app adds the SUSE wrapper around the finished edit.
 
+## What you can do in the editor
+
+- **Preview the real layout** over your own recordings: load one video per chapter, or one that spans several, and play
+  or scrub the finished look.
+- **Edit chapters and headlines** in a focused workspace: rename chapters inline, add as many as you need (the panel
+  scrolls past six), and write headlines with `*accent*` words.
+- **Retime on the timeline**: drag a headline's start and end handles, zoom in for precision, click a chapter to jump
+  there, and ripple everything after a cut.
+- **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
+- **Render the final MP4** with one command (or a container): branded layout, your audio, and an MP4 chapter marker
+  per chapter.
+
 ## How the pieces fit
 
 ```
@@ -82,7 +94,7 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    Select a chapter to edit its headlines in the separate **selected-chapter headlines** card below.
    The chapter list and headlines have their own bordered cards and scroll independently.
    An outlined row is the editing selection; a bright dot marks the chapter currently playing.
-   Selecting a chapter does not seek or interrupt the preview. Enable **Follow playhead** to switch the
+   Clicking a chapter in the list moves the playhead (and so the timeline and preview) to its start. Enable **Follow playhead** to switch the
    editing panel as playback or scrubbing crosses chapters; focusing an edit field turns following off.
    **+ Chapter** inserts a chapter at the playhead and selects its title for editing. Delete removes the chapter
    and all its headlines; keep at least one chapter. There is no chapter reuse: buttons advance once in chronological order
@@ -114,7 +126,14 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
 5. Use a headline's **Preview** button, drag the timeline or press `Space` to preview.
    The timeline has chapter bands and a second track of **headline duration bands**. Each headline band ends
    at its chapter boundary or video end; gaps mean no headline. Selecting a band seeks there and opens its
-   chapter/ headline editor. Bands are keyboard-accessible; dragging scrubs without moving document timings.
+   chapter/ headline editor. Bands are keyboard-accessible; dragging a band scrubs without moving document timings.
+   **To move where a chapter starts, drag the handle on the left edge of its band** (the dark bar at the top of the timeline): the
+   previous chapter ends there and the chapter's headlines move with it, because they are measured from its start.
+   **To change when a headline's words appear and disappear, drag the handles on its band**: the left handle
+   sets when it starts (and so where the previous headline in the chapter ends), the right handle sets when it ends, which
+   can leave a gap before the next headline. Dragging the right handle all the way to the next headline (or the chapter
+   end) makes the end automatic again. Handles can also be focused and moved with `←` / `→` (`Shift` for 1 s), move in 0.1 s steps,
+   stop at their neighbours and the chapter boundary, and the preview follows. Undo reverts the whole drag.
    Invalid or zero-length cues remain selectable as narrow markers, not misleading duration bands.
    The preview shows the real layout with the active
    button and the wipe. It is an approximation of the rendered video, so check a real frame with `--frame` before a long render.
@@ -123,7 +142,11 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    The preview's size summary also identifies it. Shortening it makes all of
    them bigger.
 
-Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
+**Zoom** the timeline with the **− / + / Fit** buttons above it (or Ctrl/Cmd + scroll, or a trackpad pinch) to place handles
+precisely: each step doubles the zoom, the ruler adds finer ticks, and the view scrolls to keep the playhead visible.
+
+Other controls: **Save as…** (`Cmd+Shift+S`) writes the current timing to a new file and keeps working in it, leaving the
+previous file untouched; **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
 **wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).
 Videos, metadata, headline settings and ripple controls are grouped under **Videos and project settings**
 so they do not crowd the chapter/headline editor. Secondary row actions appear on hover or keyboard focus
@@ -252,7 +275,7 @@ Nothing is stored in the video, so there is nothing to clean up.
 | `chapters` | At least one chapter object, ordered by `start`. More than six buttons scroll automatically. |
 | `chapters[].title` | Chapter/button name; long names are shrunk to fit. |
 | `chapters[].start` | Seconds from the start of the video. |
-| `chapters[].headlines` | `[chapter-relative seconds, "text"]` pairs, or `[]` for no headlines. `*word*` = accent. Each headline is clipped at its chapter's end. |
+| `chapters[].headlines` | `[chapter-relative seconds, "text"]` rows, or `[]` for no headlines. `*word*` = accent. A row may add a third item, `[start, "text", end]`, to hide the words at that chapter-relative time (it must be after the start); without it a headline stays until the next one starts. Each headline is clipped at its chapter's end. |
 | `headlines_end` | Optional absolute cutoff for all headlines, or `null` to use chapter/video boundaries. |
 | `chapters_end` | Optional absolute end of the chapter sequence (at least 0.01 seconds), or `null` for automatic end. Caps chapter/headline ranges and MP4 chapter markers without trimming the rendered video. Also defines preview duration when no videos are loaded. |
 | `wipe_seconds` | How long each headline takes to wipe in. |

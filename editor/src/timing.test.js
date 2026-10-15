@@ -253,3 +253,27 @@ describe('scrolling', () => {
     expect(chapterScrollAt(100, steps)).toBe(0);
   });
 });
+
+describe('explicit headline ends', () => {
+  const doc = headlines => ({ schema_version: 2, chapters: [{ title: 'A', start: 10, headlines }, { title: 'B', start: 40, headlines: [] }] });
+  it('round-trips an explicit end and leaves automatic ends out of the file', () => {
+    const state = fromJSON(doc([[0, 'One', 5], [8, 'Two']]));
+    expect(state.headlines.map(h => h.end)).toEqual([5, null]);
+    expect(JSON.parse(toJSON(state)).chapters[0].headlines).toEqual([[0, 'One', 5], [8, 'Two']]);
+  });
+  it('ends the headline there, even before the next one starts', () => {
+    const state = fromJSON(doc([[0, 'One', 5], [8, 'Two']]));
+    expect(headlineEnd(state, state.headlines[0], 100)).toBe(15);   // chapter start 10 + 5
+    expect(headlineEnd(state, state.headlines[1], 100)).toBe(40);   // automatic: chapter end
+  });
+  it('rejects an end that is not after the start', () => {
+    expect(() => fromJSON(doc([[3, 'One', 3]]))).toThrow();
+    expect(() => fromJSON(doc([[3, 'One', 2]]))).toThrow();
+  });
+  it('drops an explicit end once the start has moved past it', () => {
+    const state = fromJSON(doc([[0, 'One', 5]]));
+    state.headlines[0].t = 6;
+    sortAll(state);
+    expect(state.headlines[0].end).toBeNull();
+  });
+});

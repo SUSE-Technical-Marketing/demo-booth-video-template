@@ -1,0 +1,120 @@
+import { mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import App from './App.vue';
+
+vi.mock('./fileAccess.js', () => ({
+  downloadJSON: vi.fn(), rememberHandle: vi.fn().mockResolvedValue(),
+  rememberedHandle: vi.fn().mockResolvedValue(null), pickerOptions: {},
+}));
+
+describe('retiming headlines on the timeline, and chapter clicks', () => {
+  let wrapper;
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ measureText: t => ({ width: t.length * 14 }) });
+    Element.prototype.scrollIntoView = vi.fn();
+    wrapper = mount(App, { attachTo: document.body });
+  });
+  afterEach(() => { wrapper.unmount(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  const handles = () => wrapper.findAll('#tl [data-handle="start"]');
+  const ends = () => wrapper.findAll('#tl [data-handle="end"]');
+  const press = (handle, key, shiftKey = false) => handle.trigger('keydown', { key, shiftKey });
+
+  it('moves where a headline starts, and where the previous one ends', async () => {
+    const second = handles()[1];                                  // the sample's second headline starts at 15 s
+    expect(second.attributes('aria-valuenow')).toBe('15');
+    await press(second, 'ArrowRight');
+    expect(handles()[1].attributes('aria-valuenow')).toBe('15.1');
+    expect(wrapper.findAll('#tl .headline-band')[0].attributes('title')).toContain('0:00 – 0:15.1');
+    expect(wrapper.get('#scrub').element.value).toBe('15.1');   // the preview follows the handle
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+    await press(handles()[1], 'ArrowLeft', true);
+    expect(handles()[1].attributes('aria-valuenow')).toBe('14.1');
+  });
+  it('keeps a headline between its neighbours and inside its chapter', async () => {
+    for (let i = 0; i < 40; i++) await press(handles()[1], 'ArrowRight', true);
+    expect(handles()[1].attributes('aria-valuenow')).toBe('29.9');      // chapter 2 starts at 30 s
+    for (let i = 0; i < 40; i++) await press(handles()[1], 'ArrowLeft', true);
+    expect(handles()[1].attributes('aria-valuenow')).toBe('0.1');       // the first headline starts at 0 s
+  });
+  it('moves where the words end, leaving a gap before the next headline', async () => {
+    const first = ends()[0];                                        // headline 1 runs 0 s to 15 s (until headline 2 starts)
+    expect(first.attributes('aria-valuenow')).toBe('15');
+    await press(first, 'ArrowLeft', true);
+    expect(ends()[0].attributes('aria-valuenow')).toBe('14');
+    expect(wrapper.findAll('#tl .headline-band')[0].attributes('title')).toContain('0:00 – 0:14');
+    expect(handles()[1].attributes('aria-valuenow')).toBe('15');    // the next headline did not move
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+  });
+  it('keeps an end after its start, and going back to the next headline makes it automatic again', async () => {
+    for (let i = 0; i < 40; i++) await press(ends()[0], 'ArrowLeft', true);
+    expect(ends()[0].attributes('aria-valuenow')).toBe('0.1');
+    for (let i = 0; i < 40; i++) await press(ends()[0], 'ArrowRight', true);
+    expect(ends()[0].attributes('aria-valuenow')).toBe('15');
+    expect(wrapper.findAll('#tl .headline-band')[0].attributes('title')).toContain('0:00 – 0:15');
+  });
+  it('can be undone', async () => {
+    await press(handles()[1], 'ArrowRight', true);
+    expect(handles()[1].attributes('aria-valuenow')).toBe('16');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(handles()[1].attributes('aria-valuenow')).toBe('15');
+  });
+  it('drags with the pointer', async () => {
+    const tl = wrapper.get('#tl').element;
+    tl.getBoundingClientRect = () => ({ left: 0, width: 1000 });
+    const handle = handles()[1];
+    handle.element.setPointerCapture = vi.fn();
+    const total = Number(wrapper.get('#scrub').attributes('max'));
+    await handle.trigger('pointerdown');
+    handle.element.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 * 20 / total, bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(handles()[1].attributes('aria-valuenow')).toBe('20');
+  });
+  it('moves the playhead and timeline when a chapter is clicked in the list', async () => {
+    await wrapper.findAll('#chapters .crow')[2].trigger('click');
+    expect(wrapper.get('#scrub').element.value).toBe('60.1');           // chapter 3 starts at 60 s
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe('SUSE Virtualization');
+  });
+});
+
+describe('moving a chapter boundary on the timeline', () => {
+  let wrapper;
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ measureText: t => ({ width: t.length * 14 }) });
+    Element.prototype.scrollIntoView = vi.fn();
+    wrapper = mount(App, { attachTo: document.body });
+  });
+  afterEach(() => { wrapper.unmount(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  const chapters = () => wrapper.findAll('#tl [data-handle="chapter"]');
+  const press = (h, key, shiftKey = false) => h.trigger('keydown', { key, shiftKey });
+
+  it('moves where a chapter starts, ends the previous one there, and carries its headlines along', async () => {
+    const second = chapters()[1];                                    // chapter 2 starts at 30 s
+    expect(second.attributes('aria-valuenow')).toBe('30');
+    await press(second, 'ArrowRight', true);
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('31');
+    expect(wrapper.findAll('#tl .band')[0].attributes('title')).toContain('0:00 – 0:31');
+    expect(wrapper.findAll('#tl .band')[1].attributes('title')).toContain('0:31 –');
+    expect(wrapper.findAll('#tl [data-handle="start"]')[2].attributes('aria-valuenow')).toBe('31');   // its first headline
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+  });
+  it('stays between the neighbouring chapters, and can be undone', async () => {
+    for (let i = 0; i < 40; i++) await press(chapters()[1], 'ArrowRight', true);
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('59.9');   // chapter 3 starts at 60 s
+    for (let i = 0; i < 80; i++) await press(chapters()[1], 'ArrowLeft', true);
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('0.1');    // chapter 1 starts at 0 s
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(chapters()[1].attributes('aria-valuenow')).not.toBe('0.1');
+  });
+  it('drags with the pointer', async () => {
+    wrapper.get('#tl').element.getBoundingClientRect = () => ({ left: 0, width: 1000 });
+    const handle = chapters()[1];
+    handle.element.setPointerCapture = vi.fn();
+    const total = Number(wrapper.get('#scrub').attributes('max'));
+    await handle.trigger('pointerdown');
+    handle.element.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 * 40 / total, bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('40');
+  });
+});
