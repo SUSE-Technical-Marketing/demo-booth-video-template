@@ -128,6 +128,13 @@ function moveHeadline(h, time) {       // dragged on the timeline: h.t is relati
   setCur(time);
   markDirty();
 }
+function moveChapter(chapter, time) {  // its headlines are relative to it, so they move with it
+  chapter.t = time;
+  selectedChapterId.value = chapter.id;
+  selectedId.value = null;
+  setCur(time + 0.1);
+  markDirty();
+}
 function moveHeadlineEnd(h, time) {    // time = null puts the end back to automatic
   const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
   h.end = time == null ? null : +(time - chapter.t).toFixed(2);
@@ -594,6 +601,6 @@ onUnmounted(() => {
   <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
     :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
     @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
-    @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" />
+    @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>

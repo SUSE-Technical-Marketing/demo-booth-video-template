@@ -267,3 +267,9 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .zoom { display: inline-flex; align-items: center; gap: 4px; }
 .zoom-label { min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
 .zoom button:disabled { opacity: .4; cursor: default; }
+
+.chapter-handle { position: absolute; top: 0; height: 34px; width: 12px; margin-left: -6px; z-index: 4; cursor: ew-resize; touch-action: none; }
+.chapter-handle::after { content: ''; position: absolute; left: 4px; top: 4px; bottom: 4px; width: 4px; border-radius: 2px; background: #05211b; opacity: .8; }
+.chapter-handle:hover::after, .chapter-handle:focus-visible::after { background: var(--orange); opacity: 1; }
+.chapter-handle:focus-visible { outline: 2px solid var(--text); border-radius: 4px; }
+@media (max-height: 600px) { .chapter-handle { height: 26px; } }

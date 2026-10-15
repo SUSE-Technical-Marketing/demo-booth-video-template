@@ -127,6 +127,8 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    The timeline has chapter bands and a second track of **headline duration bands**. Each headline band ends
    at its chapter boundary or video end; gaps mean no headline. Selecting a band seeks there and opens its
    chapter/ headline editor. Bands are keyboard-accessible; dragging a band scrubs without moving document timings.
+   **To move where a chapter starts, drag the handle on the left edge of its band** (the dark bar at the top of the timeline): the
+   previous chapter ends there and the chapter's headlines move with it, because they are measured from its start.
    **To change when a headline's words appear and disappear, drag the handles on its band**: the left handle
    sets when it starts (and so where the previous headline in the chapter ends), the right handle sets when it ends, which
    can leave a gap before the next headline. Dragging the right handle all the way to the next headline (or the chapter

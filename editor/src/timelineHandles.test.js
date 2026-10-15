@@ -76,3 +76,45 @@ describe('retiming headlines on the timeline, and chapter clicks', () => {
     expect(wrapper.get('.chapter-inspector h3').text()).toBe('SUSE Virtualization');
   });
 });
+
+describe('moving a chapter boundary on the timeline', () => {
+  let wrapper;
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ measureText: t => ({ width: t.length * 14 }) });
+    Element.prototype.scrollIntoView = vi.fn();
+    wrapper = mount(App, { attachTo: document.body });
+  });
+  afterEach(() => { wrapper.unmount(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  const chapters = () => wrapper.findAll('#tl [data-handle="chapter"]');
+  const press = (h, key, shiftKey = false) => h.trigger('keydown', { key, shiftKey });
+
+  it('moves where a chapter starts, ends the previous one there, and carries its headlines along', async () => {
+    const second = chapters()[1];                                    // chapter 2 starts at 30 s
+    expect(second.attributes('aria-valuenow')).toBe('30');
+    await press(second, 'ArrowRight', true);
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('31');
+    expect(wrapper.findAll('#tl .band')[0].attributes('title')).toContain('0:00 – 0:31');
+    expect(wrapper.findAll('#tl .band')[1].attributes('title')).toContain('0:31 –');
+    expect(wrapper.findAll('#tl [data-handle="start"]')[2].attributes('aria-valuenow')).toBe('31');   // its first headline
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+  });
+  it('stays between the neighbouring chapters, and can be undone', async () => {
+    for (let i = 0; i < 40; i++) await press(chapters()[1], 'ArrowRight', true);
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('59.9');   // chapter 3 starts at 60 s
+    for (let i = 0; i < 80; i++) await press(chapters()[1], 'ArrowLeft', true);
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('0.1');    // chapter 1 starts at 0 s
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(chapters()[1].attributes('aria-valuenow')).not.toBe('0.1');
+  });
+  it('drags with the pointer', async () => {
+    wrapper.get('#tl').element.getBoundingClientRect = () => ({ left: 0, width: 1000 });
+    const handle = chapters()[1];
+    handle.element.setPointerCapture = vi.fn();
+    const total = Number(wrapper.get('#scrub').attributes('max'));
+    await handle.trigger('pointerdown');
+    handle.element.dispatchEvent(new MouseEvent('pointermove', { clientX: 1000 * 40 / total, bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(chapters()[1].attributes('aria-valuenow')).toBe('40');
+  });
+});
