@@ -253,8 +253,11 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
   .preview-hint, .timeline-legend { display: none; }
 }
 
-.headline-handle { position: absolute; top: 43px; height: 32px; width: 12px; margin-left: -6px; z-index: 3; cursor: ew-resize; touch-action: none; }
-.headline-handle::after { content: ''; position: absolute; left: 4px; top: 5px; bottom: 5px; width: 4px; border-radius: 2px; background: var(--text); opacity: .75; }
+.headline-handle { position: absolute; top: 43px; height: 32px; width: 10px; z-index: 3; cursor: ew-resize; touch-action: none; }
+.headline-handle.end { margin-left: -10px; }
+.headline-handle::after { content: ''; position: absolute; top: 5px; bottom: 5px; width: 4px; border-radius: 2px; background: var(--text); opacity: .75; }
+.headline-handle.start::after { left: 2px; }
+.headline-handle.end::after { right: 2px; }
 .headline-handle:hover::after, .headline-handle:focus-visible::after { background: var(--orange); opacity: 1; }
 .headline-handle:focus-visible { outline: 2px solid var(--text); border-radius: 4px; }
 @media (max-height: 600px) { .headline-handle { top: 34px; height: 26px; } }

@@ -10,7 +10,7 @@ const props = defineProps({
   selectedChapterId: { type: Number, default: null },
   clips: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline']);
+const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end']);
 const timeline = ref(null);
 let dragging = false;
 const pct = t => `${t / props.duration * 100}%`;
@@ -28,22 +28,31 @@ const ruler = computed(() => {
   for (let t = 0; t <= props.duration; t += step) ticks.push({ t, label: t <= props.duration - step / 2 });
   return ticks;
 });
-// A handle sits on the left edge of each headline band. Dragging it moves where that headline starts, which is
-// also where the previous headline in the chapter ends. It stays between its neighbours and inside its chapter.
+// Each headline band has two handles. The one on its left edge moves when the words appear (and, since a headline
+// normally ends where the next begins, where the previous one ends). The one on its right edge moves when the words
+// disappear, which can leave a gap before the next headline; dragging it all the way to the next headline (or the
+// chapter end) goes back to "automatic". Handles stay between the neighbours and inside the chapter.
 const STEP = 0.1;
-const handles = computed(() => headlineBands.value.filter(b => !b.outside && !b.marker).map(band => {
+const handles = computed(() => headlineBands.value.filter(b => !b.outside && !b.marker).flatMap(band => {
   const owned = props.state.headlines.filter(h => h.chapterId === band.chapter.id).sort((a, b) => a.t - b.t);
-  const i = owned.indexOf(band.headline);
-  const lower = i > 0 ? headlineTime(props.state, owned[i - 1]) + STEP : band.chapter.t;
-  const next = owned[i + 1];
-  const upper = Math.min(next ? headlineTime(props.state, next) - STEP : Infinity,
-    chapterEnd(props.state, band.chapter, props.duration) - STEP, (props.state.headlines_end ?? Infinity) - STEP);
-  return { band, lower, upper: Math.max(lower, upper) };
+  const i = owned.indexOf(band.headline), next = owned[i + 1];
+  const limit = Math.min(next ? headlineTime(props.state, next) : Infinity,
+    chapterEnd(props.state, band.chapter, props.duration), props.state.headlines_end ?? Infinity);
+  const startLower = i > 0 ? headlineTime(props.state, owned[i - 1]) + STEP : band.chapter.t;
+  const startUpper = Math.max(startLower, Math.min(limit - STEP,
+    band.headline.end == null ? Infinity : band.chapter.t + band.headline.end - STEP));
+  const endLower = band.start + STEP;
+  return [
+    { kind: 'start', band, lower: startLower, upper: startUpper, value: band.start },
+    { kind: 'end', band, lower: endLower, upper: Math.max(endLower, limit), value: band.end },
+  ];
 }));
 const snap = t => Math.round(t / STEP) * STEP;
 let handleDrag = null;
 function moveTo(handle, time) {
-  emit('move-headline', handle.band.headline, +Math.max(handle.lower, Math.min(handle.upper, snap(time))).toFixed(2));
+  const clamped = +Math.max(handle.lower, Math.min(handle.upper, snap(time))).toFixed(2);
+  if (handle.kind === 'start') emit('move-headline', handle.band.headline, clamped);
+  else emit('move-headline-end', handle.band.headline, clamped >= handle.upper - 1e-6 ? null : clamped);
 }
 function handleDown(event, handle) {
   handleDrag = handle;
@@ -60,7 +69,7 @@ function handleKey(event, handle) {
   if (!dir) return;
   event.preventDefault();
   emit('begin-edit');
-  moveTo(handle, handle.band.start + dir * (event.shiftKey ? 1 : STEP));
+  moveTo(handle, handle.value + dir * (event.shiftKey ? 1 : STEP));
 }
 function seek(event) {
   const rect = timeline.value.getBoundingClientRect();
@@ -102,11 +111,13 @@ function keyboardSelect(event, kind, row, start) {
       :style="{ left: pct(clamp(band.start)), width: pct(band.marker ? 0 : band.end - band.start),
         '--band-color': CH_COLORS[(band.chapter.ch - 1) % 6] }"
       @click="keyboardSelect($event, 'select-headline', band.headline, band.start)">{{ plain(band.headline.text) }}</button>
-    <div v-for="handle in handles" :key="'h' + handle.band.headline.id" class="headline-handle" role="slider" tabindex="0"
-      :aria-label="`Move headline start: ${plain(handle.band.headline.text)}`" aria-orientation="horizontal"
-      :aria-valuemin="handle.lower" :aria-valuemax="handle.upper" :aria-valuenow="handle.band.start"
-      :aria-valuetext="fmt(handle.band.start)" :title="`Drag to move where this headline starts (${fmt(handle.band.start)})`"
-      :style="{ left: pct(clamp(handle.band.start)) }" @pointerdown.stop="handleDown($event, handle)"
+    <div v-for="handle in handles" :key="handle.kind + handle.band.headline.id" class="headline-handle" :class="handle.kind"
+      role="slider" tabindex="0" :data-handle="handle.kind"
+      :aria-label="`Move headline ${handle.kind}: ${plain(handle.band.headline.text)}`" aria-orientation="horizontal"
+      :aria-valuemin="handle.lower" :aria-valuemax="handle.upper" :aria-valuenow="handle.value"
+      :aria-valuetext="fmt(handle.value)"
+      :title="`Drag to move where this headline ${handle.kind === 'start' ? 'starts' : 'ends'} (${fmt(handle.value)})`"
+      :style="{ left: pct(clamp(handle.value)) }" @pointerdown.stop="handleDown($event, handle)"
       @pointermove="handleMove" @pointerup="handleDrag = null" @pointercancel="handleDrag = null"
       @lostpointercapture="handleDrag = null" @keydown="handleKey($event, handle)"></div>
     <div v-for="clip in clips" :key="clip.id" class="vclip" :title="clip.name"

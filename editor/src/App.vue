@@ -128,6 +128,14 @@ function moveHeadline(h, time) {       // dragged on the timeline: h.t is relati
   setCur(time);
   markDirty();
 }
+function moveHeadlineEnd(h, time) {    // time = null puts the end back to automatic
+  const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
+  h.end = time == null ? null : +(time - chapter.t).toFixed(2);
+  selectedChapterId.value = chapter.id;
+  selectedId.value = h.id;
+  setCur(Math.max(headlineTime(state.value, h), (time ?? headlineEnd(state.value, h, totalDuration.value)) - 0.5));
+  markDirty();
+}
 function selectChapter(chapter) {
   followPlayhead.value = false;
   selectedChapterId.value = chapter.id;
@@ -586,6 +594,6 @@ onUnmounted(() => {
   <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
     :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
     @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
-    @begin-edit="beginEdit" @move-headline="moveHeadline" />
+    @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>

@@ -16,7 +16,8 @@ describe('retiming headlines on the timeline, and chapter clicks', () => {
     wrapper = mount(App, { attachTo: document.body });
   });
   afterEach(() => { wrapper.unmount(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
-  const handles = () => wrapper.findAll('#tl .headline-handle');
+  const handles = () => wrapper.findAll('#tl [data-handle="start"]');
+  const ends = () => wrapper.findAll('#tl [data-handle="end"]');
   const press = (handle, key, shiftKey = false) => handle.trigger('keydown', { key, shiftKey });
 
   it('moves where a headline starts, and where the previous one ends', async () => {
@@ -35,6 +36,22 @@ describe('retiming headlines on the timeline, and chapter clicks', () => {
     expect(handles()[1].attributes('aria-valuenow')).toBe('29.9');      // chapter 2 starts at 30 s
     for (let i = 0; i < 40; i++) await press(handles()[1], 'ArrowLeft', true);
     expect(handles()[1].attributes('aria-valuenow')).toBe('0.1');       // the first headline starts at 0 s
+  });
+  it('moves where the words end, leaving a gap before the next headline', async () => {
+    const first = ends()[0];                                        // headline 1 runs 0 s to 15 s (until headline 2 starts)
+    expect(first.attributes('aria-valuenow')).toBe('15');
+    await press(first, 'ArrowLeft', true);
+    expect(ends()[0].attributes('aria-valuenow')).toBe('14');
+    expect(wrapper.findAll('#tl .headline-band')[0].attributes('title')).toContain('0:00 – 0:14');
+    expect(handles()[1].attributes('aria-valuenow')).toBe('15');    // the next headline did not move
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+  });
+  it('keeps an end after its start, and going back to the next headline makes it automatic again', async () => {
+    for (let i = 0; i < 40; i++) await press(ends()[0], 'ArrowLeft', true);
+    expect(ends()[0].attributes('aria-valuenow')).toBe('0.1');
+    for (let i = 0; i < 40; i++) await press(ends()[0], 'ArrowRight', true);
+    expect(ends()[0].attributes('aria-valuenow')).toBe('15');
+    expect(wrapper.findAll('#tl .headline-band')[0].attributes('title')).toContain('0:00 – 0:15');
   });
   it('can be undone', async () => {
     await press(handles()[1], 'ArrowRight', true);

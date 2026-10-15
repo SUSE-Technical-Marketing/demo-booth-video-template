@@ -8,10 +8,14 @@ def _time(value, relative=False):
         relative or value >= 0)
 
 
-def _headlines(rows, relative=False):
+def _headlines(rows, relative=False, with_end=False):
+    """Rows are [start, text]; chapter-relative rows may add a third item, an explicit end (null = automatic)."""
+    def end_ok(row):
+        return len(row) == 2 or (with_end and len(row) == 3 and (
+            row[2] is None or (_time(row[2], relative) and row[2] > row[0])))
     return isinstance(rows, list) and all(
-        isinstance(row, (list, tuple)) and len(row) == 2 and _time(row[0], relative) and
-        isinstance(row[1], str) and row[1].strip() for row in rows)
+        isinstance(row, (list, tuple)) and 2 <= len(row) <= 3 and _time(row[0], relative) and
+        isinstance(row[1], str) and row[1].strip() and end_ok(row) for row in rows)
 
 
 def normalize_chapters(timing):
@@ -38,8 +42,9 @@ def normalize_chapters(timing):
     notices = []
     if version == 2:
         if any(not isinstance(c, dict) or not isinstance(c.get("title"), str) or not _time(c.get("start")) or
-               not _headlines(c.get("headlines"), relative=True) for c in chapters):
-            raise ValueError("Each chapter needs a title, non-negative start and valid relative headline list")
+               not _headlines(c.get("headlines"), relative=True, with_end=True) for c in chapters):
+            raise ValueError("Each chapter needs a title, non-negative start, and a valid relative headline list "
+                             "(an explicit end must come after its start)")
         owned = sorted(chapters, key=lambda c: c["start"])
     else:
         if any(not isinstance(c, str) for c in chapters):
@@ -75,12 +80,15 @@ def normalize_chapters(timing):
                        end if end is not None else math.inf,
                        chapters_end if chapters_end is not None else math.inf)
         rows = sorted(chapter["headlines"], key=lambda row: row[0])
-        for j, (relative, text) in enumerate(rows):
+        for j, row in enumerate(rows):
+            relative, text = row[0], row[1]
+            explicit = row[2] if len(row) > 2 and row[2] is not None else None
             start = chapter["start"] + relative
             if relative < 0 or start >= boundary:
                 outside += 1
                 continue
-            stop = min(chapter["start"] + rows[j + 1][0] if j + 1 < len(rows) else math.inf, boundary)
+            stop = min(chapter["start"] + rows[j + 1][0] if j + 1 < len(rows) else math.inf, boundary,
+                       chapter["start"] + explicit if explicit is not None else math.inf)
             intervals.append((float(start), text, None if math.isinf(stop) else float(stop)))
     if outside:
         notices.append("Skipped %d headline(s) outside their chapter or headline end." % outside)
@@ -88,7 +96,7 @@ def normalize_chapters(timing):
     timing["chapters"] = [c["title"] for c in owned]
     timing["chapter_starts"] = [[float(c["start"]), i + 1] for i, c in enumerate(owned)]
     timing["headlines"] = sorted(
-        [[c["start"] + sec, text] for c in owned for sec, text in c["headlines"]], key=lambda row: row[0])
+        [[c["start"] + row[0], row[1]] for c in owned for row in c["headlines"]], key=lambda row: row[0])
     timing["wipe_seconds"] = wipe
     timing["_headline_intervals"] = intervals
     return " ".join(notices)

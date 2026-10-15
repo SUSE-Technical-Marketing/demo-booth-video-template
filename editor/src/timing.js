@@ -31,9 +31,11 @@ let nextId = 0;
 export const newRow = (values) => ({ id: ++nextId, ...values });
 const validTime = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const validChapterEnd = value => validTime(value) && value >= 0.01;
-const validHeadline = (row, relative = false) => Array.isArray(row) && row.length === 2 &&
+// [start, text] or, inside a chapter, [start, text, end]: an explicit end (null = until the next headline or chapter end)
+const validHeadline = (row, relative = false) => Array.isArray(row) && (row.length === 2 || (relative && row.length === 3)) &&
   typeof row[0] === 'number' && Number.isFinite(row[0]) && (relative || row[0] >= 0) &&
-  typeof row[1] === 'string' && Boolean(row[1].trim());
+  typeof row[1] === 'string' && Boolean(row[1].trim()) &&
+  (row[2] == null || (typeof row[2] === 'number' && Number.isFinite(row[2]) && row[2] > row[0]));
 
 export function fromJSON(o) {
   if (o?.schema_version != null && ![1, 2].includes(o.schema_version)) throw new Error('Unsupported timing schema version');
@@ -72,14 +74,14 @@ export function fromJSON(o) {
     wipe_seconds: o.wipe_seconds ?? 0.8,
   };
   if (nested) {
-    state.headlines = o.chapters.flatMap((c, i) => c.headlines.map(([t, text]) =>
-      newRow({ t, text, chapterId: state.chapter_starts[i].id })));
+    state.headlines = o.chapters.flatMap((c, i) => c.headlines.map(([t, text, end]) =>
+      newRow({ t, text, end: end ?? null, chapterId: state.chapter_starts[i].id })));
   }
   sortAll(state);
   if (!nested) {
     state.headlines = o.headlines.map(([time, text]) => {
       const chapter = state.chapter_starts.findLast(c => c.t <= time) ?? state.chapter_starts[0];
-      return newRow({ t: time - chapter.t, text, chapterId: chapter.id });
+      return newRow({ t: time - chapter.t, text, end: null, chapterId: chapter.id });
     });
     sortAll(state);
   }
@@ -103,7 +105,8 @@ export function toJSON(state) {
     product_name: state.product_name || '',
     chapters: state.chapter_starts.map((c, i) => ({
       title: state.chapters[i], start: n(c.t),
-      headlines: state.headlines.filter(h => h.chapterId === c.id).map(h => [n(h.t), h.text]),
+      headlines: state.headlines.filter(h => h.chapterId === c.id).map(h =>
+        h.end == null ? [n(h.t), h.text] : [n(h.t), h.text, n(h.end)]),
     })),
     headlines_end: state.headlines_end == null ? null : n(state.headlines_end),
     chapters_end: state.chapters_end == null ? null : n(state.chapters_end),
@@ -116,6 +119,8 @@ export function sortAll(state) {
   state.chapters = state.chapter_starts.map(c => state.chapters[c.ch - 1]);
   state.chapter_starts.forEach((c, i) => { c.ch = i + 1; });
   state.headlines.sort((a, b) => headlineTime(state, a) - headlineTime(state, b));
+  // an explicit end that is no longer after its start (the start was moved past it) goes back to automatic
+  state.headlines.forEach(h => { if (h.end != null && h.end <= h.t + 1e-6) h.end = null; });
 }
 
 export function chapterImportNotice(source) {
@@ -158,7 +163,8 @@ export function headlineEnd(state, headline, end = duration(state)) {
   const owned = state.headlines.filter(h => h.chapterId === chapter.id).sort((a, b) => a.t - b.t);
   const next = owned[owned.indexOf(headline) + 1];
   return Math.min(next ? headlineTime(state, next) : Infinity,
-    chapterEnd(state, chapter, end), state.headlines_end ?? Infinity);
+    chapterEnd(state, chapter, end), state.headlines_end ?? Infinity,
+    headline.end == null ? Infinity : chapter.t + headline.end);
 }
 export function headlineOutside(state, headline, end = duration(state)) {
   return headline.t < 0 || headlineTime(state, headline) >=

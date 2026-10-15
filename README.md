@@ -115,9 +115,11 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    The timeline has chapter bands and a second track of **headline duration bands**. Each headline band ends
    at its chapter boundary or video end; gaps mean no headline. Selecting a band seeks there and opens its
    chapter/ headline editor. Bands are keyboard-accessible; dragging a band scrubs without moving document timings.
-   **To retime a headline, drag the handle on its left edge** (or focus it and press `←` / `→`, `Shift` for 1 s): that moves
-   where it starts and where the previous headline in the chapter ends, in 0.1 s steps. A handle stops at its neighbours
-   and at the chapter boundary, and the preview follows it. Undo reverts the whole drag.
+   **To change when a headline's words appear and disappear, drag the handles on its band**: the left handle
+   sets when it starts (and so where the previous headline in the chapter ends), the right handle sets when it ends, which
+   can leave a gap before the next headline. Dragging the right handle all the way to the next headline (or the chapter
+   end) makes the end automatic again. Handles can also be focused and moved with `←` / `→` (`Shift` for 1 s), move in 0.1 s steps,
+   stop at their neighbours and the chapter boundary, and the preview follows. Undo reverts the whole drag.
    Invalid or zero-length cues remain selectable as narrow markers, not misleading duration bands.
    The preview shows the real layout with the active
    button and the wipe. It is an approximation of the rendered video, so check a real frame with `--frame` before a long render.
@@ -256,7 +258,7 @@ Nothing is stored in the video, so there is nothing to clean up.
 | `chapters` | At least one chapter object, ordered by `start`. More than six buttons scroll automatically. |
 | `chapters[].title` | Chapter/button name; long names are shrunk to fit. |
 | `chapters[].start` | Seconds from the start of the video. |
-| `chapters[].headlines` | `[chapter-relative seconds, "text"]` pairs, or `[]` for no headlines. `*word*` = accent. Each headline is clipped at its chapter's end. |
+| `chapters[].headlines` | `[chapter-relative seconds, "text"]` rows, or `[]` for no headlines. `*word*` = accent. A row may add a third item, `[start, "text", end]`, to hide the words at that chapter-relative time (it must be after the start); without it a headline stays until the next one starts. Each headline is clipped at its chapter's end. |
 | `headlines_end` | Optional absolute cutoff for all headlines, or `null` to use chapter/video boundaries. |
 | `chapters_end` | Optional absolute end of the chapter sequence (at least 0.01 seconds), or `null` for automatic end. Caps chapter/headline ranges and MP4 chapter markers without trimming the rendered video. Also defines preview duration when no videos are loaded. |
 | `wipe_seconds` | How long each headline takes to wipe in. |

@@ -150,5 +150,34 @@ class HeadlineOwnershipTests(unittest.TestCase):
                 normalize_chapters(source)
 
 
+    def test_explicit_headline_end_leaves_a_gap_before_the_next_headline(self):
+        source = {"schema_version": 2, "chapters": [
+            {"title": "Intro", "start": 10, "headlines": [[0, "First", 5], [8, "Second"], [12, "Third", None]]}]}
+        layout = Layout(source)
+        self.assertEqual(layout.headline_at(14.99), (0, 10))
+        self.assertIsNone(layout.headline_at(15))             # the words end here, before "Second" starts
+        self.assertIsNone(layout.headline_at(17.99))
+        self.assertEqual(layout.headline_at(18), (1, 18))
+        self.assertEqual(layout.headline_at(22), (2, 22))     # null end behaves like no end
+        timing = copy.deepcopy(source)
+        normalize_chapters(timing)
+        self.assertEqual(timing["_headline_intervals"], [(10, "First", 15), (18, "Second", 22), (22, "Third", None)])
+        self.assertEqual(timing["headlines"], [[10, "First"], [18, "Second"], [22, "Third"]])
+
+    def test_explicit_end_cannot_extend_past_the_next_headline_or_chapter(self):
+        source = {"schema_version": 2, "chapters": [
+            {"title": "A", "start": 0, "headlines": [[0, "One", 50], [10, "Two", 99]]},
+            {"title": "B", "start": 20, "headlines": []}]}
+        layout = Layout(source)
+        self.assertIsNone(layout.headline_at(20))
+        self.assertEqual(layout.headline_at(9.99), (0, 0))
+        self.assertEqual(layout.headline_at(10), (1, 10))
+
+    def test_an_explicit_end_must_come_after_its_start(self):
+        for row in ([5, "Text", 5], [5, "Text", 2], [5, "Text", "9"], [5, "Text", float("inf")], [5, "Text", 9, 10]):
+            with self.subTest(row=row), self.assertRaises(ValueError):
+                normalize_chapters({"schema_version": 2, "chapters": [{"title": "A", "start": 0, "headlines": [row]}]})
+
+
 if __name__ == "__main__":
     unittest.main()
