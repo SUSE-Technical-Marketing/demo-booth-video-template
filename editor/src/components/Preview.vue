@@ -47,15 +47,17 @@ function syncVideo() {
   const el = current && videos.get(current.id);
   emit('buffering', !!el && props.playing && el.readyState < 3);
   if (!el) return;
-  const want = (current.source_in ?? 0) + props.cur - current.start;
+  // a freeze frame shows one fixed frame of its video and never plays
+  const frozen = !!current.freeze;
+  const want = frozen ? current.source_in : (current.source_in ?? 0) + props.cur - current.start;
   const drift = Math.abs(el.currentTime - want);
-  if (drift > 0.001 && (rewound || !props.playing || drift > 0.4)) el.currentTime = want;
-  if (props.playing && el.paused && !el.ended) el.play?.()?.catch?.(error => {
+  if (drift > 0.001 && (frozen || rewound || !props.playing || drift > 0.4)) el.currentTime = want;
+  if (props.playing && !frozen && el.paused && !el.ended) el.play?.()?.catch?.(error => {
     if (props.playing && clip.value?.id === current.id && clip.value.url === current.url && videos.get(current.id) === el) {
       emit('playback-error', new Error(`Could not play ${current.name}: ${error.message}`));
     }
   });
-  else if (!props.playing && !el.paused) el.pause();
+  else if ((!props.playing || frozen) && !el.paused) el.pause();
 }
 watch([() => props.cur, () => props.playing, clip, () => props.clips.length], syncVideo, { flush: 'post' });
 const themeId = computed(() => props.state.output?.theme ?? 'classic');

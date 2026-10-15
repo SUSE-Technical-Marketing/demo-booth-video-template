@@ -18,6 +18,9 @@ For planned technical and functional work, see the [improvement roadmap](IMPROVE
   scrolls past six), and write headlines with `*accent*` words.
 - **Retime on the timeline**: drag a headline's start and end handles, zoom in for precision, click a chapter to jump
   there, and ripple everything after a cut.
+- **Freeze a frame and cut a section**: hold the frame at the playhead for a few seconds, or remove a section from the
+  middle of a clip and close the gap, both with the chapters and headlines following (see
+  [Freeze frames and cutting a section](#freeze-frames-and-cutting-a-section)).
 - **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
 - **Save complete projects**: source media paths, clip placements and trims, output frame rate, chapters and headlines.
 - **Export the final MP4 from the editor** with the **Export** button (needs the local export service, below), or
@@ -115,6 +118,37 @@ Choose the render frame rate and **resolution** in **Videos & settings**. The re
 sizes/frame rates and audio; the output has stereo 48 kHz audio and defaults to 1920 × 1080. Other resolutions (4K UHD
 down to 640 × 360) scale the 1920 × 1080 composition, so the preview does not change. Source clips without audio and
 timeline gaps produce silence. Command-line options override the saved settings for one render.
+
+### Freeze frames and cutting a section
+
+Two edits for the common "this part needs adjusting" jobs. Both are buttons in the timeline toolbar
+(**Freeze frame…** and **Cut section…**), both need a video, and both are a single **Undo** step.
+
+**Freeze frame…** holds the frame under the playhead. Move the playhead onto a video, click the button, choose how long
+to hold it (default 3 s), and pick what happens to the video:
+
+- **Insert** splits the video at the playhead, puts the hold in, and pushes the rest of the video later.
+- **Replace** lets the hold cover the next few seconds of video instead; nothing after it moves, and the video
+  continues where it would have been.
+
+By default (Insert) the chapters and headlines after the playhead move later too, so they stay with the video they
+described. Untick **Move later chapters and headlines too** to leave them. Anything that starts exactly at the
+playhead stays put, so a headline that begins there is still showing during the hold. The hold is silent.
+
+To change a hold later, **drag the right edge of its bar in the Videos row** of the timeline (the bar is blue and
+labelled *Freeze frame*), or edit **Length** in **Videos & settings**. Changing the length is a ripple: everything after
+the hold, including chapters and headlines, moves with its end, so lengthening it never overlaps the next clip and
+shortening it closes up. In **Videos & settings** you can also change **Frame at** to hold a different frame. Keep the
+**Videos** row switched on (the toggle in the timeline toolbar) to see and drag holds.
+
+**Cut section…** is a ripple delete. It opens a red range on the timeline starting at the playhead (5 s long). Drag
+the range's red edges, type exact **From** and **To** times, or press **playhead** to take a time from where the
+playhead is. The strip shows how much will be removed, for example 7 seconds out of the middle of a clip. **Delete
+section** trims or splits the clips around the range, closes the gap, and moves everything after it earlier, with the
+chapters and headlines after the cut following (untick the box to leave them). Chapters or headlines that were inside
+the removed range are not deleted: they are moved to the cut point and the message says how many, so you can tidy them.
+
+A hold is saved as an ordinary clip with `"freeze": true`; see [Project file format](#project-file-format).
 
 ### Video themes
 
@@ -462,6 +496,10 @@ Changing references does not move files.
 Clip duration is `source_out - source_in`; `start` is absolute project time and is authoritative,
 regardless of array order. In this example there is a black/silent gap from 10 to 12 seconds and the project ends at 32 seconds.
 Source out is exclusive. Overlaps, transitions, invalid references and out-of-source trims fail explicitly.
+A **freeze frame** is a clip with `"freeze": true`: it holds the single frame at `source_in` for `source_out - source_in`
+seconds (so that difference is the length of the hold, and it may be longer than the source video), with no sound:
+`{ "id": "hold-1", "media_id": "demo", "start": 12, "source_in": 7.5, "source_out": 10.5, "freeze": true }`.
+Only the frozen frame has to exist in the media. `freeze` must be `true` or `false` if present.
 Output FPS is a positive rational string between 1 and 120 fps, including `30000/1001`. Command-line options override
 every `output` setting for one render (see [Render settings](#render-settings-command-line-then-project-then-defaults)).
 `output.theme` is `classic`, `dark-rail`, `minimal-stage` or `cinematic`; omitting it selects Classic. Unknown theme IDs are rejected

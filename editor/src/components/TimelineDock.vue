@@ -12,6 +12,8 @@ const props = defineProps({
   playing: { type: Boolean, required: true },
   offset: { type: Number, required: true },
   clips: { type: Array, default: () => [] },
+  tool: { type: String, default: null },            // 'freeze' or 'cut' while that editing tool is open
+  cutRange: { type: Object, default: null },
 });
 // Zoom is a view setting only: 1 fits the whole video, each step doubles it (up to about 10 s across).
 const zoom = ref(1);
@@ -28,7 +30,7 @@ const zoomIn = () => { zoom.value = Math.min(maxZoom.value, zoom.value * 2); };
 const zoomOut = () => { zoom.value = Math.max(1, zoom.value / 2); };
 function zoomBy(direction) { if (direction > 0) zoomIn(); else zoomOut(); }
 const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline',
-  'move-headline-end', 'move-chapter', 'trim-clip']);
+  'move-headline-end', 'move-chapter', 'trim-clip', 'tool', 'update-cut']);
 </script>
 
 <template>
@@ -44,6 +46,14 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
           :title="clips.length ? 'Show or hide the loaded videos above the chapters' : 'Add a video to see it on the timeline'"
           @click="toggleVideos">Videos</button>
       </div>
+      <div class="edit-tools" role="group" aria-label="Editing tools">
+        <button id="btnFreeze" class="ghost" :aria-pressed="tool === 'freeze'" :disabled="!clips.length"
+          :title="clips.length ? 'Hold the frame at the playhead for a few seconds' : 'Add a video to use this'"
+          @click="emit('tool', 'freeze')">Freeze frame…</button>
+        <button id="btnCut" class="ghost" :aria-pressed="tool === 'cut'" :disabled="!clips.length"
+          :title="clips.length ? 'Remove a section of video and close the gap (ripple delete)' : 'Add a video to use this'"
+          @click="emit('tool', 'cut')">Cut section…</button>
+      </div>
       <div class="transport">
         <button id="btnPlay" class="primary" @click="emit('toggle-play')">{{ playing ? 'Pause' : 'Play' }}</button>
         <input id="scrub" type="range" min="0" :max="duration" step="0.1" :value="cur" aria-label="Preview time"
@@ -51,8 +61,10 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
         <div id="timelabel" class="timelabel">{{ fmt(cur) }}<small>{{ tc(cur, offset) }}</small></div>
       </div>
     </div>
+    <slot name="tool"></slot>
     <Timeline :state="state" :duration="duration" :cur="cur" :selected-id="selectedId" :clips="clips"
-      :selected-chapter-id="selectedChapterId" :zoom="zoom" :show-videos="showVideos" @zoom="zoomBy" @seek="emit('seek', $event)"
+      :selected-chapter-id="selectedChapterId" :zoom="zoom" :show-videos="showVideos" :cut-range="cutRange" @zoom="zoomBy"
+      @update-cut="emit('update-cut', $event)" @seek="emit('seek', $event)"
       @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)"
       @begin-edit="emit('begin-edit')" @move-headline="(h, time) => emit('move-headline', h, time)"
       @move-headline-end="(h, time) => emit('move-headline-end', h, time)"
@@ -63,6 +75,7 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
       <span><i class="headline-key"></i> Headlines</span>
       <span><i class="invalid-key"></i> Outside chapter</span>
       <span v-if="clips.length"><i class="video-key"></i> Videos</span>
+      <span v-if="clips.some(c => c.freeze)"><i class="freeze-key"></i> Freeze frame</span>
       <span class="timeline-help">Select a band to edit; drag to scrub; drag chapter/headline edges to retime or video edges to trim.</span>
     </div>
   </section>

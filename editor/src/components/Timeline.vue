@@ -12,8 +12,9 @@ const props = defineProps({
   clips: { type: Array, default: () => [] },
   zoom: { type: Number, default: 1 },
   showVideos: { type: Boolean, default: false },
+  cutRange: { type: Object, default: null },        // { start, end } while the Cut section tool is open
 });
-const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end', 'move-chapter', 'trim-clip', 'zoom']);
+const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end', 'move-chapter', 'trim-clip', 'zoom', 'update-cut']);
 const timeline = ref(null), scroller = ref(null);
 const lane = computed(() => props.showVideos && props.clips.length > 0);   // the videos row above the chapters
 let dragging = false;
@@ -69,6 +70,9 @@ const clipHandles = computed(() => {
   const minimum = Math.max(STEP, 1 / projectFPS(props.state.output.fps));
   return clips.flatMap((clip, i) => {
     const end = clip.start + clip.dur, length = Math.min(minimum, clip.dur);
+    if (clip.freeze) {   // a hold has no start to trim; its right edge changes its length and everything after follows
+      return [{ kind: 'clip-end', clip, value: end, lower: clip.start + 0.1, upper: clip.start + 3600 }];
+    }
     return [
       { kind: 'clip-start', clip, value: clip.start,
         lower: Math.max(0, clip.start - clip.source_in, i ? clips[i - 1].start + clips[i - 1].dur : 0),
@@ -79,9 +83,19 @@ const clipHandles = computed(() => {
     ];
   });
 });
+// The section the Cut tool will remove: its two edges can be dragged, and the tool's fields follow.
+const cutHandles = computed(() => props.cutRange ? [
+  { kind: 'cut-start', value: props.cutRange.start, lower: 0, upper: Math.max(0, props.cutRange.end - STEP) },
+  { kind: 'cut-end', value: props.cutRange.end, lower: props.cutRange.start + STEP, upper: props.duration },
+] : []);
 const snap = t => Math.round(t / STEP) * STEP;
 let handleDrag = null;
 function moveTo(handle, time) {
+  if (handle.kind.startsWith('cut-')) {
+    const value = +Math.max(handle.lower, Math.min(handle.upper, snap(time))).toFixed(2);
+    emit('update-cut', handle.kind === 'cut-start' ? { start: value } : { end: value });
+    return;
+  }
   if (handle.kind.startsWith('clip-')) {
     const value = Math.max(handle.lower, Math.min(handle.upper, snap(time))), clip = handle.clip;
     const patch = handle.kind === 'clip-start'
@@ -99,7 +113,7 @@ function moveTo(handle, time) {
 function handleDown(event, handle) {
   handleDrag = handle;
   if (handle.kind.startsWith('clip-')) clipDragDuration.value = props.duration;
-  emit('begin-edit');
+  if (!handle.kind.startsWith('cut-')) emit('begin-edit');          // choosing a range changes nothing yet
   event.currentTarget.setPointerCapture(event.pointerId);
 }
 function handleMove(event) {
@@ -116,7 +130,7 @@ function handleKey(event, handle) {
   const dir = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
   if (!dir) return;
   event.preventDefault();
-  emit('begin-edit');
+  if (!handle.kind.startsWith('cut-')) emit('begin-edit');
   moveTo(handle, handle.value + dir * (event.shiftKey ? 1 : STEP));
 }
 // Zooming keeps whatever is at the same spot on screen (the playhead if it is visible, else the middle) in place.
@@ -202,15 +216,29 @@ function keyboardSelect(event, kind, row, start) {
       @pointermove="handleMove" @pointerup="handleDrag = null" @pointercancel="handleDrag = null"
       @lostpointercapture="handleDrag = null" @keydown="handleKey($event, handle)"></div>
     <template v-if="lane">
-      <div v-for="clip in clips" :key="clip.id" class="vclip" :title="`${clip.name}  ${fmt(clip.start)} – ${fmt(clip.start + clip.dur)}`"
-        :style="{ left: pct(clip.start), width: pct(clip.dur) }"><span>{{ clip.name }}</span><small>{{ fmt(clip.dur) }}</small></div>
+      <div v-for="clip in clips" :key="clip.id" class="vclip" :class="{ freeze: clip.freeze }" :data-freeze="clip.freeze || null"
+        :title="clip.freeze ? `Freeze frame of ${clip.name} at ${fmt(clip.source_in)}, held ${fmt(clip.dur)}. Drag its right edge to change the length.`
+          : `${clip.name}  ${fmt(clip.start)} – ${fmt(clip.start + clip.dur)}`"
+        :style="{ left: pct(clip.start), width: pct(clip.dur) }"><span>{{ clip.freeze ? 'Freeze frame' : clip.name }}</span><small>{{ fmt(clip.dur) }}</small></div>
       <div v-for="handle in clipHandles" :key="handle.kind + handle.clip.id" class="clip-handle"
         :class="handle.kind === 'clip-start' ? 'start' : 'end'" role="slider" tabindex="0" :data-handle="handle.kind"
-        :aria-label="`Trim video ${handle.kind === 'clip-start' ? 'start' : 'end'}: ${handle.clip.name}`"
+        :aria-label="handle.clip.freeze ? `Change freeze frame length: ${handle.clip.name}`
+          : `Trim video ${handle.kind === 'clip-start' ? 'start' : 'end'}: ${handle.clip.name}`"
         aria-orientation="horizontal" :aria-valuemin="handle.lower" :aria-valuemax="handle.upper"
         :aria-valuenow="handle.value" :aria-valuetext="fmt(handle.value)"
-        :title="`Drag to trim where this video ${handle.kind === 'clip-start' ? 'starts' : 'ends'} (${fmt(handle.value)})`"
+        :title="handle.clip.freeze ? `Drag to change how long this freeze frame lasts (ends at ${fmt(handle.value)}); everything after moves with it`
+          : `Drag to trim where this video ${handle.kind === 'clip-start' ? 'starts' : 'ends'} (${fmt(handle.value)})`"
         :style="{ left: pct(handle.value) }" @pointerdown.stop="handleDown($event, handle)"
+        @pointermove="handleMove" @pointerup="handleUp" @pointercancel="handleUp" @lostpointercapture="handleUp"
+        @keydown="handleKey($event, handle)"></div>
+    </template>
+    <template v-if="cutRange">
+      <div class="cut-range" aria-hidden="true" :style="{ left: pct(clamp(cutRange.start)), width: pct(Math.max(0, clamp(cutRange.end) - clamp(cutRange.start))) }"></div>
+      <div v-for="handle in cutHandles" :key="handle.kind" class="cut-handle" :class="handle.kind === 'cut-start' ? 'start' : 'end'"
+        role="slider" tabindex="0" :data-handle="handle.kind" :aria-label="`Cut section ${handle.kind === 'cut-start' ? 'start' : 'end'}`"
+        aria-orientation="horizontal" :aria-valuemin="handle.lower" :aria-valuemax="handle.upper" :aria-valuenow="handle.value"
+        :aria-valuetext="fmt(handle.value)" :title="`Drag to change where the removed section ${handle.kind === 'cut-start' ? 'starts' : 'ends'} (${fmt(handle.value)})`"
+        :style="{ left: pct(clamp(handle.value)) }" @pointerdown.stop="handleDown($event, handle)"
         @pointermove="handleMove" @pointerup="handleUp" @pointercancel="handleUp" @lostpointercapture="handleUp"
         @keydown="handleKey($event, handle)"></div>
     </template>
