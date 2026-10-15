@@ -13,6 +13,7 @@ import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from '.
 import { clipEnd, loadClip, releaseClip } from './videos.js';
 import { createProject, fromProject, mediaPathValid, projectFPS, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
+import { fitWrappedPx, themeLayout } from './themes.js';
 import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
   headlineOutside, headlineTime, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE } from './timing.js';
@@ -70,15 +71,25 @@ function measure(text, px) {
   return context.measureText(text).width;
 }
 const headlineFit = computed(() => {
+  const design = themeLayout(state.value.output.theme);
   let best = { w: 1, idx: -1 };
   state.value.headlines.forEach((h, idx) => {
-    const w = measure(plain(h.text), 70);
+    const w = measure(plain(h.text), design.HEADLINE_PX);
     if (w > best.w) best = { w, idx };
   });
-  return { px: fitPx(best.w, 70, 1320), idx: best.idx };
+  return { px: fitPx(best.w, design.HEADLINE_PX, design.HEADLINE_MAX_W), idx: best.idx };
 });
-const pillPx = computed(() => fitPx(Math.max(...state.value.chapters.map(c => measure(c, 28))), 28, 324));
-const productPx = computed(() => fitPx(measure(state.value.product_name || 'SUSE AI Factory', 56), 56, 350));
+const pillPx = computed(() => {
+  const design = themeLayout(state.value.output.theme);
+  return design.PILL_LINES > 1
+    ? fitWrappedPx(state.value.chapters, design.PILL_TEXT_PX * TEXT_SCALE, design.PILL_TEXT_MAX_W, design.PILL_LINES, measure)
+    : fitPx(Math.max(...state.value.chapters.map(c => measure(c, design.PILL_TEXT_PX))),
+      design.PILL_TEXT_PX, design.PILL_TEXT_MAX_W);
+});
+const productPx = computed(() => {
+  const design = themeLayout(state.value.output.theme);
+  return fitPx(measure(state.value.product_name || ' ', design.PRODUCT_PX), design.PRODUCT_PX, design.PRODUCT_MAX_W);
+});
 const shortCount = computed(() => state.value.headlines.filter(h => !headlineOutside(state.value, h, totalDuration.value) &&
   headlineEnd(state.value, h, totalDuration.value) - headlineTime(state.value, h) < 3).length);
 
@@ -154,11 +165,19 @@ async function relinkMedia(clip, file) {
 function updateFPS(value) {
   try {
     projectFPS(value);
-    validateProject({ project_version: 1, ...state.value, output: { fps: value }, timing: { schema_version: 2 } });
+    validateProject({ project_version: 1, ...state.value, output: { ...state.value.output, fps: value }, timing: { schema_version: 2 } });
   }
   catch (error) { return toast(error.message); }
   pushHistory();
   state.value.output.fps = value;
+  markDirty();
+}
+function updateTheme(value) {
+  try { themeLayout(value); }
+  catch (error) { return toast(error.message); }
+  if (value === (state.value.output.theme ?? 'classic')) return;
+  pushHistory();
+  state.value.output.theme = value;
   markDirty();
 }
 function removeClip(clip) {
@@ -777,6 +796,7 @@ onUnmounted(() => {
               <ProjectSettings :title="state.title" :product-name="state.product_name"
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
                 :fps="state.output.fps" @update-fps="updateFPS"
+                :theme="state.output.theme" @update-theme="updateTheme"
                 v-model:ripple-by="rippleBy" @begin-edit="beginEdit" @update-metadata="updateMetadata"
                 @change-end="updateEnd" @change-wipe="updateWipe" @ripple="ripple" />
             </div>

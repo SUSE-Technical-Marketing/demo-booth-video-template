@@ -103,6 +103,25 @@ keeping the same relative media layout or updating the paths.
 Choose the render frame rate in **Videos & settings**. The renderer normalizes source sizes/frame rates and audio;
 the final output is 1920 × 1080 with stereo 48 kHz audio. Source clips without audio and timeline gaps produce silence.
 
+### Video themes
+
+Choose **Video theme → Layout** in **Videos & settings**. The selection updates the preview immediately, is saved
+in the project, supports undo/autosave, and is used by both fullscreen playback and the Python renderer.
+
+- **Dark rail** (default for new projects): dark green branding rail, numbered chapter agenda, orange active marker,
+  a clean left-aligned headline and a larger, unobscured 16:9 demo stage. Chapter titles can wrap over two lines.
+  Long agendas scroll automatically, with arrows, a chapter counter and current-chapter progress.
+- **Cinematic**: full-frame footage, compact branding, current-chapter label, floating headline and chapter progress.
+  Contrast gradients protect the text. Unlike Dark rail, its overlays cover parts of the footage; choose it when the
+  recording leaves enough space around important controls.
+- **Minimal stage**: no sidebar or footage overlays. Compact branding and a headline sit above a centered 16:9
+  video stage; a numbered, segmented chapter strip sits below. Titles wrap over two lines, and agendas longer than
+  six chapters scroll horizontally with directional hints and a chapter counter. Progress follows the active segment.
+- **Classic**: the original white sidebar, filled chapter buttons and outlined headline bar.
+
+Projects without a theme setting retain Classic. Switching themes does not change clip placement, trims,
+chapter/headline timing or the playhead. All themes preserve the source aspect ratio with letterboxing when needed.
+
 ### Fullscreen booth playback (no export required)
 
 After adding or relinking all videos, click the orange **Play fullscreen loop** button in the main header. The full branded composition
@@ -118,8 +137,8 @@ Buffering pauses the presentation clock so chapters and headlines do not run ahe
 
 Keep the browser in the foreground and disable the computer's screen sleep/screensaver for unattended playback.
 Browser playback uses the display's refresh rate, available codecs, browser audio handling and CSS/text rendering;
-it is not a frame-identical replacement for the renderer. The preview's remote SUSE logo/font resources also require
-network access (fallbacks are used if unavailable). Use an exported MP4 for TV/USB players, offline portability,
+it is not a frame-identical replacement for the renderer. The preview font and Classic logo require network access
+(fallbacks are used if unavailable); the other themes use the bundled logo. Use an exported MP4 for TV/USB players, offline portability,
 precise frame-rate/color/audio normalization, or more predictable playback on different hardware.
 
 On desktop, the editor uses a video-editing workspace: videos, chapters and headlines scroll independently in the left
@@ -317,7 +336,7 @@ The examples in `timings/` are project templates without media; add recordings a
 ```json
 {
   "project_version": 1,
-  "output": { "fps": "25/1" },
+  "output": { "fps": "25/1", "theme": "dark-rail" },
   "media": [
     { "id": "intro", "path": "media/intro.mp4" },
     { "id": "demo", "path": "media/demo.mp4" }
@@ -346,6 +365,8 @@ Clip duration is `source_out - source_in`; `start` is absolute project time and 
 regardless of array order. In this example there is a black/silent gap from 10 to 12 seconds and the project ends at 32 seconds.
 Source out is exclusive. Overlaps, transitions, invalid references and out-of-source trims fail explicitly.
 Output FPS is a positive rational string between 1 and 120 fps, including `30000/1001`.
+`output.theme` is `classic`, `dark-rail`, `minimal-stage` or `cinematic`; omitting it selects Classic. Unknown theme IDs are rejected
+by both the editor and renderer.
 At render time, clip boundaries use the first output frame at or after their specified time.
 Clips that contain no output frames are rejected. Frame-rate quantization can extend the final duration by less than one frame.
 
@@ -353,8 +374,8 @@ The following fields live inside `timing`:
 
 | Key | Meaning |
 |---|---|
-| `chapters` | At least one chapter object, ordered by `start`. More than six buttons scroll automatically. |
-| `chapters[].title` | Chapter/button name; long names are shrunk to fit. |
+| `chapters` | At least one chapter object, ordered by `start`. Agenda themes scroll automatically beyond six chapters. |
+| `chapters[].title` | Chapter/button name; long names are fitted to the theme (up to two lines in Dark rail and Minimal stage). |
 | `chapters[].start` | Seconds from the start of the video. |
 | `chapters[].headlines` | `[chapter-relative seconds, "text"]` rows, or `[]` for no headlines. `*word*` = accent. A row may add a third item, `[start, "text", end]`, to hide the words at that chapter-relative time (it must be after the start); without it a headline stays until the next one starts. Each headline is clipped at its chapter's end. |
 | `headlines_end` | Optional absolute cutoff for all headlines, or `null` to use chapter/video boundaries. |
@@ -387,15 +408,16 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Colours look different from the preview | Run `--selftest`; its `colour check` line shows the measured error (expect 4 or less). A larger number means a changed encoder setting. |
 | Rendered video is silent | Gaps and clips without audio intentionally produce silence. Check each source with `ffmpeg -i source.mp4`. |
 | `Could not read a frame at ...s` | That time is past the end of the video. |
-| Logo is replaced by the word "SUSE" | In the editor, the logo could not load from suse.com. In the renderer, `assets/SUSE_Logo-hor_Green.png` is missing. |
-| Headline words touch or have big gaps | Nudge `TEXT_SCALE` (default `1.11`) in `render/layout.py` and `editor/src/timing.js`, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
+| Logo is replaced by the word "SUSE" | In the editor, Classic's remote logo or a modern theme's bundled logo could not load. Check network access or the static deployment. |
+| Headline words touch or have big gaps | Nudge `text_scale` (default `1.11`) in `assets/themes.json`, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
 | Video doesn't fill the slot | The renderer fits other sizes into the slot with black bars; export 1920 × 1080 for a perfect fit. |
 
 ## Customising
 
-Design constants (colours, the sizes and positions of the panel, buttons and headline bar, text sizes) live in
-`render/layout.py`, and the editor preview mirrors them in `editor/src/timing.js` and its stylesheet. Everything
-content-related lives in `timings/`. A good rule: **if a non-developer might want to change it, it belongs in the JSON;
+Theme geometry, colours and text sizes live in `assets/themes.json`, read by both the browser and Python renderer.
+`editor/src/themes.js` and `render/layout.py` expose the catalog; composition lives in `Preview.vue`/`style.css` and
+`render/layers.py`. `output.theme` selects a design; it does not theme the editor workspace. Everything
+content-related lives in `timings/`. A good rule: **if a non-developer might want to change it, it belongs in the project JSON;
 if it's a design decision, it belongs in the code.**
 
 ## Development

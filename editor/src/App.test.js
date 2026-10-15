@@ -59,6 +59,51 @@ async function openLinkedFile(data = JSON.parse(toJSON(fromJSON(DEFAULT)))) {
 }
 
 describe('Vue editor', () => {
+  it('switches video themes live, persists them and restores the previous layout with undo', async () => {
+    await wrapper.get('#settings-tab').trigger('click');
+    expect(wrapper.get('#videoTheme').element.value).toBe('dark-rail');
+    expect(wrapper.get('#stage').attributes('data-theme')).toBe('dark-rail');
+    const chapters = wrapper.findAll('#stage .pill').map(pill => pill.text());
+    await wrapper.get('#scrub').setValue('32');
+    await wrapper.get('#videoTheme').setValue('cinematic');
+    expect(wrapper.get('#stage').attributes('data-theme')).toBe('cinematic');
+    expect(wrapper.find('#chapterViewport').exists()).toBe(false);
+    expect(wrapper.get('#currentChapter').text()).toContain('SUSE Observability');
+    expect(wrapper.get('#scrub').element.value).toBe('32');
+    expect(wrapper.get('#status').classes()).toContain('dirty');
+    await wrapper.get('#btnDownload').trigger('click');
+    const saved = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(saved.output).toEqual({ fps: '25/1', theme: 'cinematic' });
+    await wrapper.get('#outputFPS').setValue('30000/1001');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output.theme).toBe('cinematic');
+    await wrapper.get('#btnUndo').trigger('click');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#stage').attributes('data-theme')).toBe('dark-rail');
+    expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(chapters);
+    await wrapper.get('#videoTheme').setValue('classic');
+    expect(wrapper.get('#content').element.style.width).toBe('1459px');
+    expect(wrapper.find('#chapterProgress').exists()).toBe(false);
+    await wrapper.get('#videoTheme').setValue('minimal-stage');
+    expect(wrapper.get('#stage').attributes('data-theme')).toBe('minimal-stage');
+    expect(wrapper.get('#content').element.style.width).toBe('1536px');
+    expect(wrapper.find('#panel').exists()).toBe(false);
+    expect(wrapper.get('#chapterViewport').element.style.top).toBe('1008px');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output.theme).toBe('minimal-stage');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#stage').attributes('data-theme')).toBe('classic');
+  });
+  it('opens older projects as Classic and autosaves a theme change', async () => {
+    const { writable } = await openLinkedFile();
+    expect(wrapper.get('#videoTheme').element.value).toBe('classic');
+    vi.useFakeTimers();
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('#videoTheme').setValue('dark-rail');
+    await vi.advanceTimersByTimeAsync(700);
+    await flushPromises();
+    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).output.theme).toBe('dark-rail');
+  });
   it('shows one sidebar tab at a time while preserving edits, selection and panel instances', async () => {
     const chapters = wrapper.get('#chapters-panel'), settings = wrapper.get('#settings-panel');
     const inspector = wrapper.get('.chapter-inspector').element;

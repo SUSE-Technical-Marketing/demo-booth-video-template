@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fixture from '../../tests/fixtures/project.json';
 import { createProject, fromProject, projectFPS, toProjectJSON } from './project.js';
 import { DEFAULT } from './timing.js';
+import { THEMES, themeLayout } from './themes.js';
 
 const copy = () => structuredClone(fixture);
 
@@ -14,8 +15,24 @@ describe('project documents', () => {
   });
   it('creates editable empty projects and rejects old top-level timing files', () => {
     const state = createProject(DEFAULT);
+    expect(state.output.theme).toBe('dark-rail');
     expect(fromProject(JSON.parse(toProjectJSON(state))).clips).toEqual([]);
     expect(() => fromProject(DEFAULT)).toThrow('project JSON');
+  });
+  it.each(Object.keys(THEMES))('persists the %s theme without changing timing or clips', theme => {
+    const project = copy();
+    project.output.theme = theme;
+    expect(JSON.parse(toProjectJSON(fromProject(project)))).toEqual(project);
+  });
+  it('keeps unthemed projects in Classic without rewriting their document', () => {
+    const state = fromProject(fixture);
+    expect(themeLayout(state.output.theme)).toBe(THEMES.classic);
+    expect(JSON.parse(toProjectJSON(state))).toEqual(fixture);
+  });
+  it.each([null, '', 'unknown', '__proto__', 'constructor', 42, {}])('rejects the invalid theme %j', theme => {
+    const project = copy();
+    project.output.theme = theme;
+    expect(() => fromProject(project)).toThrow('Unknown video theme');
   });
   it.each([
     project => { project.output = null; },

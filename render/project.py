@@ -8,6 +8,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from timing import normalize_chapters
+from layout import theme_layout
 
 
 def _time(value):
@@ -33,6 +34,7 @@ def validate_project(project):
     if not isinstance(project.get("output"), dict):
         raise ValueError("Project needs output FPS")
     fps = float(project_fps(project["output"].get("fps")))
+    theme_layout(project["output"].get("theme", "classic"))
     media, clips = project.get("media"), project.get("clips")
     if not isinstance(media, list) or not isinstance(clips, list):
         raise ValueError("Project needs media and clips arrays")

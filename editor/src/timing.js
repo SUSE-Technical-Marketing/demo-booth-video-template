@@ -1,7 +1,6 @@
-export const TEXT_SCALE = 1.11;
-export const CHAPTER_VIEW = { cx: 220, cy: 662, w: 380, h: 738, r: 0 };
-export const CHAPTER_SCROLL = { visible: 6, previous: 2, seconds: 0.4, indicator_px: 20,
-  indicator_y: 1047, arrow_x: 390, arrow_top: 276 };
+import { themeLayout, TEXT_SCALE } from './themes.js';
+export { TEXT_SCALE };
+export const { CHAPTER_VIEW, CHAPTER_SCROLL } = themeLayout('classic');
 export const CH_COLORS = ['var(--ch1)', 'var(--ch2)', 'var(--ch3)', 'var(--ch4)', 'var(--ch5)', 'var(--ch6)'];
 
 export const DEFAULT = {
@@ -220,24 +219,24 @@ export function activeHeadline(state, t) {
   });
   return headline;
 }
-export function scrollPosition(t, step) {
-  const p = Math.max(0, Math.min(1, (t - step.t) / CHAPTER_SCROLL.seconds));
+export function scrollPosition(t, step, seconds = CHAPTER_SCROLL.seconds) {
+  const p = Math.max(0, Math.min(1, (t - step.t) / seconds));
   return step.origin + (step.target - step.origin) * p * p * (3 - 2 * p);
 }
-export function chapterScrollSteps(state) {
-  const windowStart = ch => Math.max(0, Math.min(state.chapters.length - CHAPTER_SCROLL.visible,
-    ch - CHAPTER_SCROLL.previous - 1));
+export function chapterScrollSteps(state, settings = CHAPTER_SCROLL) {
+  const windowStart = ch => Math.max(0, Math.min(state.chapters.length - settings.visible,
+    ch - settings.previous - 1));
   const starts = state.chapter_starts.slice().sort((a, b) => a.t - b.t);
   const first = starts[0], target = windowStart(first.ch);
   const steps = [{ t: first.t, origin: target, target }];
   starts.slice(1).forEach(c => {
     const last = steps[steps.length - 1], target = windowStart(c.ch);
-    if (target !== last.target) steps.push({ t: c.t, origin: scrollPosition(c.t, last), target });
+    if (target !== last.target) steps.push({ t: c.t, origin: scrollPosition(c.t, last, settings.seconds), target });
   });
   return steps;
 }
-export function chapterScrollAt(t, steps) {
+export function chapterScrollAt(t, steps, seconds = CHAPTER_SCROLL.seconds) {
   let step = steps[0];
   steps.forEach(s => { if (s.t <= t) step = s; });
-  return scrollPosition(t, step);
+  return scrollPosition(t, step, seconds);
 }

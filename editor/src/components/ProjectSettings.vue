@@ -1,5 +1,6 @@
 <script setup>
 import { fmt } from '../timing.js';
+import { THEMES } from '../themes.js';
 
 defineProps({
   title: { type: String, required: true },
@@ -8,12 +9,22 @@ defineProps({
   wipeSeconds: { type: Number, required: true },
   cur: { type: Number, required: true },
   fps: { type: String, default: '25/1' },
+  theme: { type: String, default: 'classic' },
 });
 const rippleBy = defineModel('rippleBy', { type: [Number, String], required: true });
-const emit = defineEmits(['begin-edit', 'update-metadata', 'change-end', 'change-wipe', 'ripple', 'update-fps']);
+const emit = defineEmits(['begin-edit', 'update-metadata', 'change-end', 'change-wipe', 'ripple', 'update-fps', 'update-theme']);
 </script>
 
 <template>
+  <section class="card">
+    <h2>Video theme</h2>
+    <label class="inline">Layout
+      <select id="videoTheme" :value="theme" @change="emit('update-theme', $event.target.value)">
+        <option v-for="(design, id) in THEMES" :key="id" :value="id">{{ design.label }}</option>
+      </select>
+    </label>
+    <p class="hint">{{ THEMES[theme].description }} Used in the preview, fullscreen loop and rendered video.</p>
+  </section>
   <section class="card">
     <h2>Video title and product</h2>
     <div id="meta" class="names">

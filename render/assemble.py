@@ -15,6 +15,7 @@ def _run(command):
 
 def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filter, source_matrix):
     directory = Path(directory)
+    content = L.theme_layout(project["output"].get("theme", "classic")).CONTENT
     fps = project["output"]["fps"]
     rate = float(project_fps(fps))
     sources = {m["id"]: (Path(project_path).parent / m["path"]).resolve() for m in project["media"]}
@@ -46,12 +47,12 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
             command += ["-ss", "%.9f" % source_start, "-t", "%.9f" % (clip["source_out"] - source_start),
                         "-i", str(path)]
             video = ("tpad=stop_mode=clone:stop_duration=%.9f," % duration +
-                     slot_filter(fps, source_matrix(w, h, tagged)) +
+                     slot_filter(fps, source_matrix(w, h, tagged), content) +
                      ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
         else:
             command += ["-f", "lavfi", "-i", "color=c=black:s=1920x1080:r=" + fps]
             video = "scale=%d:%d,format=rgb24,trim=end_frame=%d,setpts=PTS-STARTPTS" % (
-                L.CONTENT["w"], L.CONTENT["h"], frames)
+                content["w"], content["h"], frames)
             audio = False
         command += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
         audio_input = "0:a:0" if audio else "1:a:0"

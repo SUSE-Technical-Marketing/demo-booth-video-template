@@ -1,4 +1,5 @@
 import { fromJSON, toJSON } from './timing.js';
+import { DEFAULT_THEME, themeLayout } from './themes.js';
 
 const time = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 const id = value => typeof value === 'string' && value.trim().length > 0;
@@ -17,6 +18,7 @@ export function projectFPS(value) {
 export function validateProject(project) {
   if (!project || project.project_version !== 1) throw new Error('Expected a version 1 project JSON');
   const fps = projectFPS(project.output?.fps);
+  themeLayout(project.output.theme);
   if (!Array.isArray(project.media) || !Array.isArray(project.clips)) throw new Error('Project needs media and clips arrays');
   const media = new Set(), clips = new Set();
   for (const item of project.media) {
@@ -44,14 +46,14 @@ export function validateProject(project) {
 }
 
 export function createProject(timing) {
-  return { ...fromJSON(timing), output: { fps: '25/1' }, media: [], clips: [] };
+  return { ...fromJSON(timing), output: { fps: '25/1', theme: DEFAULT_THEME }, media: [], clips: [] };
 }
 
 export function fromProject(project) {
   validateProject(project);
   return {
     ...fromJSON(project.timing),
-    output: { fps: project.output.fps },
+    output: { fps: project.output.fps, ...(project.output.theme === undefined ? {} : { theme: project.output.theme }) },
     media: project.media.map(({ id, path }) => ({ id, path })),
     clips: project.clips.map(({ id, media_id, start, source_in, source_out }) =>
       ({ id, media_id, start, source_in, source_out })).sort((a, b) => a.start - b.start),

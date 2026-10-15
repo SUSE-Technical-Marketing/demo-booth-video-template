@@ -92,19 +92,21 @@ def load_timing(arg):
 
 
 # ---------------------------------------------------------------------------------------------- frames
-def slot_filter(fps, matrix="auto"):
+def slot_filter(fps, matrix="auto", content=None):
     """Decode chain: correct YUV->RGB first (so odd slot sizes like 1459 px are allowed), then fit into the slot."""
-    cw, ch = L.CONTENT["w"], L.CONTENT["h"]
+    content = content if content is not None else L.CONTENT
+    cw, ch = content["w"], content["h"]
     return ("fps=%s,scale=in_color_matrix=%s:in_range=auto:out_range=full,format=rgb24,"
             "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black"
             % (fps, matrix, cw, ch, cw, ch))
 
 
-def grab_frame(ffmpeg, video, t, fps, matrix="auto"):
+def grab_frame(ffmpeg, video, t, fps, matrix="auto", content=None):
     """One decoded frame at time t, already scaled to the content slot."""
-    cw, ch = L.CONTENT["w"], L.CONTENT["h"]
+    content = content if content is not None else L.CONTENT
+    cw, ch = content["w"], content["h"]
     cmd = [ffmpeg, "-v", "error", "-ss", "%.3f" % max(0, t), "-i", str(video), "-frames:v", "1",
-           "-vf", slot_filter(fps, matrix).split(",", 1)[1], "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+           "-vf", slot_filter(fps, matrix, content).split(",", 1)[1], "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     data = subprocess.run(cmd, capture_output=True).stdout
     if len(data) != cw * ch * 3:
         sys.exit("Could not read a frame at %.1fs (is that inside the video?)" % t)
@@ -141,7 +143,7 @@ def render_video(args, ffmpeg, lay):
     rate = getattr(args, "rate", str(fps))
     start = args.start or 0.0
     dur = args.duration if args.duration else (src_dur - start if src_dur else None)
-    cw, ch = L.CONTENT["w"], L.CONTENT["h"]
+    cw, ch = lay.slot_size
     nbytes = cw * ch * 3
     total_frames = math.ceil(dur * fps - 1e-7) if dur else None
     print("Input %dx%d @ %.3g fps, %s (colour: %s)  ->  %dx%d @ %.3g fps" % (w, h, src_fps,
@@ -159,7 +161,7 @@ def render_video(args, ffmpeg, lay):
     seek = ["-ss", "%.9f" % start] if start else []
     lim = ["-t", "%.9f" % dur] if args.duration else []
     dec = subprocess.Popen([ffmpeg, "-v", "error"] + seek + ["-i", str(args.input)] + lim +
-                           ["-vf", slot_filter(rate, matrix), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                           ["-vf", slot_filter(rate, matrix, lay.design.CONTENT), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                            stdout=subprocess.PIPE, stderr=dec_err)
     vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", args.preset]
     if args.fast:
@@ -278,7 +280,7 @@ def render_project(args, ffmpeg):
     notice = normalize_chapters(timing)
     if notice:
         print("Project timing: " + notice, file=sys.stderr)
-    lay = layers.Layout(timing)
+    theme = project["output"].get("theme", "classic")
     for key in ("start", "duration", "frame"):
         value = getattr(args, key, None)
         if value is not None and (not math.isfinite(value) or value < 0 or (key == "duration" and value == 0)):
@@ -287,17 +289,18 @@ def render_project(args, ffmpeg):
     if output.resolve() == path or any(output.resolve() == (path.parent / m["path"]).resolve() for m in project["media"]):
         raise ValueError("Output must not overwrite the project or source media")
     if args.frame is not None and not project["clips"]:
-        lay.frame(args.frame).save(output)
+        layers.Layout(timing, theme).frame(args.frame).save(output)
         return
     with tempfile.TemporaryDirectory(prefix="booth-assembly-") as directory:
         master, duration = assemble_project(project, path, directory, ffmpeg, probe, slot_filter, source_matrix)
+        lay = layers.Layout(timing, theme, duration)
         args.input = master
         args.fps = float(project_fps(project["output"]["fps"]))
         args.rate = project["output"]["fps"]
         if args.frame is not None:
             if args.frame >= duration:
                 raise ValueError("Preview frame is past the project end")
-            lay.frame(args.frame, grab_frame(ffmpeg, master, args.frame, args.fps)).save(output)
+            lay.frame(args.frame, grab_frame(ffmpeg, master, args.frame, args.fps, content=lay.design.CONTENT)).save(output)
             print("Wrote", output)
             return
         start = args.start or 0
