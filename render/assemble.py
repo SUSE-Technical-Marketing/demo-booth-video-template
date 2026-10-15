@@ -13,7 +13,8 @@ def _run(command):
         raise ValueError("Media assembly failed:\n" + result.stderr[-3000:])
 
 
-def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filter, source_matrix):
+def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filter, source_matrix, progress=None, cancel=None):
+    """Join the clips into one master track. Returns (path, seconds), or None if cancel (a threading.Event) was set."""
     directory = Path(directory)
     content = L.theme_layout(project["output"].get("theme", "classic")).CONTENT
     fps = project["output"].get("fps", DEFAULT_FPS)
@@ -36,6 +37,10 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
         raise ValueError("Project has no clips to render; add media in Videos & settings")
     files = []
     for index, segment in enumerate(segments):
+        if cancel is not None and cancel.is_set():
+            return None
+        if progress:
+            progress(index / len(segments))
         output = directory / ("%06d.mkv" % index)
         frames = segment["frames"]
         duration = frames / rate
