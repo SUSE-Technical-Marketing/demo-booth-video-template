@@ -490,6 +490,14 @@ function setHeadlineToPlayhead(h) {
   commitTime();
   markDirty();
 }
+function setChapterToPlayhead(chapter) {      // like the headline button: the playhead stays where it is
+  pushHistory();
+  chapter.t = +cur.value.toFixed(1);                 // its headlines are relative to it, so they move with it
+  selectChapter(chapter);
+  commitTime();
+  markDirty();
+  toast(`Chapter ${chapter.ch} now starts at ${fmt(chapter.t)}`);
+}
 async function addChapter() {
   pushHistory();
   state.value.chapters.push('New chapter');
@@ -903,7 +911,7 @@ onUnmounted(() => {
               @select="chooseChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
               @delete-chapter="deleteChapter" @add-chapter="addChapter"
               @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
-              @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
+              @set-playhead="setHeadlineToPlayhead" @set-chapter-playhead="setChapterToPlayhead" @delete-headline="deleteHeadline"
             />
           </template>
           <template #settings>

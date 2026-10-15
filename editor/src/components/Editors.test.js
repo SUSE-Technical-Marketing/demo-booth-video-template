@@ -189,3 +189,15 @@ describe('headline components', () => {
     editor.unmount();
   });
 });
+
+describe('chapter row playhead button', () => {
+  it('asks to set the chapter start to the playhead', async () => {
+    const row = mount(ChapterRow, { props: { chapter: { id: 1, t: 4, ch: 1 }, title: 'Intro', offset: 3600, duration: 30 } });
+    const button = row.get('button[aria-label="Set chapter start to the playhead"]');
+    expect(button.classes()).toContain('secondary-action');                       // shown on hover or focus, like the headline one
+    await button.trigger('click');
+    expect(row.emitted('set-playhead')).toHaveLength(1);
+    expect(row.emitted('select')).toBeUndefined();                                 // the click does not also select the row
+    row.unmount();
+  });
+});

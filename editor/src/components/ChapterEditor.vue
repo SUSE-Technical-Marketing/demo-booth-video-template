@@ -21,7 +21,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
   'update-chapter-title', 'delete-chapter', 'add-chapter', 'select-headline', 'update-follow',
-  'update-text', 'add-headline', 'set-playhead', 'delete-headline', 'change-chapters-end']);
+  'update-text', 'add-headline', 'set-playhead', 'set-chapter-playhead', 'delete-headline', 'change-chapters-end']);
 const chaptersList = ref(null);
 const headlineEditor = ref(null);
 const ownedHeadlines = chapter => props.headlines.filter(h => h.chapterId === chapter.id);
@@ -60,7 +60,8 @@ defineExpose({ focusChapter, focusHeadline });
         :duration="rowDuration(i)"
         @begin-edit="emit('begin-edit')" @update-time="emit('update-time', chapter, $event)"
         @commit-time="emit('commit-time')" @error="emit('error', $event)" @select="emit('select', chapter)"
-        @update-title="emit('update-chapter-title', chapter.ch, $event)" @delete="emit('delete-chapter', chapter.ch)" />
+        @update-title="emit('update-chapter-title', chapter.ch, $event)" @set-playhead="emit('set-chapter-playhead', chapter)"
+        @delete="emit('delete-chapter', chapter.ch)" />
     </div>
     <label class="inline follow-control"><input id="followPlayhead" type="checkbox" :checked="followPlayhead"
       @change="emit('update-follow', $event.target.checked)"> Follow playhead

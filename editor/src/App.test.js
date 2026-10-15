@@ -316,6 +316,26 @@ describe('Vue editor', () => {
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.get('.headline-list .time').element.value).toBe('0:00');
   });
+  it('sets a chapter start to the playhead, moving its headlines with it, without moving the playhead; one undo step', async () => {
+    await wrapper.get('#scrub').setValue('12');
+    const row = () => wrapper.findAll('#chapters .crow')[1];
+    expect(row().get('.time').element.value).toBe('0:30');
+    await row().get('button[title^="Set start to the playhead"]').trigger('click');
+    expect(row().get('.time').element.value).toBe('0:12');
+    expect(wrapper.get('#scrub').element.value).toBe('12');                       // the playhead did not move
+    expect(wrapper.get('#toast').text()).toBe('Chapter 2 now starts at 0:12');
+    expect(wrapper.get('#status').text()).toContain('unsaved');
+    expect(row().classes()).toContain('sel');                                      // the edited chapter is selected
+    expect(wrapper.get('.headline-list .time').element.value).toBe('0:00');       // its headlines kept their offsets
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(row().get('.time').element.value).toBe('0:30');
+  });
+  it('moving a chapter to the playhead past its neighbour reorders the chapters like typing the time does', async () => {
+    await wrapper.get('#scrub').setValue('70');
+    await wrapper.findAll('#chapters .crow')[1].get('button[title^="Set start to the playhead"]').trigger('click');
+    expect(wrapper.findAll('#chapters .crow .time').map(t => t.element.value).slice(0, 3)).toEqual(['0:00', '1:00', '1:10']);
+    expect(wrapper.findAll('#chapters .crow .chapter-title')[2].element.value).toBe(DEFAULT.chapters[1]);   // it kept its title
+  });
   it('keeps at least one chapter but allows removing every headline', async () => {
     while (wrapper.findAll('#chapters .crow').length > 1) {
       await wrapper.findAll('#chapters .crow').at(-1).get('button[title="Delete chapter"]').trigger('click');

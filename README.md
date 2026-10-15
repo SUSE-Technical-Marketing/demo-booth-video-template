@@ -213,6 +213,8 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    **+ Chapter** inserts a chapter at the playhead and selects its title for editing. Delete removes the chapter
    and all its headlines; keep at least one chapter. There is no chapter reuse: buttons advance once in chronological order
    through each pass of the looping video. Changing a start time moves its headlines with it and reorders the titles together.
+   Hover a chapter row and click its **⏱** button to set its start to the playhead (like the headline one); its
+   headlines move with it and the playhead stays where it is.
    The selected chapter's **Length** shows its duration until the next chapter or preview end; other rows
    have duration tooltips. The preview end follows loaded videos,
    or the timeline duration when none are loaded; chapters after that end are marked **Past end**.

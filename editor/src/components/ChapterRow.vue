@@ -13,7 +13,7 @@ defineProps({
   warningCount: { type: Number, default: 0 },
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
-  'delete', 'update-title']);
+  'delete', 'update-title', 'set-playhead']);
 </script>
 
 <template>
@@ -35,6 +35,8 @@ const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', '
         :aria-pressed="selected" :aria-label="`Edit chapter ${chapter.ch}: ${title}, ${headlineCount} headlines${warningCount ? `, ${warningCount} outside chapter` : ''}${duration < 0 ? ', starts after chapter end' : ''}`"
         :title="`${headlineCount} headlines${warningCount ? `; ${warningCount} outside chapter` : ''}`"
         @click.stop="emit('select')">{{ headlineCount }}<span v-if="warningCount || duration < 0" aria-hidden="true">!</span></button>
+      <button class="icon ghost secondary-action" title="Set start to the playhead (its headlines move with it)"
+        aria-label="Set chapter start to the playhead" @click.stop="emit('set-playhead')">⏱</button>
       <button class="icon ghost secondary-action" title="Delete chapter" aria-label="Delete chapter" @click.stop="emit('delete')">✕</button>
     </div>
   </div>
