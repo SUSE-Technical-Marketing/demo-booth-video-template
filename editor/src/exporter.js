@@ -1,5 +1,7 @@
 // Client for the local export service (render/server.py), reached through the dev server's /api proxy.
 // The service only exists next to a locally running editor; on the hosted copy getInfo() returns null.
+import { toRaw } from 'vue';
+
 const BASE = '/api';
 const HEADERS = { 'X-Booth-Export': '1' };
 
@@ -114,12 +116,17 @@ export const removeJob = job => json(`/jobs/${job}`, { method: 'DELETE' }).catch
 
 export const canChooseLocation = () => typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
 
-// Ask where the MP4 should go. startIn (the project's folder or file handle) makes the picker open there.
-export function chooseLocation(filename, startIn) {
-  return window.showSaveFilePicker({
-    suggestedName: filename, ...(startIn ? { startIn } : {}),
-    types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
-  });
+// Ask where the MP4 should go. startIn (the project's folder or file handle) makes the picker open there. It is only a
+// hint, so anything that is not a real handle is ignored, and a picker that rejects it is asked again without it.
+export async function chooseLocation(filename, startIn) {
+  const options = { suggestedName: filename, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] };
+  const hint = startIn && typeof startIn.kind === 'string' ? toRaw(startIn) : null;
+  try {
+    return await window.showSaveFilePicker(hint ? { ...options, startIn: hint } : options);
+  } catch (error) {
+    if (hint && error.name === 'TypeError') return window.showSaveFilePicker(options);
+    throw error;
+  }
 }
 
 // Write the finished video to a chosen file, or ask now (picker, starting in startIn), or fall back to a plain

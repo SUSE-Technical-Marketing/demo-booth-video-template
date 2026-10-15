@@ -40,12 +40,27 @@ describe('saving the video', () => {
     expect(out).toEqual({ name: 'chosen.mp4', where: 'the location you chose' });
   });
   it('opens the picker in the project folder when no location was chosen', async () => {
-    const startIn = { name: 'proj' };
+    const startIn = { kind: 'directory', name: 'proj' };
     const handle = { name: 'out.mp4', createWritable: async () => ({}) };
     vi.stubGlobal('window', { showSaveFilePicker: vi.fn(async () => handle) });
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, body: { pipeTo: async () => {} } })));
     await saveVideo(done, 'x.mp4', { startIn });
     expect(window.showSaveFilePicker).toHaveBeenCalledWith(expect.objectContaining({ suggestedName: 'x.mp4', startIn }));
+  });
+  it('ignores a startIn that is not a file-system handle, and retries without one if the picker rejects it', async () => {
+    const handle = { name: 'out.mp4', createWritable: async () => ({}) };
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, body: { pipeTo: async () => {} } })));
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn(async () => handle) });
+    await saveVideo(done, 'x.mp4', { startIn: { directory: null, projects() {} } });      // a wrapper, not a handle
+    expect(window.showSaveFilePicker.mock.calls[0][0]).not.toHaveProperty('startIn');
+    const picker = vi.fn(async options => {
+      if (options.startIn) throw new TypeError("not a valid enum value of type WellKnownDirectory");
+      return handle;
+    });
+    vi.stubGlobal('window', { showSaveFilePicker: picker });
+    await saveVideo(done, 'x.mp4', { startIn: { kind: 'directory', name: 'proj' } });
+    expect(picker).toHaveBeenCalledTimes(2);
+    expect(picker.mock.calls[1][0]).not.toHaveProperty('startIn');
   });
   it('falls back to a download and says where it goes', async () => {
     vi.stubGlobal('window', {});

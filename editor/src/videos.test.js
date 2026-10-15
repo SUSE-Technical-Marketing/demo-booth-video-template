@@ -121,6 +121,17 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(projectFixture);
   });
+  it('the export dialog gets the real folder handle (not the folder wrapper) to start its save picker in', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    const folder = nativeFolder();
+    await openNativeFolder(folder);
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    const startIn = wrapper.findComponent({ name: 'ExportDialog' }).props('startIn');
+    expect(startIn.kind).toBe('directory');
+    expect(startIn.name).toBe('demo');
+    expect(wrapper.findAll('#exportMissing')).toHaveLength(0);                    // linked from the folder: ready to export
+  });
   it('opens a configured media folder by combining the base with each relative path', async () => {
     const project = folderProject();
     const folder = nativeFolder({ 'project.json': project });
@@ -510,6 +521,7 @@ describe('videos and New in the editor', () => {
     expect(wrapper.get('#exportResolution').element.value).toBe('1280x720');
     expect(wrapper.get('.export-chips').text()).toContain('2 videos');
     expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();
+    expect(wrapper.findComponent({ name: 'ExportDialog' }).props('startIn')).toBeNull();   // nothing linked to a folder yet
     await wrapper.get('.export-x').trigger('click');
     expect(wrapper.find('.export-dialog').exists()).toBe(false);
   });
