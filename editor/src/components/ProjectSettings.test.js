@@ -39,6 +39,19 @@ describe('project settings', () => {
     await wrapper.get('#wipe').setValue('-1');
     expect(wrapper.emitted('change-wipe')[0][0].target).toBe(wrapper.get('#wipe').element);
   });
+  it('offers output presets, shows a custom resolution and emits changes for the app to validate', async () => {
+    expect(wrapper.get('#outputFPS').element.value).toBe('25/1');
+    expect(wrapper.get('#outputResolution').element.value).toBe('1920x1080');
+    await wrapper.get('#outputResolution').setValue('1280x720');
+    expect(wrapper.emitted('update-resolution')).toEqual([['1280x720']]);
+    expect(wrapper.get('#outputResolution').element.value).toBe('1920x1080');
+    await wrapper.setProps({ resolution: '1280x720' });
+    expect(wrapper.get('#outputResolution').element.value).toBe('1280x720');
+    await wrapper.setProps({ resolution: '1000x1000' });
+    const options = wrapper.findAll('#outputResolution option').map(option => option.element.value);
+    expect(options).toContain('1000x1000');
+    expect(wrapper.get('#outputResolution').element.value).toBe('1000x1000');
+  });
   it('keeps the ripple input controlled and emits apply separately', async () => {
     await wrapper.get('#rippleBy').setValue('2.5');
     expect(wrapper.emitted('update:rippleBy')).toEqual([[2.5]]);
