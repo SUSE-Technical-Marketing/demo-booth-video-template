@@ -15,6 +15,14 @@ const props = defineProps({
 });
 // Zoom is a view setting only: 1 fits the whole video, each step doubles it (up to about 10 s across).
 const zoom = ref(1);
+// Show the loaded videos as a row above the chapters; remembered between visits.
+const STORE = 'timeline_show_videos';
+function initialVideos() { try { return localStorage.getItem(STORE) !== '0'; } catch { return true; } }
+const showVideos = ref(initialVideos());
+function toggleVideos() {
+  showVideos.value = !showVideos.value;
+  try { localStorage.setItem(STORE, showVideos.value ? '1' : '0'); } catch { /* the toggle still works for this visit */ }
+}
 const maxZoom = computed(() => Math.max(1, Math.min(64, 2 ** Math.floor(Math.log2(props.duration / 10)))));
 const zoomIn = () => { zoom.value = Math.min(maxZoom.value, zoom.value * 2); };
 const zoomOut = () => { zoom.value = Math.max(1, zoom.value / 2); };
@@ -32,6 +40,9 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
         <span id="zoomLabel" class="zoom-label" aria-live="polite">{{ zoom === 1 ? 'Fit' : `×${zoom}` }}</span>
         <button id="zoomIn" class="icon ghost" title="Zoom in (Ctrl/Cmd + scroll)" aria-label="Zoom in" :disabled="zoom >= maxZoom" @click="zoomIn">+</button>
         <button id="zoomFit" class="ghost" title="Show the whole video" :disabled="zoom === 1" @click="zoom = 1">Fit</button>
+        <button id="toggleVideos" class="ghost videos-toggle" :aria-pressed="showVideos && clips.length > 0" :disabled="!clips.length"
+          :title="clips.length ? 'Show or hide the loaded videos above the chapters' : 'Add a video to see it on the timeline'"
+          @click="toggleVideos">Videos</button>
       </div>
       <div class="transport">
         <button id="btnPlay" class="primary" @click="emit('toggle-play')">{{ playing ? 'Pause' : 'Play' }}</button>
@@ -41,7 +52,7 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
       </div>
     </div>
     <Timeline :state="state" :duration="duration" :cur="cur" :selected-id="selectedId" :clips="clips"
-      :selected-chapter-id="selectedChapterId" :zoom="zoom" @zoom="zoomBy" @seek="emit('seek', $event)"
+      :selected-chapter-id="selectedChapterId" :zoom="zoom" :show-videos="showVideos" @zoom="zoomBy" @seek="emit('seek', $event)"
       @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)"
       @begin-edit="emit('begin-edit')" @move-headline="(h, time) => emit('move-headline', h, time)"
       @move-headline-end="(h, time) => emit('move-headline-end', h, time)"
