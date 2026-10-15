@@ -119,6 +119,26 @@ describe('Vue editor', () => {
     await flushPromises();
     expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).output.theme).toBe('dark-rail');
   });
+  it('autosaves media-folder edits and undo, including an empty folder', async () => {
+    const project = projectDocument(DEFAULT);
+    project.media_folder = 'media';
+    const { writable } = await openLinkedFile(project);
+    expect(wrapper.get('#mediaFolder').element.value).toBe('media');
+    vi.useFakeTimers();
+    await wrapper.get('#mediaFolder').setValue('recordings');
+    await vi.advanceTimersByTimeAsync(700);
+    await flushPromises();
+    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).media_folder).toBe('recordings');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('media');
+    await vi.advanceTimersByTimeAsync(700);
+    await flushPromises();
+    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).media_folder).toBe('media');
+    await wrapper.get('#mediaFolder').setValue('');
+    await vi.advanceTimersByTimeAsync(700);
+    await flushPromises();
+    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).media_folder).toBe('');
+  });
   it('shows one sidebar tab at a time while preserving edits, selection and panel instances', async () => {
     const chapters = wrapper.get('#chapters-panel'), settings = wrapper.get('#settings-panel');
     const inspector = wrapper.get('.chapter-inspector').element;

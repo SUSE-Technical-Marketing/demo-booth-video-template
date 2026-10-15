@@ -82,6 +82,25 @@ class ThemeTests(unittest.TestCase):
         self.assertNotEqual(lay.frame(1, video).crop((72, 799, 1848, 929)).tobytes(),
                             Image.alpha_composite(video.convert("RGBA"), base).convert("RGB").crop((72, 799, 1848, 929)).tobytes())
 
+    def test_minimal_stage_centers_visible_pills_for_short_and_scrolling_agendas(self):
+        design = L.theme_layout("minimal-stage")
+        left = int(design.CHAPTER_VIEW["cx"] - design.CHAPTER_VIEW["w"] / 2)
+        for count in (1, 2, 3, 4, 5, 6, 7, 12):
+            with self.subTest(count=count):
+                image = Layout(timing(count), "minimal-stage", count * 2).frame(0)
+                pixels = [x for x in range(left, left + design.CHAPTER_VIEW["w"])
+                          if image.getpixel((x, design.PILL["cy_last"])) != rgb(design.BRAND["canvas"])]
+                self.assertEqual((pixels[0] + pixels[-1] + 1) / 2, L.W / 2)
+
+    def test_minimal_stage_progress_is_clipped_to_the_pill(self):
+        lay = Layout(timing(2), "minimal-stage", 6)
+        strip = (666, 1060, 954, 1064)
+        self.assertEqual(lay.frame(0).crop(strip).tobytes(), lay.chapter_base(1).crop(strip).tobytes())
+        image = lay.frame(1.8)
+        self.assertEqual(image.getpixel((810, 1062)), rgb(lay.design.BRAND["accent"]))
+        self.assertEqual(image.getpixel((810, 1066)), rgb(lay.design.BRAND["canvas"]))
+        self.assertEqual(image.getpixel((666, 1063)), rgb(lay.design.BRAND["canvas"]))
+
     def test_minimal_stage_keeps_footage_clear_and_scrolls_the_footer(self):
         lay = Layout(timing(), "minimal-stage", 24)
         self.assertEqual(lay.slot, (192, 112))
@@ -94,36 +113,37 @@ class ThemeTests(unittest.TestCase):
                                 lay.slot[1] + lay.slot_size[1])
         for count in (2, 12):
             first = Layout(timing(count), "minimal-stage", count * 2).frame(0)
-            self.assertEqual(first.getpixel((70, 1035)), rgb(lay.design.BRAND["pill_active"]))
+            self.assertEqual(first.getpixel((672 if count == 2 else 72, 1035)), rgb(lay.design.BRAND["pill_active"]))
         image = lay.frame(12.4)
         self.assertEqual(lay.chapter_at(12.4), 7)
         self.assertEqual(image.getpixel((670, 1035)), rgb(lay.design.BRAND["pill_active"]))
         self.assertEqual(image.getpixel((70, 1035)), rgb(lay.design.BRAND["pill_base"]))
-        self.assertEqual(image.getpixel((670, 1066)), rgb(lay.design.BRAND["accent"]))
-        self.assertEqual(image.getpixel((750, 1066)), rgb(lay.design.BRAND["pill_active"]))
+        self.assertEqual(image.getpixel((680, 1062)), rgb(lay.design.BRAND["accent"]))
+        self.assertEqual(image.getpixel((750, 1062)), rgb(lay.design.BRAND["pill_active"]))
+        self.assertEqual(image.getpixel((680, 1066)), rgb(lay.design.BRAND["canvas"]))
         self.assertEqual(image.getpixel((70, 1007)), rgb(lay.design.BRAND["canvas"]))
         self.assertEqual(image.getpixel((70, 1069)), rgb(lay.design.BRAND["canvas"]))
         self.assertEqual(lay.frame(0).tobytes(), Layout(timing(), "minimal-stage", 24).frame(0).tobytes())
 
     def test_minimal_stage_progress_follows_the_active_segment_and_clips_during_large_jumps(self):
         lay = Layout(timing(2), "minimal-stage", 6)
-        self.assertEqual(lay.frame(1.8).getpixel((208, 1066)), rgb(lay.design.BRAND["accent"]))
-        self.assertEqual(lay.frame(2).getpixel((508, 1066)), rgb(lay.design.BRAND["pill_active"]))
-        self.assertEqual(lay.frame(5.8).getpixel((508, 1066)), rgb(lay.design.BRAND["accent"]))
+        self.assertEqual(lay.frame(1.8).getpixel((810, 1062)), rgb(lay.design.BRAND["accent"]))
+        self.assertEqual(lay.frame(2).getpixel((1110, 1062)), rgb(lay.design.BRAND["pill_active"]))
+        self.assertEqual(lay.frame(5.8).getpixel((1110, 1062)), rgb(lay.design.BRAND["accent"]))
         source = timing()
         for chapter in source["chapters"][1:]:
             chapter["start"] = 1
         jumped = Layout(source, "minimal-stage", 3)
         image = jumped.frame(1.3)
-        self.assertEqual(image.getpixel((1850, 1066)), rgb(jumped.design.BRAND["accent"]))
-        self.assertEqual(image.getpixel((1858, 1066)), rgb(jumped.design.BRAND["canvas"]))
+        self.assertEqual(image.getpixel((1854, 1062)), rgb(jumped.design.BRAND["accent"]))
+        self.assertEqual(image.getpixel((1858, 1062)), rgb(jumped.design.BRAND["canvas"]))
 
     def test_progress_tracks_chapter_boundaries_and_the_actual_final_video_end(self):
         for theme in ("dark-rail", "minimal-stage", "cinematic"):
             with self.subTest(theme=theme):
                 lay = Layout(timing(2), theme, 6)
                 box = lay.design.PROGRESS
-                x, y = int(box["cx"]), int(box["cy"])
+                x, y = int(lay.chapter_cx if lay.horizontal else box["cx"]), int(box["cy"])
                 self.assertEqual(lay.frame(0).getpixel((x, y)), rgb(lay.design.BRAND["pill_active"]))
                 self.assertEqual(lay.frame(1.8).getpixel((x, y)), rgb(lay.design.BRAND["accent"]))
                 if lay.horizontal:

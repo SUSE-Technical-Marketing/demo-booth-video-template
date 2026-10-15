@@ -6,6 +6,26 @@ const id = value => typeof value === 'string' && value.trim().length > 0;
 export const mediaPathValid = path => typeof path === 'string' && path.trim().length > 0 &&
   !/^(?:[/\\]|[a-z][a-z\d+.-]*:)/i.test(path) && !/[\\\0\r\n]/.test(path);
 
+export function normalizeMediaFolder(folder = '') {
+  if (folder === '' || mediaPathValid(folder)) {
+    const normalized = folder.split('/').filter(part => part && part !== '.').join('/');
+    if (normalized === '' || mediaPathValid(normalized)) return normalized;
+  }
+  throw new Error('Media folder must be a relative path using forward slashes, or empty for the project folder');
+}
+
+export function resolveMediaPath(path, folder) {
+  const prefix = normalizeMediaFolder(folder);
+  if (!mediaPathValid(path)) throw new Error('Media path must be a relative path using forward slashes');
+  return prefix ? `${prefix}/${path}` : path;
+}
+
+export function mediaPathForFile(file) {
+  const path = file.name;
+  if (!mediaPathValid(path)) throw new Error('Video filename must be a relative path using forward slashes');
+  return path;
+}
+
 export function projectFPS(value) {
   if (typeof value !== 'string' || !/^[1-9]\d*\/[1-9]\d*$/.test(value)) throw new Error('Output FPS must be a fraction such as 25/1');
   const [n, d] = value.split('/').map(Number), fps = n / d;
@@ -42,6 +62,7 @@ export function validateProject(project) {
   const fps = projectFPS(project.output.fps ?? DEFAULT_FPS);
   themeLayout(project.output.theme);
   projectResolution(project.output.resolution);
+  normalizeMediaFolder(project.media_folder);
   if (!Array.isArray(project.media) || !Array.isArray(project.clips)) throw new Error('Project needs media and clips arrays');
   const media = new Set(), clips = new Set();
   for (const item of project.media) {
@@ -81,6 +102,7 @@ export function fromProject(project) {
       ...(project.output.theme === undefined ? {} : { theme: project.output.theme }),
       ...(project.output.resolution == null ? {} : { resolution: project.output.resolution }),
     },
+    ...(project.media_folder === undefined ? {} : { media_folder: project.media_folder }),
     media: project.media.map(({ id, path }) => ({ id, path })),
     clips: project.clips.map(({ id, media_id, start, source_in, source_out }) =>
       ({ id, media_id, start, source_in, source_out })).sort((a, b) => a.start - b.start),
@@ -89,7 +111,7 @@ export function fromProject(project) {
 
 export function toProjectJSON(state) {
   const project = {
-    project_version: 1, output: state.output, media: state.media, clips: state.clips,
+    project_version: 1, output: state.output, media_folder: state.media_folder, media: state.media, clips: state.clips,
     timing: JSON.parse(toJSON(state)),
   };
   fromProject(project);

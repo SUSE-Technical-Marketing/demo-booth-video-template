@@ -215,6 +215,8 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .chapter-sequence { flex-shrink: 0; color: var(--theme-accent); font-size: var(--chapter-number-px); }
 .chapter-progress { overflow: hidden; }
 .chapter-progress span { display: block; height: 100%; }
+#stage[data-theme="minimal-stage"] .pill { overflow: hidden; }
+.pill .chapter-progress { left: 0; right: 0; bottom: 0; }
 .video-fade { pointer-events: none; }
 .transport { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
 .transport input[type=range] { width: 100%; accent-color: var(--orange); }
@@ -254,7 +256,9 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .vrow button { grid-column: 3; grid-row: 3; }
 .vrow .clip-source { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
 .clip-source label { display: inline-flex; align-items: center; gap: 4px; }
-.vrow .clip-path { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.vrow .clip-path, .media-folder { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.media-folder { margin: 8px 0; }
+.resolved-media-path { overflow-wrap: anywhere; }
 .clip-path input { width: 100%; }
 .vrow .relink-media { grid-column: 1 / -1; grid-row: auto; justify-self: start; font-size: 12px; }
 .timeline-legend .video-key { height: 4px; background: var(--text); opacity: .55; }

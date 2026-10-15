@@ -31,7 +31,7 @@ from PIL import Image  # noqa: E402
 import layout as L  # noqa: E402
 import layers  # noqa: E402
 from timing import normalize_chapters  # noqa: E402
-from project import load_project, project_fps, project_resolution, validate_project  # noqa: E402
+from project import load_project, project_fps, project_resolution, resolve_media_path, validate_project  # noqa: E402
 from assemble import assemble_project  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -330,7 +330,9 @@ def render_project(args, ffmpeg):
             raise ValueError("%s must be a finite %s time" % (key, "positive" if key == "duration" else "non-negative"))
     fps, size = output_settings(args, project)
     output = Path(args.png or "frame.png") if args.frame is not None else Path(args.output or path.with_name(path.stem + "-branded.mp4"))
-    if output.resolve() == path or any(output.resolve() == (path.parent / m["path"]).resolve() for m in project["media"]):
+    if output.resolve() == path or any(
+            output.resolve() == (path.parent / resolve_media_path(m["path"], project.get("media_folder", ""))).resolve()
+            for m in project["media"]):
         raise ValueError("Output must not overwrite the project or source media")
     if fps != project["output"].get("fps"):       # assemble and plan frames at the effective rate
         project["output"]["fps"] = fps
@@ -362,7 +364,7 @@ def render_project(args, ffmpeg):
 
 def main():
     ap = argparse.ArgumentParser(description="Render a video project with hard cuts, audio, chapters and headlines.")
-    ap.add_argument("project", nargs="?", help="project JSON; media paths are relative to this file")
+    ap.add_argument("project", nargs="?", help="project JSON; media paths are relative to its media_folder (default: JSON's folder)")
     ap.add_argument("-o", "--output", help="output .mp4 (default: <project>-branded.mp4)")
     ap.add_argument("--fps", type=fps_argument, metavar="RATE", help="output frame rate such as 25 or 30000/1001 "
                     "(overrides the project; default 25)")

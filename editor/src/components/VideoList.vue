@@ -6,8 +6,9 @@ import { fmt, parseClock } from '../timing.js';
 const props = defineProps({
   clips: { type: Array, required: true },
   starts: { type: Array, required: true },
+  mediaFolder: { type: String, default: '' },
 });
-const emit = defineEmits(['add', 'update-start', 'update-clip', 'update-path', 'relink', 'remove', 'error']);
+const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'update-path', 'relink', 'remove', 'error']);
 const input = ref(null), relinkInput = ref(null), relinking = ref(null);
 function add(event) {
   const files = [...event.target.files];
@@ -34,6 +35,11 @@ function commitPath(clip, event) {
   event.target.value = clip.path;
   emit('update-path', clip, path);
 }
+function commitFolder(event) {
+  const folder = event.target.value.trim();
+  event.target.value = props.mediaFolder;
+  emit('update-folder', folder);
+}
 function relink(event) {
   const file = event.target.files[0];
   event.target.value = '';
@@ -49,6 +55,12 @@ function snap(clip, event) {
 <template>
   <section class="card">
     <h2>Videos <span v-if="clips.length" id="vidChip" class="chip">{{ clips.length }} loaded</span></h2>
+    <label class="clip-path media-folder">Media folder
+      <input id="mediaFolder" :value="mediaFolder" placeholder="e.g. media" aria-describedby="mediaFolderHint"
+        @change="commitFolder" @keydown.enter="$event.target.blur()">
+    </label>
+    <p id="mediaFolderHint" class="hint">Relative to the project JSON; leave blank for the JSON's folder.
+      Applied automatically to every media path below. Changing it updates all references, without moving files.</p>
     <div id="vlist">
       <div v-for="clip in clips" :key="clip.id" class="vrow">
         <div class="name" :title="clip.name">{{ clip.name }}</div>
@@ -67,7 +79,9 @@ function snap(clip, event) {
             @change="commitTrim(clip, 'source_out', $event)"></label>
         </div>
         <label class="clip-path">Media path <input :value="clip.path" aria-label="Media path"
-          title="Relative to project.json, using forward slashes" @change="commitPath(clip, $event)"></label>
+          title="Relative to the media folder, using forward slashes" @change="commitPath(clip, $event)">
+          <span class="hint resolved-media-path">Project path: {{ clip.resolvedPath }}</span>
+        </label>
         <button class="relink-media" @click="relinking = clip; relinkInput.click()">Relink media…</button>
       </div>
     </div>

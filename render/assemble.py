@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 import layout as L
-from project import DEFAULT_FPS, project_fps, timeline_segments
+from project import DEFAULT_FPS, project_fps, resolve_media_path, timeline_segments
 
 
 def _run(command):
@@ -18,7 +18,8 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
     content = L.theme_layout(project["output"].get("theme", "classic")).CONTENT
     fps = project["output"].get("fps", DEFAULT_FPS)
     rate = float(project_fps(fps))
-    sources = {m["id"]: (Path(project_path).parent / m["path"]).resolve() for m in project["media"]}
+    sources = {m["id"]: (Path(project_path).parent / resolve_media_path(m["path"], project.get("media_folder", ""))).resolve()
+               for m in project["media"]}
     info = {}
     for clip in project["clips"]:
         path = sources[clip["media_id"]]
