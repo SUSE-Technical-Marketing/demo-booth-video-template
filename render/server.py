@@ -2,6 +2,7 @@
 """Local export service for the timing editor.
 
     python render/server.py            # listens on http://127.0.0.1:8766
+    python render/server.py --static dist --port 8765     # also serves the built editor: one address for everything
 
 The editor is a static web page, so it cannot run ffmpeg itself. Its Export dialog talks to this service instead
 (through the dev server's /api proxy): it sends the project, uploads the linked videos, watches the progress and
@@ -11,6 +12,7 @@ temporary folder that is deleted when the job is removed or the service stops.
 """
 import argparse
 import json
+import mimetypes
 import re
 import secrets
 import shutil
@@ -24,7 +26,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import render  # noqa: E402
@@ -163,6 +165,7 @@ class Service:
 class Handler(BaseHTTPRequestHandler):
     server_version = "BoothExport/1"
     service = None
+    static = None                      # folder with the built editor (dist/), served for every path outside /api
 
     def log_message(self, fmt, *args):
         if self.server.verbose:
@@ -181,10 +184,15 @@ class Handler(BaseHTTPRequestHandler):
     def fail(self, status, message):
         self.send_json({"error": message}, status)
 
-    def allowed(self):
+    def local_host(self):
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
         if host not in ("127.0.0.1", "localhost", "::1"):         # DNS-rebinding guard
             self.fail(403, "this service only answers on localhost")
+            return False
+        return True
+
+    def allowed(self):
+        if not self.local_host():
             return False
         if self.download_token_ok():
             return True
@@ -212,10 +220,33 @@ class Handler(BaseHTTPRequestHandler):
         return [p for p in urlparse(self.path).path.split("/") if p]
 
     # ---- verbs ----
+    def serve_static(self):
+        """The built editor: the same files GitHub Pages hosts. Never anything outside the folder."""
+        root = self.static.resolve()
+        name = unquote(urlparse(self.path).path).lstrip("/") or "index.html"
+        target = (root / name).resolve()
+        if root not in target.parents and target != root:
+            return self.fail(404, "not found")
+        if target.is_dir():
+            target = target / "index.html"
+        if not target.is_file():
+            return self.fail(404, "not found")
+        data = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(target.name)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
+        parts = self.route()
+        if self.static and parts[:1] != ["api"]:                  # pages and assets need no header, only a local Host
+            if self.local_host():
+                self.serve_static()
+            return
         if not self.allowed():
             return
-        parts = self.route()
         if parts == ["api", "info"]:
             return self.send_json(self.service.info())
         if len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
@@ -303,10 +334,10 @@ class Handler(BaseHTTPRequestHandler):
         self.fail(404, "not found")
 
 
-def make_server(port=PORT, ffmpeg=None, verbose=False):
+def make_server(port=PORT, ffmpeg=None, verbose=False, host="127.0.0.1", static=None):
     service = Service(ffmpeg)
-    handler = type("BoundHandler", (Handler,), {"service": service})
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    handler = type("BoundHandler", (Handler,), {"service": service, "static": Path(static) if static else None})
+    httpd = ThreadingHTTPServer((host, port), handler)
     httpd.service, httpd.verbose = service, verbose
     return httpd
 
@@ -314,13 +345,19 @@ def make_server(port=PORT, ffmpeg=None, verbose=False):
 def main():
     ap = argparse.ArgumentParser(description="Local export service for the timing editor.")
     ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--host", default="127.0.0.1", help="address to listen on. Only change it inside a container, "
+                    "and publish the port to 127.0.0.1 only (run-container.sh --ui does this)")
+    ap.add_argument("--static", metavar="DIR", help="also serve the built editor (dist/) from this folder")
+    ap.add_argument("--public-port", type=int, help="port to show in the startup message when it is published "
+                    "under a different number (inside a container)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
     try:
-        httpd = make_server(args.port, verbose=args.verbose)
+        httpd = make_server(args.port, verbose=args.verbose, host=args.host, static=args.static)
     except OSError as error:
-        sys.exit("Could not listen on 127.0.0.1:%d (%s). Is the export service already running?" % (args.port, error))
-    print("Export service: http://127.0.0.1:%d  (ffmpeg: %s)" % (args.port, httpd.service.ffmpeg), flush=True)
+        sys.exit("Could not listen on %s:%d (%s). Is the export service already running?" % (args.host, args.port, error))
+    print("%s: http://127.0.0.1:%d  (ffmpeg: %s)" % ("Editor and export service" if args.static else "Export service",
+                                                      args.public_port or args.port, httpd.service.ffmpeg), flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

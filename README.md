@@ -38,7 +38,7 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 | `package.json`, `bun.lock`, `vite.config.js` | Editor scripts and locked dependencies, managed with Bun. |
 | `start_editor.command` | Double-click to run the editor locally instead of the hosted copy. |
 | `timings/*.json` | Example project documents with chapters and headlines. Add your media before rendering. |
-| `render/` | `render.py` (command line), `Containerfile` and `run-container.sh` (SUSE BCI Python image). |
+| `render/` | `render.py` (command line), `server.py` (export service), `Containerfile` and `run-container.sh` (SUSE BCI image with the editor and renderer; `--ui` runs the whole app). |
 | `prompts/headline-prompt.md` | A ready-to-use LLM prompt that turns narration into headlines. |
 | `assets/` | SUSE logo (PNG) and the SUSE Medium font file used by the renderer. |
 | `tests/` | Renderer and timing checks, run automatically on every push alongside the editor tests. |
@@ -57,6 +57,10 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 
    Then open <http://127.0.0.1:8765/>. The development server binds only to localhost and stops with Ctrl+C. If the
    port is busy, `start_editor.command` tells you what is using it.
+
+   **Or use a container and install nothing** (just Docker, Podman or Rancher Desktop):
+   `render/run-container.sh --ui` then open <http://127.0.0.1:8765/> in Chrome or Edge
+   (see [Run everything in a container](#run-everything-in-a-container-no-installs)).
 2. **Start or open a project.** **New** starts a blank project. **Open file…** opens an existing project JSON
    (copy `timings/example.json` to begin from a sample).
 3. **Add your recordings** in **Videos & settings**. Set timeline starts, source **In/Out** trims and relative media paths.
@@ -365,7 +369,30 @@ treated as BT.709, which is what players do.
 The master and segment files are removed on completion or failure. Allow substantial temporary disk space for long projects.
 Source footage is not repeatedly lossy-encoded. Assembly currently also runs for single-frame checks of projects with clips.
 
-### In a container (SUSE Base Container Image)
+### Run everything in a container (no installs)
+
+One image holds the built editor and the export service, so the only thing you need on your machine is a container
+engine (`docker`, `podman` or `nerdctl`):
+
+```bash
+/path/to/demo-booth-video-template/render/run-container.sh --ui            # or: --ui --port 8800
+```
+
+Then open <http://127.0.0.1:8765/> in **Chrome or Edge**. It is the same editor and the same **Export** button: opening
+and saving project files and folders works as usual, because those happen in your browser on your own disk. The
+container only does the rendering, using temporary space that is deleted after each export; the finished video is saved
+by the browser wherever you choose (see [Export from the editor](#export-from-the-editor)).
+
+- The port is published to `127.0.0.1` only, so nothing else on your network can reach it.
+- The image is rebuilt from cache each time you run it, so it always matches your checkout. The first build takes a
+  minute or two.
+- Differences from running natively: no Mac hardware encoder (x264 only, so exports are somewhat slower), and large
+  videos are uploaded into the container, so Docker needs enough free disk (about the size of your clips, plus the
+  assembled video while it renders). Raise the disk limit in Docker or Rancher Desktop if an export reports it ran out.
+- If something else already uses the port (for example the editor started with `start_editor.command`), the script
+  starts but the browser reaches the other program: stop it or choose another `--port`.
+
+### Command-line render in a container (SUSE Base Container Image)
 
 If you would rather not install anything, or you want to render on a server, the renderer runs in a container built on
 `registry.suse.com/bci/python`. Pillow and a static ffmpeg come from pip, so the image needs no extra repositories.

@@ -180,5 +180,58 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/jobs/%s/download" % job)[0], 409)
 
 
+class StaticEditorTests(unittest.TestCase):
+    """--static serves the built editor next to the API, so one container port is the whole app."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        root = Path(cls.tmp.name)
+        (root / "dist" / "assets").mkdir(parents=True)
+        (root / "dist" / "index.html").write_text("<title>editor</title>")
+        (root / "dist" / "assets" / "app.js").write_text("console.log(1)")
+        (root / "secret.txt").write_text("outside the editor folder")
+        cls.httpd = server.make_server(0, static=root / "dist")
+        cls.port = cls.httpd.server_address[1]
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.tmp.cleanup()
+
+    def get(self, path, headers=None, host=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        hdrs = dict(headers or {})
+        if host:
+            hdrs["Host"] = host
+        conn.request("GET", path, headers=hdrs)
+        res = conn.getresponse()
+        body = res.read()
+        conn.close()
+        return res.status, res, body
+
+    def test_serves_the_editor_and_its_assets_without_the_api_header(self):
+        status, res, body = self.get("/")
+        self.assertEqual((status, body), (200, b"<title>editor</title>"))
+        self.assertIn("text/html", res.getheader("Content-Type"))
+        status, res, body = self.get("/assets/app.js")
+        self.assertEqual(status, 200)
+        self.assertIn("javascript", res.getheader("Content-Type"))
+        self.assertEqual(self.get("/assets/missing.js")[0], 404)
+
+    def test_cannot_read_outside_the_editor_folder(self):
+        for path in ("/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt", "/..%2fsecret.txt"):
+            status, _, body = self.get(path)
+            self.assertNotIn(b"outside the editor folder", body, path)
+            self.assertIn(status, (200, 404), path)       # 200 only for index.html style fallbacks, never the secret
+
+    def test_pages_still_need_a_localhost_host_and_the_api_still_needs_its_header(self):
+        self.assertEqual(self.get("/", host="evil.example:8765")[0], 403)
+        self.assertEqual(self.get("/api/info")[0], 403)
+        self.assertEqual(self.get("/api/info", headers=H)[0], 200)
+
+
 if __name__ == "__main__":
     unittest.main()
