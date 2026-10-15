@@ -7,6 +7,18 @@ small JSON file per video, and a command-line renderer turns that file and your 
 
 You still **cut your video in whatever editor you like**. This app adds the SUSE wrapper around the finished edit.
 
+## What you can do in the editor
+
+- **Preview the real layout** over your own recordings: load one video per chapter, or one that spans several, and play
+  or scrub the finished look.
+- **Edit chapters and headlines** in a focused workspace: rename chapters inline, add as many as you need (the panel
+  scrolls past six), and write headlines with `*accent*` words.
+- **Retime on the timeline**: drag a headline's start and end handles, zoom in for precision, click a chapter to jump
+  there, and ripple everything after a cut.
+- **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
+- **Render the final MP4** with one command (or a container): branded layout, your audio, and an MP4 chapter marker
+  per chapter.
+
 ## How the pieces fit
 
 ```
