@@ -82,7 +82,7 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    Select a chapter to edit its headlines in the separate **selected-chapter headlines** card below.
    The chapter list and headlines have their own bordered cards and scroll independently.
    An outlined row is the editing selection; a bright dot marks the chapter currently playing.
-   Selecting a chapter does not seek or interrupt the preview. Enable **Follow playhead** to switch the
+   Clicking a chapter in the list moves the playhead (and so the timeline and preview) to its start. Enable **Follow playhead** to switch the
    editing panel as playback or scrubbing crosses chapters; focusing an edit field turns following off.
    **+ Chapter** inserts a chapter at the playhead and selects its title for editing. Delete removes the chapter
    and all its headlines; keep at least one chapter. There is no chapter reuse: buttons advance once in chronological order
@@ -114,7 +114,10 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
 5. Use a headline's **Preview** button, drag the timeline or press `Space` to preview.
    The timeline has chapter bands and a second track of **headline duration bands**. Each headline band ends
    at its chapter boundary or video end; gaps mean no headline. Selecting a band seeks there and opens its
-   chapter/ headline editor. Bands are keyboard-accessible; dragging scrubs without moving document timings.
+   chapter/ headline editor. Bands are keyboard-accessible; dragging a band scrubs without moving document timings.
+   **To retime a headline, drag the handle on its left edge** (or focus it and press `←` / `→`, `Shift` for 1 s): that moves
+   where it starts and where the previous headline in the chapter ends, in 0.1 s steps. A handle stops at its neighbours
+   and at the chapter boundary, and the preview follows it. Undo reverts the whole drag.
    Invalid or zero-length cues remain selectable as narrow markers, not misleading duration bands.
    The preview shows the real layout with the active
    button and the wipe. It is an approximation of the rendered video, so check a real frame with `--frame` before a long render.

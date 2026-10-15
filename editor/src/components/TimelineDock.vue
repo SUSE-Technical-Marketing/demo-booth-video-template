@@ -12,7 +12,7 @@ defineProps({
   offset: { type: Number, required: true },
   clips: { type: Array, default: () => [] },
 });
-const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headline']);
+const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline']);
 </script>
 
 <template>
@@ -28,13 +28,14 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
     </div>
     <Timeline :state="state" :duration="duration" :cur="cur" :selected-id="selectedId" :clips="clips"
       :selected-chapter-id="selectedChapterId" @seek="emit('seek', $event)"
-      @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)" />
+      @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)"
+      @begin-edit="emit('begin-edit')" @move-headline="(h, time) => emit('move-headline', h, time)" />
     <div class="timeline-legend">
       <span><i class="chapter-key"></i> Chapters</span>
       <span><i class="headline-key"></i> Headlines</span>
       <span><i class="invalid-key"></i> Outside chapter</span>
       <span v-if="clips.length"><i class="video-key"></i> Videos</span>
-      <span class="timeline-help">Select a band to edit; drag to scrub. Gaps mean no headline.</span>
+      <span class="timeline-help">Select a band to edit; drag to scrub; drag a headline's left edge to retime it. Gaps mean no headline.</span>
     </div>
   </section>
 </template>

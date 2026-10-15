@@ -116,6 +116,18 @@ function beginEdit() {
   followPlayhead.value = false;
   pushHistory();
 }
+function chooseChapter(chapter) {      // from the chapter list: the editing panel and the timeline both go there
+  selectChapter(chapter);
+  setCur(chapter.t + 0.1);
+}
+function moveHeadline(h, time) {       // dragged on the timeline: h.t is relative to its chapter
+  const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
+  h.t = +(time - chapter.t).toFixed(2);
+  selectedChapterId.value = chapter.id;
+  selectedId.value = h.id;
+  setCur(time);
+  markDirty();
+}
 function selectChapter(chapter) {
   followPlayhead.value = false;
   selectedChapterId.value = chapter.id;
@@ -505,7 +517,7 @@ onUnmounted(() => {
           :chapters-end="state.chapters_end" @change-chapters-end="updateChaptersEnd"
           :text-size-id="state.headlines[headlineFit.idx]?.id"
           @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-          @select="selectChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
+          @select="chooseChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
           @delete-chapter="deleteChapter" @add-chapter="addChapter"
           @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
           @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
@@ -565,6 +577,7 @@ onUnmounted(() => {
   </EditorWorkspace>
   <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
     :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
-    @select-chapter="selectChapter" @select-headline="selectTimelineHeadline" />
+    @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
+    @begin-edit="beginEdit" @move-headline="moveHeadline" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>
