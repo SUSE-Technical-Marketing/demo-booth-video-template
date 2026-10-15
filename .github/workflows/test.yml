@@ -24,8 +24,6 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r render/requirements.txt
-      - name: Fusion script and renderer use the same layout
-        run: python tests/check_layout_sync.py
       - name: Chapter scrolling and viewport regression tests
         run: python -m unittest discover -s tests
       - name: Timing files are valid

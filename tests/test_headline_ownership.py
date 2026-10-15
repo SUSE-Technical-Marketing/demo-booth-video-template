@@ -1,19 +1,15 @@
-"""Chapter-relative schema, renderer boundary frames and Fusion visibility windows."""
+"""Chapter-relative schema and renderer boundary frames."""
 import contextlib
 import copy
 import io
 import json
-import os
 from pathlib import Path
-import runpy
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
 
-from test_chapter_scroll import FakeComp, ROOT, expression_value
+from test_chapter_scroll import ROOT
 import layout as L
 from layers import Layout, fit_px, parse_headline
 from render import chapter_metadata, find_ffmpeg, load_timing, probe
@@ -29,20 +25,6 @@ def owned_timing():
             {"title": "Later", "start": 20, "headlines": [[3, "Delayed"]]},
         ],
     }
-
-
-def build_fusion(source):
-    with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp)
-        (repo / "assets").mkdir()
-        (repo / "assets" / "SUSE_Logo-hor_Green.png").touch()
-        (repo / "timings").mkdir()
-        (repo / "timings" / "example.json").write_text(json.dumps(source))
-        comp = FakeComp()
-        with patch.dict(os.environ, {"DEMO_BOOTH_REPO": tmp}), contextlib.redirect_stdout(io.StringIO()) as output:
-            result = runpy.run_path(str(ROOT / "fusion" / "build_chapter_template.py"),
-                                   init_globals={"fu": SimpleNamespace(GetCurrentComp=lambda: comp)})
-        return comp, result, output.getvalue()
 
 
 class HeadlineOwnershipTests(unittest.TestCase):
@@ -66,16 +48,12 @@ class HeadlineOwnershipTests(unittest.TestCase):
                                        capture_output=True, text=True, check=True)
             self.assertIn("start 0.000000, end 0.800000", inspected.stderr)
 
-    def test_explicit_chapter_end_caps_python_and_fusion_headlines(self):
+    def test_explicit_chapter_end_caps_headlines(self):
         source = {**owned_timing(), "chapters_end": 25}
         layout = Layout(source)
         self.assertEqual(layout.headline_at(24.99), (2, 23))
         self.assertIsNone(layout.headline_at(25))
         self.assertIsNone(layout.headline_at(30))
-        comp, result, _ = build_fusion(source)
-        self.assertEqual(result["HEADLINE_ENDS"], [8, 10, 25])
-        self.assertEqual(comp.FindTool("H3_Merge1").GetInput("Blend", 100 + 24 * 25), 1)
-        self.assertEqual(comp.FindTool("H3_Merge1").GetInput("Blend", 100 + 25 * 25), 0)
         bar = (layout.bar_x, layout.bar_y, layout.bar_x + L.BAR["w"], layout.bar_y + L.BAR["h"])
         self.assertEqual(layout.frame(25).crop(bar).tobytes(), layout.background().crop(bar).tobytes())
 
@@ -131,41 +109,19 @@ class HeadlineOwnershipTests(unittest.TestCase):
         self.assertIsNone(layout.headline_at(20))
         self.assertEqual(layout.headline_at(23), (2, 23))
 
-    def test_empty_documents_are_valid_in_both_renderers(self):
+    def test_empty_documents_are_valid(self):
         source = {"schema_version": 2, "chapters": [{"title": "Empty", "start": 0, "headlines": []}]}
         layout = Layout(source)
         self.assertIsNone(layout.headline_at(5))
         self.assertEqual(layout.frame(5).size, (1920, 1080))
-        comp, result, _ = build_fusion(source)
-        self.assertEqual(result["HEADLINES"], [])
-        self.assertIsNone(comp.FindTool("HeadlineWipe1"))
-        self.assertIsNotNone(comp.FindTool("MediaOut1"))
         legacy = {"chapters": ["Empty"], "chapter_starts": [[0, 1]], "headlines": []}
         self.assertIsNone(Layout(legacy).headline_at(5))
-
-    def test_fusion_windows_match_renderer_and_do_not_build_invalid_headlines(self):
-        source = owned_timing()
-        comp, result, notice = build_fusion(source)
-        layout = Layout(source)
-        self.assertEqual(result["HEADLINE_ENDS"], [8, 10, None])
-        self.assertIn("Skipped 1 headline(s)", notice)
-        self.assertIsNone(comp.FindTool("HeadlineWipe4"))
-        for time in (0, 7.96, 8, 9.96, 10, 12, 20, 22.96, 23, 24):
-            visible = [i for i in range(3) if comp.FindTool("H%d_Merge1" % (i + 1)).GetInput("Blend", 100 + time * 25)]
-            selected = layout.headline_at(time)
-            self.assertEqual(visible, [] if selected is None else [selected[0]])
 
     def test_global_end_zero_and_finite_cutoffs_remain_supported(self):
         for end in (0, 24):
             source = {**owned_timing(), "headlines_end": end}
             layout = Layout(source)
             self.assertIsNone(layout.headline_at(end))
-            comp, result, _ = build_fusion(source)
-            if end == 0:
-                self.assertEqual(result["HEADLINES"], [])
-            else:
-                self.assertEqual(comp.FindTool("H3_Merge1").GetInput("Blend", 100 + 23 * 25), 1)
-                self.assertEqual(comp.FindTool("H3_Merge1").GetInput("Blend", 100 + end * 25), 0)
 
     def test_negative_offsets_are_retained_as_data_but_never_shown(self):
         source = {"schema_version": 2, "chapters": [{"title": "Intro", "start": 10, "headlines": [[-5, "Early"]]}]}

@@ -75,7 +75,7 @@ defineExpose({ focusChapter, focusHeadline });
           <label v-if="selectedChapter.id === starts.at(-1).id" class="inline chapter-end-control">
             Ends at <input id="chapterEndAt" class="time" aria-label="Last chapter end" size="7"
               :value="chaptersEnd == null ? '' : fmt(chaptersEnd)" :placeholder="`Auto: ${fmt(end)}`"
-              :title="chaptersEnd == null ? 'Leave blank to use the video end or estimated preview end. Accepts elapsed time or Resolve timecode.' : `${tc(chaptersEnd, offset)} in Resolve. Clear to use the automatic end.`"
+              :title="chaptersEnd == null ? 'Leave blank to use the video end or estimated preview end. Accepts elapsed time or full timecode.' : `${tc(chaptersEnd, offset)} as timecode. Clear to use the automatic end.`"
               @focus="emit('begin-edit')" @change="emit('change-chapters-end', $event)">
           </label>
         </div>

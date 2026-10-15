@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Render a booth demo video without DaVinci Resolve.
+"""Render a booth demo video from the command line.
 
     python render/render.py my-recording.mp4 -t my-video.json -o my-video-final.mp4
 
 Takes a finished edit (any video file), puts it in the content slot, and draws the chapter panel and timed
-headlines from the same timings/*.json the Fusion script and the timing editor use.
+headlines from the timings/*.json file the timing editor writes.
 
     python render/render.py my-recording.mp4 -t my-video.json --frame 75 --png check.png    # one frame, no encode
     python render/render.py --selftest                                                      # quick end-to-end test
@@ -264,7 +264,7 @@ def selftest(args, ffmpeg):
 
 # ---------------------------------------------------------------------------------------------- main
 def main():
-    ap = argparse.ArgumentParser(description="Add the chapter panel and timed headlines to a video, no DaVinci needed.")
+    ap = argparse.ArgumentParser(description="Add the chapter panel and timed headlines to a video.")
     ap.add_argument("input", nargs="?", help="finished video to put in the content slot")
     ap.add_argument("-t", "--timing", default="example.json", help="timings/<name>.json, or a path (default example.json)")
     ap.add_argument("-o", "--output", help="output .mp4 (default: <input>-branded.mp4)")

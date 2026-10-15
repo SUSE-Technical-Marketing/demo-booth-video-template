@@ -79,7 +79,7 @@ Output:
 ## After you have the words
 
 1. Open the timing editor and **Open file…** on your `timings/<video>.json`.
-2. Add one row per headline (**+ Add headline**), paste the text, and type the time from your Resolve timeline
-   (`1:03:44` timecode or `3:44`).
+2. Add one row per headline (**+ Add headline**), paste the text, and type the time from your video
+   (`3:44`, or a full timecode like `1:03:44`).
 3. Use the preview to check the headline fits and reads well. A **short** or **long** chip warns about headlines
    under 3 s or over 25 s.

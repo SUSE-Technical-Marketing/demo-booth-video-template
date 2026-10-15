@@ -1,4 +1,4 @@
-# Renders a booth video with no DaVinci Resolve and nothing installed on the host.
+# Renders a booth video with nothing installed on the host.
 #   docker build -t booth-render -f render/Containerfile .
 #   render/run-container.sh my-edit.mp4 -t my-video.json -o my-video-final.mp4
 # Base: SUSE Linux Enterprise Base Container Image (BCI) with Python. Check

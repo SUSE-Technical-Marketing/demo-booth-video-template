@@ -489,7 +489,7 @@ onUnmounted(() => {
     <label class="inline"><input id="autosave" v-model="autosave" type="checkbox" @change="scheduleSave"> autosave</label>
     <span id="status" class="status" :class="{ dirty, ok: !dirty && handle }">{{ status }}</span>
     <span class="spacer"></span>
-    <label class="inline" title="Timecode shown in Resolve at the start of the clip. Times typed as h:mm:ss have this subtracted.">
+    <label class="inline" title="Timecode your video editor shows at the start of the clip (often 01:00:00). Times typed as h:mm:ss have this subtracted.">
       timeline starts at <input id="offset" v-model="offsetText" size="8" @change="updateOffset"></label>
     <button id="btnUndo" class="ghost" title="Cmd/Ctrl+Z" @click="undo">Undo</button>
     <a href="https://github.com/SUSE-Technical-Marketing/demo-booth-video-template#readme" target="_blank" rel="noopener" class="help">Help</a>
@@ -559,7 +559,7 @@ onUnmounted(() => {
           <span class="chip info">headline text ≈ {{ (headlineFit.px / TEXT_SCALE).toFixed(0) }} px{{ headlineFit.idx >= 0 ? ` (set by #${headlineFit.idx + 1})` : '' }}</span>
           <span v-if="shortCount" class="chip warn">{{ shortCount }} shorter than 3 s</span>
         </div>
-        <div class="hint preview-hint">Preview is an approximation of the Fusion result. <kbd>Space</kbd> play/pause · <kbd>,</kbd> <kbd>.</kbd> previous / next headline.</div>
+        <div class="hint preview-hint">Preview is an approximation of the rendered video. <kbd>Space</kbd> play/pause · <kbd>,</kbd> <kbd>.</kbd> previous / next headline.</div>
       </section>
     </template>
   </EditorWorkspace>

@@ -1,4 +1,4 @@
-"""Timeline-driven chapter scrolling shared by the renderer and the Fusion builder."""
+"""Timeline-driven chapter scrolling for the renderer (the editor preview mirrors it in timing.js)."""
 
 
 def window_start(active, count, visible, previous):
@@ -27,15 +27,3 @@ def scroll_steps(chapter_starts, count, settings):
             steps.append((start, origin, target))
     return steps
 
-
-def fusion_scroll_expression(steps, fps, t0, seconds):
-    """Express the same easing in Fusion frame time, including interrupted scrolls."""
-    expression = str(steps[0][2])
-    for start, origin, target in steps[1:]:
-        frame = t0 + start * fps
-        duration = seconds * fps
-        p = "((time - %.12g) / %.12g)" % (frame, duration)
-        tween = "%.12g + %.12g * %s * %s * (3 - 2 * %s)" % (origin, target - origin, p, p, p)
-        expression = "iif(time < %.12g, (%s), iif(time >= %.12g, %d, (%s)))" % (
-            frame, expression, frame + duration, target, tween)
-    return expression

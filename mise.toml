@@ -37,7 +37,6 @@ depends = ["install", "editor:install"]
 run = [
   "bun run test",
   "bun run build",
-  "python tests/check_layout_sync.py",
   "python -m unittest discover -s tests",
   "python -c \"import glob,json; [json.load(open(f)) for f in glob.glob('timings/*.json')]\"",
   "python render/render.py --selftest",
