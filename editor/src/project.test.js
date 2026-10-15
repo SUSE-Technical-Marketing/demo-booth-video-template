@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../../tests/fixtures/project.json';
-import { createProject, fromProject, projectFPS, toProjectJSON } from './project.js';
+import { DEFAULT_RESOLUTION, FORMATS, RESOLUTIONS, createProject, fromProject, projectFPS, projectFormat, projectResolution, toProjectJSON } from './project.js';
 import { DEFAULT } from './timing.js';
 import { THEMES, themeLayout } from './themes.js';
 
@@ -55,6 +55,38 @@ describe('project documents', () => {
     change(project);
     expect(() => fromProject(project)).toThrow();
   });
+  it('persists the output resolution and keeps Full HD implicit when it is absent', () => {
+    expect(projectResolution(undefined)).toEqual([1920, 1080]);
+    expect(projectResolution(DEFAULT_RESOLUTION)).toEqual([1920, 1080]);
+    expect(RESOLUTIONS.map(([size]) => size)).toContain(DEFAULT_RESOLUTION);
+    expect(createProject(DEFAULT).output.resolution).toBeUndefined();
+    const project = copy();
+    expect(fromProject(project).output).not.toHaveProperty('resolution');
+    project.output.resolution = '1280x720';
+    expect(fromProject(project).output.resolution).toBe('1280x720');
+    expect(JSON.parse(toProjectJSON(fromProject(project)))).toEqual(project);
+  });
+  it('persists the output format, defaults to MP4 and fills in the default frame rate when a project has none', () => {
+    expect(projectFormat(undefined)).toBe('mp4');
+    expect(FORMATS.map(([id]) => id)).toEqual(['mp4', 'gif']);
+    expect(createProject(DEFAULT).output.format).toBeUndefined();
+    const project = copy();
+    project.output.format = 'gif';
+    expect(fromProject(project).output.format).toBe('gif');
+    expect(JSON.parse(toProjectJSON(fromProject(project)))).toEqual(project);
+    delete project.output.fps;
+    expect(fromProject(project).output.fps).toBe('25/1');
+    for (const format of ['webm', '', 'GIF', 4, {}]) {
+      project.output.format = format;
+      expect(() => fromProject(project)).toThrow('Output format');
+    }
+  });
+  it.each(['1920x1081', '0x0', '7682x4320', '1280 x 720', '1280×720', '', 1080, [1280, 720], {}])(
+    'rejects the invalid resolution %j', resolution => {
+      const project = copy();
+      project.output.resolution = resolution;
+      expect(() => fromProject(project)).toThrow('Output resolution');
+    });
   it('supports rational frame rates and multiple clips referencing one source', () => {
     expect(projectFPS('30000/1001')).toBeCloseTo(29.97);
     const project = copy();

@@ -94,6 +94,26 @@ describe('Vue editor', () => {
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.get('#stage').attributes('data-theme')).toBe('classic');
   });
+  it('saves the output resolution and restores the previous size with undo', async () => {
+    await wrapper.get('#settings-tab').trigger('click');
+    expect(wrapper.get('#outputResolution').element.value).toBe('1920x1080');
+    await wrapper.get('#outputResolution').setValue('1920x1080');
+    expect(wrapper.get('#status').classes()).not.toContain('dirty');
+    await wrapper.get('#outputResolution').setValue('1280x720');
+    expect(wrapper.get('#outputResolution').element.value).toBe('1280x720');
+    expect(wrapper.get('#status').classes()).toContain('dirty');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output).toEqual({ fps: '25/1', theme: 'dark-rail', resolution: '1280x720' });
+    await wrapper.get('#outputFormat').setValue('gif');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output.format).toBe('gif');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#outputFormat').element.value).toBe('mp4');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#outputResolution').element.value).toBe('1920x1080');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output).toEqual({ fps: '25/1', theme: 'dark-rail' });
+  });
   it('opens older projects as Classic and autosaves a theme change', async () => {
     const { writable } = await openLinkedFile();
     expect(wrapper.get('#videoTheme').element.value).toBe('classic');

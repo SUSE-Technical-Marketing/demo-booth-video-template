@@ -12,7 +12,8 @@ from array import array
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "render"))
 import layout as L
-from project import load_project, project_fps, timeline_segments, validate_project
+from PIL import Image
+from project import load_project, project_format, project_fps, project_resolution, timeline_segments, validate_project
 from render import find_ffmpeg, probe
 
 FIXTURE = json.loads((ROOT / "tests/fixtures/project.json").read_text())
@@ -36,6 +37,10 @@ class ProjectTests(unittest.TestCase):
             (("clips", 0, "media_id"), []), (("clips", 0, "start"), float("inf")),
             (("clips", 0, "source_out"), 0.4), (("clips", 1, "start"), 1),
             (("clips", 0, "transition_in"), {"type": "crossfade"}),
+            (("output", "resolution"), "1920x1081"), (("output", "resolution"), "0x0"),
+            (("output", "resolution"), "7682x4320"), (("output", "resolution"), "1280 x 720"),
+            (("output", "resolution"), 1080), (("output", "resolution"), [1280, 720]),
+            (("output", "format"), "webm"), (("output", "format"), "GIF"), (("output", "format"), 4),
         ]:
             project = copy.deepcopy(FIXTURE)
             target = project
@@ -88,6 +93,78 @@ class ProjectTests(unittest.TestCase):
             metadata = subprocess.run([ffmpeg, "-i", str(output)], capture_output=True, text=True).stderr
             self.assertIn("start 1.600000, end 2.400000", metadata)
             self.assertEqual(load_project(path)[0], FIXTURE)
+
+    def test_output_settings_precedence(self):
+        """Format, frame rate and size each come from the command line, else the project, else the defaults.
+        Also letterboxing for non-16:9 sizes, PNG previews at the output size, and GIF output."""
+        self.assertEqual(project_resolution(None), (1920, 1080))
+        self.assertEqual(project_resolution("1280x720"), (1280, 720))
+        self.assertEqual(project_format(None), "mp4")
+        project = copy.deepcopy(FIXTURE)
+        del project["output"]["fps"]                   # the editor always writes fps; hand-written files may not
+        self.assertIs(validate_project(project), project)
+        self.assertEqual([s["frames"] for s in timeline_segments(project)], [5, 25, 10, 20])
+        ffmpeg = find_ffmpeg()
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            source = directory / "source.mp4"
+            subprocess.run([ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                            "color=c=blue:s=160x90:r=25:d=1", "-c:v", "libx264", str(source)], check=True)
+            project = copy.deepcopy(FIXTURE)
+            project["output"]["resolution"] = "640x360"
+            project["media"] = [{"id": "blue", "path": source.name}]
+            project["clips"] = [{"id": "clip", "media_id": "blue", "start": 0, "source_in": 0, "source_out": 1}]
+            path = directory / "project.json"
+            path.write_text(json.dumps(project))
+            render = lambda *options: subprocess.run(
+                [sys.executable, str(ROOT / "render/render.py"), str(path), "--preset", "veryfast", *options],
+                capture_output=True, text=True)
+            for name, options, expected, count in [
+                    ("project.mp4", [], (640, 360, 25), 25),                           # project resolution
+                    ("cli.mp4", ["--size", "480x270", "--fps", "50"], (480, 270, 50), 50),  # command line wins
+                    ("square.mp4", ["--size", "300x300"], (300, 300, 25), 25),
+                    ("clip.gif", ["--fps", "5", "--duration", "0.6"], (640, 360, 5), 3),
+                    ("small.gif", ["--size", "160x90"], (160, 90, 25), 25),             # project fps, not GIF default
+                    ("named", ["--format", "gif", "--fps", "10/1"], (640, 360, 10), 10)]:  # format without extension
+                output = directory / name
+                result = render("-o", str(output), *options)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(probe(ffmpeg, output)[:3], expected, name)
+                frames = subprocess.run([ffmpeg, "-v", "error", "-i", str(output), "-an", "-f", "rawvideo",
+                                         "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
+                self.assertEqual(len(frames) // (expected[0] * expected[1] * 3), count, name)
+                if name.endswith(".gif") or name == "named":
+                    self.assertEqual(output.read_bytes()[:6], b"GIF89a", name)
+                if name == "square.mp4":           # 16:9 composition letterboxed in a square: black above and below
+                    top, middle = frames[:3], frames[(150 * 300 + 150) * 3:(150 * 300 + 150) * 3 + 3]
+                    self.assertLessEqual(max(top), 20, top)
+                    self.assertGreater(max(middle), 60, middle)
+            metadata = subprocess.run([ffmpeg, "-i", str(directory / "project.mp4")], capture_output=True, text=True).stderr
+            self.assertIn("Chapter #0:0", metadata)
+            png = directory / "frame.png"
+            self.assertEqual(render("--frame", "0.5", "--png", str(png)).returncode, 0)
+            with Image.open(png) as image:
+                self.assertEqual(image.size, (640, 360))
+            self.assertEqual(render("--frame", "0.5", "--png", str(png), "--size", "320x180").returncode, 0)
+            with Image.open(png) as image:
+                self.assertEqual(image.size, (320, 180))
+            for options, message in [(["--size", "1281x720"], "even sizes"), (["--size", "wide"], "WIDTHxHEIGHT"),
+                                     (["--fps", "500"], "between 1 and 120"), (["--fps", "fast"], "fraction"),
+                                     (["-o", str(directory / "x.mp4"), "--format", "gif"], "ends in .mp4")]:
+                result = render(*options)
+                self.assertNotEqual(result.returncode, 0, options)
+                self.assertIn(message, result.stderr, options)
+            self.assertEqual(load_project(path)[0], project)
+            # project-level format and defaults: no fps or resolution in the file and format gif -> 10 fps, 960x540
+            project["output"] = {"format": "gif"}
+            path.write_text(json.dumps(project))
+            self.assertEqual(render().returncode, 0)
+            default = directory / "project-branded.gif"
+            self.assertEqual(probe(ffmpeg, default)[:3], (960, 540, 10))
+            self.assertEqual(default.read_bytes()[:6], b"GIF89a")
+            result = render("-o", str(directory / "over.mp4"))                          # extension overrides format
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(probe(ffmpeg, directory / "over.mp4")[:3], (1920, 1080, 25))
 
     def test_missing_media_reports_path_without_writing_output(self):
         with tempfile.TemporaryDirectory() as tmp:

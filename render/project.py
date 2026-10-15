@@ -19,6 +19,19 @@ def _id(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+DEFAULT_FPS = "25/1"
+FORMATS = ("mp4", "gif")
+
+
+def project_format(value):
+    """Output container: mp4 (default) or gif."""
+    if value is None:
+        return "mp4"
+    if value not in FORMATS:
+        raise ValueError("Output format must be mp4 or gif")
+    return value
+
+
 def project_fps(value):
     if not isinstance(value, str) or not re.fullmatch(r"[1-9]\d*/[1-9]\d*", value):
         raise ValueError("Output FPS must be a fraction such as 25/1")
@@ -28,13 +41,31 @@ def project_fps(value):
     return fps
 
 
+DEFAULT_RESOLUTION = (1920, 1080)
+MAX_RESOLUTION = (7680, 4320)
+
+
+def project_resolution(value):
+    """Output frame size as (width, height). None keeps the 1920x1080 design size."""
+    if value is None:
+        return DEFAULT_RESOLUTION
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9]\d*x[1-9]\d*", value):
+        raise ValueError("Output resolution must be WIDTHxHEIGHT such as 1280x720")
+    width, height = (int(part) for part in value.split("x"))
+    if width % 2 or height % 2 or not 16 <= width <= MAX_RESOLUTION[0] or not 16 <= height <= MAX_RESOLUTION[1]:
+        raise ValueError("Output resolution must use even sizes between 16x16 and %dx%d" % MAX_RESOLUTION)
+    return width, height
+
+
 def validate_project(project):
     if not isinstance(project, dict) or type(project.get("project_version")) is not int or project["project_version"] != 1:
         raise ValueError("Expected a version 1 project JSON")
     if not isinstance(project.get("output"), dict):
         raise ValueError("Project needs output FPS")
-    fps = float(project_fps(project["output"].get("fps")))
+    fps = float(project_fps(project["output"].get("fps", DEFAULT_FPS)))
     theme_layout(project["output"].get("theme", "classic"))
+    project_resolution(project["output"].get("resolution"))
+    project_format(project["output"].get("format"))
     media, clips = project.get("media"), project.get("clips")
     if not isinstance(media, list) or not isinstance(clips, list):
         raise ValueError("Project needs media and clips arrays")
@@ -83,7 +114,7 @@ def load_project(path):
 
 def timeline_segments(project):
     """Frame n uses the clip active at n/fps. Gaps use black and silence."""
-    fps = float(project_fps(project["output"]["fps"]))
+    fps = float(project_fps(project["output"].get("fps", DEFAULT_FPS)))
     frame = lambda time: math.ceil(time * fps - 1e-7)
     cursor = 0
     segments = []
