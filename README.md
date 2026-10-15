@@ -126,7 +126,8 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    The preview's size summary also identifies it. Shortening it makes all of
    them bigger.
 
-Other controls: **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
+Other controls: **Save as…** (`Cmd+Shift+S`) writes the current timing to a new file and keeps working in it, leaving the
+previous file untouched; **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
 **wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).
 Videos, metadata, headline settings and ripple controls are grouped under **Videos and project settings**
 so they do not crowd the chapter/headline editor. Secondary row actions appear on hover or keyboard focus

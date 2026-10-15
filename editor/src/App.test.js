@@ -238,6 +238,29 @@ describe('Vue editor', () => {
     expect(rememberHandle).toHaveBeenCalledWith(fileHandle);
     expect(wrapper.get('#status').text()).toBe('saved to new.json');
   });
+  it('Save as links to the new file and leaves the old one alone; cancelling changes nothing', async () => {
+    const { fileHandle, writable } = await openLinkedFile();
+    const newWritable = { write: vi.fn().mockResolvedValue(), close: vi.fn().mockResolvedValue() };
+    const copy = { name: 'copy.json', createWritable: vi.fn().mockResolvedValue(newWritable) };
+    const picker = vi.fn().mockRejectedValueOnce(Object.assign(new Error('cancelled'), { name: 'AbortError' }))
+      .mockResolvedValueOnce(copy);
+    vi.stubGlobal('showSaveFilePicker', picker);
+    await wrapper.get('#btnSaveAs').trigger('click');
+    await flushPromises();
+    expect(picker).toHaveBeenCalledWith(expect.objectContaining({ suggestedName: 'linked.json' }));
+    expect(wrapper.get('#status').text()).toBe('saved to linked.json');
+    await wrapper.get('#btnSaveAs').trigger('click');
+    await flushPromises();
+    expect(newWritable.write).toHaveBeenCalledTimes(1);
+    expect(rememberHandle).toHaveBeenLastCalledWith(copy);
+    expect(wrapper.get('#status').text()).toBe('saved to copy.json');
+    expect(writable.write).not.toHaveBeenCalled();                  // the original file was not touched
+    await editTitle(1, 'After save as');
+    await wrapper.get('#btnSave').trigger('click');                 // plain Save now goes to the copy
+    await flushPromises();
+    expect(newWritable.write).toHaveBeenCalledTimes(2);
+    expect(fileHandle.createWritable).not.toHaveBeenCalled();
+  });
   it('uses Download when the browser has no save picker', async () => {
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();

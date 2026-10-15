@@ -387,23 +387,30 @@ function download() {
     toast('Downloaded headline_timing.json');
   } catch (error) { report('Download failed', error); }
 }
-async function save() {
+// Save writes to the linked file, asking for one the first time. Save As always asks, then links to the new file
+// (the old file is left as it was); cancelling the picker changes nothing.
+async function save(saveAs = false) {
   if (saving.value) return;
   clearTimeout(saveTimer);
   saving.value = true;
   try {
     const text = checkedJSON(), savedRevision = revision;
-    if (!handle.value) {
+    let target = handle.value;
+    if (!target || saveAs === true) {
       if (!window.showSaveFilePicker) return download();
-      handle.value = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: 'headline_timing.json' });
-      await remember(handle.value);
+      target = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: handle.value?.name ?? 'headline_timing.json' });
     }
-    const writable = await handle.value.createWritable();
+    const writable = await target.createWritable();
     await writable.write(text);
     await writable.close();
+    if (target !== handle.value) {
+      handle.value = target;
+      reconnectHandle.value = null;
+      await remember(target);
+    }
     if (revision === savedRevision) dirty.value = false;
     else scheduleSave();
-    toast('Saved ' + handle.value.name);
+    toast('Saved ' + target.name);
   } catch (error) { report('Save failed', error); }
   finally { saving.value = false; }
 }
@@ -448,7 +455,7 @@ function keydown(event) {
   const target = document.activeElement;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-    event.preventDefault(); save();
+    event.preventDefault(); save(event.shiftKey);
   } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' &&
       !(typing && target.type === 'text' && !target.classList.contains('time'))) {
     event.preventDefault(); undo();
@@ -496,7 +503,8 @@ onUnmounted(() => {
     <button id="btnOpen" title="Open a timing JSON file" @click="openFile">Open file…</button>
     <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="importFile">
     <button v-if="reconnectHandle" id="btnReconnect" class="primary" @click="reconnect">Reconnect {{ reconnectHandle.name }}</button>
-    <button id="btnSave" class="primary" title="Cmd/Ctrl+S" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save' }}</button>
+    <button id="btnSave" class="primary" title="Cmd/Ctrl+S" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
+    <button id="btnSaveAs" title="Save a copy under a new name and keep working in it (Cmd/Ctrl+Shift+S)" :disabled="saving" @click="save(true)">Save as…</button>
     <button id="btnDownload" class="ghost" @click="download">Download</button>
     <label class="inline"><input id="autosave" v-model="autosave" type="checkbox" @change="scheduleSave"> autosave</label>
     <span id="status" class="status" :class="{ dirty, ok: !dirty && handle }">{{ status }}</span>
