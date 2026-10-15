@@ -30,7 +30,7 @@ defineExpose({ choose, isOpen });
 <template>
   <dialog ref="dialog" class="project-picker" aria-labelledby="project-picker-title" @cancel.prevent="finish()">
     <h2 id="project-picker-title">Choose a project</h2>
-    <p>This folder contains more than one JSON file.</p>
+    <p>This source contains more than one JSON file.</p>
     <form @submit.prevent="finish(projects[selected])">
       <label>Project JSON
         <select v-model="selected" autofocus>

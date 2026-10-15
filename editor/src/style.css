@@ -326,10 +326,18 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .playback-error { position: absolute; bottom: 90px; left: 12px; right: 12px; z-index: 11;
   padding: 12px; border: 1px solid var(--orange); border-radius: 8px; background: var(--surface); color: var(--text); }
 
-.shortcut-help, .project-picker { width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px;
+.shortcut-help, .project-picker, .zip-import { width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px;
   overflow: auto; border: 1px solid var(--green); border-radius: 12px; background: var(--surface); color: var(--text);
   box-shadow: 0 16px 60px #0008; }
-.shortcut-help::backdrop, .project-picker::backdrop { background: #0009; }
+.shortcut-help::backdrop, .project-picker::backdrop, .zip-import::backdrop { background: #0009; }
+.zip-import { width: min(520px, calc(100% - 32px)); overflow: auto; }
+.zip-import h2 { margin: 0 0 8px; font-size: 18px; }
+.zip-import fieldset { margin: 16px 0 8px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.zip-input { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.zip-input input { width: 100%; }
+.zip-progress { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; overflow-wrap: anywhere; }
+.zip-progress progress { width: 100%; accent-color: var(--orange); }
+.zip-error { color: var(--danger); overflow-wrap: anywhere; }
 .project-picker { width: min(440px, calc(100% - 32px)); }
 .project-picker h2 { font-size: 18px; margin: 0; }
 .project-picker label { display: flex; flex-direction: column; gap: 6px; }

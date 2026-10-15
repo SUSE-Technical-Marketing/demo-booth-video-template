@@ -11,12 +11,14 @@ import ProjectSettings from './components/ProjectSettings.vue';
 import TabGroup from './components/TabGroup.vue';
 import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
+import ZipImport from './components/ZipImport.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
 import { freezeFrame, freezeProblem, resizeFreeze, rippleDelete } from './edits.js';
 import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, mediaPathValid, normalizeMediaFolder,
   projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
+import { zipProjectSource } from './zipProjects.js';
 import { fitWrappedPx, themeLayout } from './themes.js';
 import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
   headlineOutside, headlineTime, newRow, parseClock,
@@ -50,6 +52,8 @@ const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
 const fileInput = ref(null), chapterEditor = ref(null), previewPlayer = ref(null);
 const folderInput = ref(null), projectPicker = ref(null);
+const zipImport = ref(null);
+let archiveSource = null;
 const shortcutHelp = ref(null);
 const mediaFiles = shallowRef(new Map());
 const exporting = ref(false);
@@ -596,6 +600,8 @@ function loadState(next, fileHandle, notice = '', folder = null, name = fileHand
   pushHistory();
   documentGeneration++;
   clearClips();
+  if (archiveSource?.dispose !== folder?.dispose) releaseArchive(archiveSource);
+  archiveSource = folder?.dispose ? folder : null;
   closeTool();
   state.value = next;
   handle.value = fileHandle;
@@ -617,6 +623,9 @@ function documentGuard() {
   const generation = documentGeneration, initialRevision = revision;
   return () => mounted && generation === documentGeneration && initialRevision === revision;
 }
+function releaseArchive(source) {
+  source?.dispose().catch(error => report('Could not clear ZIP browser storage', error));
+}
 async function installProject(next, fileHandle, notice, folder, isCurrent, name = fileHandle?.name ?? null) {
   let files = new Map();
   const issues = [], used = new Set(next.clips.map(clip => clip.media_id));
@@ -627,13 +636,14 @@ async function installProject(next, fileHandle, notice, folder, isCurrent, name 
         const path = resolveMediaPath(media.path, next.media_folder);
         let loaded;
         try {
-          loaded = await loadClip(await folder.media(path), 0);
+          loaded = await loadClip(await folder.media(path), 0, folder.signal);
           if (next.clips.some(clip => clip.media_id === media.id && clip.source_out > loaded.dur + 1e-6)) {
             throw new Error('Video is shorter than the saved source out point');
           }
           files.set(media.id, loaded);
         } catch (error) {
           if (loaded) releaseClip(loaded);
+          if (folder.signal?.aborted) throw error;
           console.warn('Could not link media', path, error);
           issues.push(`${path}: ${error.message}`);
         }
@@ -657,11 +667,26 @@ async function openFolderSource(source, isCurrent) {
   if (!isCurrent()) throw new Error('Project changed while choosing a folder; try again');
   if (!choices.length) throw new Error('No project JSON found directly in this folder; select the folder containing your project JSON');
   const project = choices.length === 1 ? choices[0] : await projectPicker.value.choose(choices);
-  if (!project) return;
+  if (!project) return false;
   const { next, notice } = readTiming(await (await project.getFile()).text());
-  const issues = await installProject(next, project.handle, notice, source, isCurrent, project.name);
+  const projectSource = project.source ?? source;
+  const issues = await installProject(next, project.handle, notice, projectSource, isCurrent, project.name);
   toast(`Opened ${project.name}; linked ${mediaFiles.value.size} video source(s)${project.handle ? '' : '; use Download to save'}`, issues);
-  await remember(project.handle, source);
+  await remember(project.handle, projectSource);
+  return true;
+}
+async function openZipProject(input, options) {
+  if (saving.value) throw new Error('Wait for the current save to finish');
+  if (dirty.value && !window.confirm('You have unsaved changes. Open a ZIP project anyway?')) return false;
+  const current = documentGuard(), isCurrent = () => !options.signal.aborted && current();
+  let source;
+  try {
+    source = await zipProjectSource(input, options);
+    options.onProgress({ phase: 'Linking videos' });
+    const opened = await openFolderSource(source, isCurrent);
+    if (opened) source = null;
+    return opened;
+  } finally { if (source) await source.dispose(); }
 }
 async function openProjectFolder() {
   if (saving.value) return toast('Wait for the current save to finish');
@@ -798,6 +823,7 @@ async function refreshFile() {
   } catch (error) { report('Could not refresh the linked file', error); }
 }
 function keydown(event) {
+  if (zipImport.value?.isOpen) return;
   const target = document.activeElement;
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable ||
     !!target.closest('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]');
@@ -849,6 +875,8 @@ onUnmounted(() => {
   mounted = false;
   documentGeneration++;
   clearClips();
+  releaseArchive(archiveSource);
+  archiveSource = null;
   stop();
   clearTimeout(saveTimer);
   clearTimeout(toastTimer);
@@ -865,6 +893,7 @@ onUnmounted(() => {
     <button id="btnOpen" title="Open a project JSON file" @click="openFile">Open file…</button>
     <button id="btnOpenFolder" :disabled="openingFolder" title="Open a folder containing project JSON and media, linking videos automatically"
       @click="openProjectFolder">{{ openingFolder ? 'Opening folder…' : 'Open project folder…' }}</button>
+    <button id="btnOpenZip" title="Open a local ZIP or a ZIP download URL" @click="zipImport.show()">Open ZIP…</button>
     <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="importFile">
     <input ref="folderInput" id="projectFolderInput" type="file" webkitdirectory multiple hidden @change="importProjectFolder">
     <button v-if="reconnectHandle" id="btnReconnect" class="primary" @click="reconnect">Reconnect {{ reconnectHandle.name }}</button>
@@ -955,4 +984,5 @@ onUnmounted(() => {
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
   <ShortcutHelp ref="shortcutHelp" @error="toast" />
   <ProjectFilePicker ref="projectPicker" />
+  <ZipImport ref="zipImport" :open-project="openZipProject" @error="report('ZIP import failed', $event)" />
 </template>

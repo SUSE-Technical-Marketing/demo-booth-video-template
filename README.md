@@ -119,6 +119,44 @@ sizes/frame rates and audio; the output has stereo 48 kHz audio and defaults to 
 down to 640 × 360) scale the 1920 × 1080 composition, so the preview does not change. Source clips without audio and
 timeline gaps produce silence. Command-line options override the saved settings for one render.
 
+### Opening ZIP projects (local or URL)
+
+Use **Open ZIP…** in the header to select a local archive or paste a direct HTTP/HTTPS ZIP URL.
+Include the project JSON and its videos, for example:
+
+```text
+demo.zip
+  project.json
+  media/
+    intro.mp4
+    demo.mp4
+```
+
+With `media_folder: "media"`, the JSON's video paths are `intro.mp4` and `demo.mp4`.
+A containing directory such as `demo/project.json` plus `demo/media/` also works. If an archive includes
+several JSON files, choose the project to open. Media references resolve relative to that JSON, including the
+configured media folder. Missing or unreadable sources are reported, and can still be relinked manually.
+
+ZIP imports use the browser's origin-private file system (**OPFS**), not an in-memory archive of all video bytes.
+Local archives are read directly from the selected file. URL downloads stream into a temporary browser file,
+then entries stream to browser storage with checksum verification. The downloaded ZIP is removed after extraction.
+Progress and cancellation cover downloading, extraction and video linking. Invalid archives, unsafe paths,
+duplicate entries and password-protected ZIPs are rejected.
+
+Use a recent browser supporting OPFS and Web Locks, served over HTTPS or localhost. Browser disk quotas apply;
+URL imports temporarily need space for both the ZIP and its extracted contents. Active imports are protected
+across tabs. Cached files are removed when their project is replaced or the editor closes; caches left by an
+interrupted/closed tab are reclaimed on the next ZIP import. Imported ZIP projects are not automatically reopened
+after a reload, and browser storage is not a backup.
+
+The host of a ZIP URL must permit browser downloads via **CORS**. Private Drive sharing pages and URLs returning
+HTML are not direct ZIP downloads. There is no proxy or cloud-account integration, and URL requests do not send
+login cookies. A signed direct download URL can be used if its host allows CORS.
+
+Use **Download** or **Save as** for project edits. The original archive/URL is never updated, and JSON downloads
+do not contain video bytes: keep the original ZIP or your own media folder. Preview, fullscreen playback and
+the local Export service can use the extracted files without manual media relinking.
+
 ### Freeze frames and cutting a section
 
 Two edits for the common "this part needs adjusting" jobs. Both are buttons in the timeline toolbar

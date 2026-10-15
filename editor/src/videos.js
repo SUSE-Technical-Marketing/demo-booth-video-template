@@ -12,15 +12,27 @@ export function chaptersCovered(clip, chapterStarts) {
 }
 
 // Load a file just far enough to learn its length. Rejects if the browser cannot play it.
-export function loadClip(file, start) {
+export function loadClip(file, start, signal) {
   return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
     const url = URL.createObjectURL(file), probe = document.createElement('video');
+    const finish = (error, clip) => {
+      signal?.removeEventListener('abort', abort);
+      probe.onloadedmetadata = probe.onerror = null;
+      if (error) {
+        probe.removeAttribute('src');
+        URL.revokeObjectURL(url);
+        reject(error);
+      } else resolve(clip);
+    };
+    const abort = () => finish(signal.reason ?? new DOMException('Video loading cancelled', 'AbortError'));
+    signal?.addEventListener('abort', abort, { once: true });
     probe.preload = 'metadata';
     probe.onloadedmetadata = () => {
-      if (Number.isFinite(probe.duration) && probe.duration > 0) resolve({ id: ++nextClipId, name: file.name, file, url, dur: probe.duration, start });
-      else { URL.revokeObjectURL(url); reject(new Error(`${file.name}: could not read the video length`)); }
+      if (Number.isFinite(probe.duration) && probe.duration > 0) finish(null, { id: ++nextClipId, name: file.name, file, url, dur: probe.duration, start });
+      else finish(new Error(`${file.name}: could not read the video length`));
     };
-    probe.onerror = () => { URL.revokeObjectURL(url); reject(new Error(`${file.name}: this browser cannot play that file (try H.264 .mp4)`)); };
+    probe.onerror = () => finish(new Error(`${file.name}: this browser cannot play that file (try H.264 .mp4)`));
     probe.src = url;
   });
 }

@@ -2,7 +2,8 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
 import Preview from './components/Preview.vue';
-import { chaptersCovered, clipAt } from './videos.js';
+import { chaptersCovered, clipAt, loadClip } from './videos.js';
+import { zipProjectSource } from './zipProjects.js';
 import { downloadJSON, rememberHandle, rememberedHandle } from './fileAccess.js';
 import projectFixture from '../../tests/fixtures/project.json';
 
@@ -10,6 +11,7 @@ vi.mock('./fileAccess.js', () => ({
   downloadJSON: vi.fn(), rememberHandle: vi.fn().mockResolvedValue(),
   rememberedHandle: vi.fn().mockResolvedValue(null), pickerOptions: {},
 }));
+vi.mock('./zipProjects.js', () => ({ zipProjectSource: vi.fn() }));
 
 const sw = [{ id: 1, t: 0, ch: 1 }, { id: 2, t: 30, ch: 2 }, { id: 3, t: 60, ch: 3 }];
 const folderProject = () => ({
@@ -27,6 +29,27 @@ describe('clip helpers', () => {
     expect(chaptersCovered({ start: 0, dur: 30 }, sw)).toEqual([1]);
     expect(chaptersCovered({ start: 0, dur: 70 }, sw)).toEqual([1, 2, 3]);
     expect(chaptersCovered({ start: 30, dur: 40 }, sw)).toEqual([2, 3]);
+  });
+});
+
+describe('cancelling metadata loads', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  it('rejects immediately and releases the object URL when an import is cancelled', async () => {
+    const createObjectURL = vi.fn(() => 'blob:probe'), revokeObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
+    const controller = new AbortController();
+    const pending = loadClip(new File(['video'], 'demo.mp4'), 0, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:probe');
+  });
+  it('does not allocate URLs for an already cancelled import', async () => {
+    const createObjectURL = vi.fn();
+    vi.stubGlobal('URL', { createObjectURL });
+    const controller = new AbortController();
+    controller.abort();
+    await expect(loadClip(new File([], 'demo.mp4'), 0, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 });
 
@@ -65,6 +88,32 @@ describe('videos and New in the editor', () => {
     });
     await input.trigger('change');
     await flushPromises();
+  }
+  function zipSource(project = folderProject()) {
+    const dispose = vi.fn().mockResolvedValue();
+    const scoped = { directory: null, dispose,
+      media: vi.fn(async path => new File(['video'], path.split('/').at(-1))) };
+    const choice = {
+      name: 'bundle/project.json', handle: null, source: scoped,
+      getFile: async () => ({ text: async () => JSON.stringify(project) }),
+    };
+    const source = { directory: null, dispose, projects: vi.fn().mockResolvedValue([choice]) };
+    zipProjectSource.mockImplementation(async (_, options) => {
+      scoped.signal = options.signal;
+      return source;
+    });
+    return { source, scoped, choice, dispose };
+  }
+  async function submitZip() {
+    const dialog = wrapper.get('.zip-import').element;
+    dialog.showModal = vi.fn(() => { dialog.open = true; });
+    dialog.close = vi.fn(() => { dialog.open = false; });
+    await wrapper.get('#btnOpenZip').trigger('click');
+    const input = wrapper.get('#zipFile');
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [new File(['zip'], 'project.zip')] });
+    await input.trigger('change');
+    await wrapper.get('.zip-import form').trigger('submit');
+    await settleFolder();
   }
   async function pointer(handle, type, clientX = 0) {
     handle.element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, clientX }));
@@ -108,6 +157,73 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnOpenFolder').trigger('click');
     await settleFolder();
   }
+  it('installs a ZIP project with scoped media paths and real files available for export', async () => {
+    const cached = zipSource();
+    await submitZip();
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    expect(wrapper.get('#status').text()).toBe('opened bundle/project.json (use Download to save)');
+    expect(cached.scoped.media.mock.calls.map(([path]) => path)).toEqual(projectFixture.media.map(media => media.path));
+    expect(cached.dispose).not.toHaveBeenCalled();
+    expect(rememberHandle).toHaveBeenLastCalledWith(null);
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(folderProject());
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    const files = wrapper.findComponent({ name: 'ExportDialog' }).props('files');
+    expect([...files.values()].map(file => file.name)).toEqual(['one.mp4', 'two with spaces.mp4']);
+  });
+  it('keeps ZIP media alive through Save as and releases it when another document is opened', async () => {
+    const cached = zipSource();
+    await submitZip();
+    const target = { name: 'saved.json', createWritable: vi.fn(async () => ({
+      write: vi.fn().mockResolvedValue(), close: vi.fn().mockResolvedValue(),
+    })) };
+    vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue(target));
+    await wrapper.get('#btnSaveAs').trigger('click');
+    await flushPromises();
+    expect(cached.dispose).not.toHaveBeenCalled();
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    await wrapper.get('#btnNew').trigger('click');
+    await flushPromises();
+    expect(cached.dispose).toHaveBeenCalledTimes(1);
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+  });
+  it('leaves the document unchanged and clears ZIP storage when its JSON is invalid', async () => {
+    const cached = zipSource({ project_version: 999 });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const title = wrapper.get('#titleIn').element.value;
+    await submitZip();
+    expect(wrapper.get('.zip-import [role=alert]').text()).toContain('project JSON');
+    expect(wrapper.get('#titleIn').element.value).toBe(title);
+    expect(cached.dispose).toHaveBeenCalledTimes(1);
+  });
+  it('cleans a ZIP when the user cancels the project chooser', async () => {
+    const cached = zipSource();
+    cached.source.projects.mockResolvedValue([cached.choice, { ...cached.choice, name: 'other.json' }]);
+    const chooser = wrapper.get('.project-picker').element;
+    chooser.showModal = vi.fn(() => { chooser.open = true; });
+    chooser.close = vi.fn(() => { chooser.open = false; });
+    const title = wrapper.get('#titleIn').element.value;
+    await submitZip();
+    await wrapper.get('.project-picker').trigger('cancel');
+    await flushPromises();
+    expect(cached.dispose).toHaveBeenCalledTimes(1);
+    expect(wrapper.get('#titleIn').element.value).toBe(title);
+    expect(wrapper.get('.zip-import').element.open).toBe(true);
+  });
+  it('discards a pending ZIP if the document changes while it is opening', async () => {
+    const cached = zipSource(), pending = Promise.withResolvers();
+    zipProjectSource.mockReturnValue(pending.promise);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await submitZip();
+    await wrapper.get('#btnNew').trigger('click');
+    pending.resolve(cached.source);
+    await settleFolder();
+    expect(wrapper.get('#titleIn').element.value).toBe('New video');
+    expect(wrapper.get('.zip-import [role=alert]').text()).toContain('Project changed');
+    expect(cached.dispose).toHaveBeenCalledTimes(1);
+  });
   it('opens a project folder and automatically links its relative media without changing the project', async () => {
     const folder = nativeFolder();
     await openNativeFolder(folder);
