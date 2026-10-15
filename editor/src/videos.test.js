@@ -43,7 +43,7 @@ describe('videos and New in the editor', () => {
     });
     wrapper = mount(App, { attachTo: document.body });
   });
-  afterEach(() => { wrapper.unmount(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  afterEach(() => { wrapper.unmount(); delete document.fullscreenElement; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
   async function addFiles(...names) {
     const input = wrapper.get('#videoFile');
     Object.defineProperty(input.element, 'files', { value: names.map(name => new File(['x'], name)), configurable: true });
@@ -62,6 +62,130 @@ describe('videos and New in the editor', () => {
     handle.element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, clientX }));
     await wrapper.vm.$nextTick();
   }
+  async function startPresentation() {
+    let fullscreenElement = null, frame, now = 0;
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fullscreenElement });
+    wrapper.get('.preview-canvas').element.requestFullscreen = vi.fn(async function () {
+      fullscreenElement = this;
+      document.dispatchEvent(new Event('fullscreenchange'));
+    });
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.stubGlobal('requestAnimationFrame', vi.fn(callback => { frame = callback; return 1; }));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    wrapper.findAll('#content video').forEach(video => {
+      Object.defineProperty(video.element, 'readyState', { configurable: true, value: 4 });
+    });
+    await wrapper.get('#btnPresent').trigger('click');
+    await flushPromises();
+    return {
+      async advance(time) { now = time; frame(time); await flushPromises(); },
+      async exit() { fullscreenElement = null; document.dispatchEvent(new Event('fullscreenchange')); await flushPromises(); },
+    };
+  }
+  it('loops the whole composition, rewinds video and chapters, and leaves normal editor playback non-looping', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    expect(wrapper.get('header #btnPresent').classes()).toContain('present');
+    expect(wrapper.find('.preview-heading #btnPresent').exists()).toBe(false);
+    const clock = await startPresentation(), preview = wrapper.findComponent(Preview);
+    expect(preview.props()).toMatchObject({ playing: true, presentation: true, muted: true, cur: 0 });
+    await clock.advance(79500);
+    expect(preview.props('cur')).toBeCloseTo(79.5);
+    expect(wrapper.get('#stage .pill.on').text()).toBe('SUSE Virtualization');
+    await wrapper.get('[aria-label="Pause or resume fullscreen playback"]').trigger('click');
+    await wrapper.get('[aria-label="Pause or resume fullscreen playback"]').trigger('click');
+    expect(preview.props('cur')).toBeCloseTo(79.5);
+    await clock.advance(80500);
+    expect(preview.props('playing')).toBe(true);
+    expect(preview.props('cur')).toBeCloseTo(0.5);
+    expect(wrapper.get('#stage .pill.on').text()).toBe('SUSE Rancher Prime');
+    expect(wrapper.findAll('#content video')[0].element.currentTime).toBeCloseTo(0.5);
+    await clock.exit();
+    expect(preview.props()).toMatchObject({ playing: false, presentation: false });
+    await wrapper.get('#btnPlay').trigger('click');
+    await clock.advance(180500);
+    expect(preview.props()).toMatchObject({ playing: false, cur: 80 });
+  });
+  it('pauses the presentation clock while buffering and shows black gaps without editor labels', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    await wrapper.get('#vlist [aria-label="Source out"]').setValue('10');
+    const clock = await startPresentation(), preview = wrapper.findComponent(Preview);
+    await wrapper.findAll('#content video')[0].trigger('waiting');
+    await clock.advance(5000);
+    expect(preview.props('cur')).toBe(0);
+    await wrapper.findAll('#content video')[0].trigger('canplay');
+    await clock.advance(5100);
+    expect(preview.props('cur')).toBeCloseTo(0.1);
+    await clock.advance(25100);
+    expect(preview.props('cur')).toBeCloseTo(20.1);
+    expect(wrapper.get('#content').text()).toBe('');
+    await clock.exit();
+    expect(wrapper.get('#content').text()).toBe('no video at this time');
+  });
+  it('rewinds the same video across loop boundaries shorter than the drift tolerance', async () => {
+    await addFiles('short.mp4');
+    await wrapper.get('#vlist [aria-label="Source out"]').setValue('0.2');
+    const clock = await startPresentation(), video = wrapper.get('#content video').element;
+    await clock.advance(150);
+    video.currentTime = 0.15;
+    await clock.advance(250);
+    expect(wrapper.findComponent(Preview).props('cur')).toBeCloseTo(0.05);
+    expect(video.currentTime).toBeCloseTo(0.05);
+  });
+  it('holds the final decoded frame until the project loops instead of restarting an ended video early', async () => {
+    await addFiles('a.mp4');
+    const clock = await startPresentation(), video = wrapper.get('#content video').element;
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    play.mockClear();
+    video.currentTime = 40;
+    Object.defineProperty(video, 'ended', { configurable: true, get: () => video.currentTime >= 40 });
+    await clock.advance(39950);
+    expect(play).not.toHaveBeenCalled();
+    await clock.advance(40050);
+    expect(video.currentTime).toBeCloseTo(0.05);
+    expect(play).toHaveBeenCalledOnce();
+  });
+  it('stops and visibly reports media playback failures instead of silently running the loop', async () => {
+    await addFiles('a.mp4');
+    const clock = await startPresentation();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockRejectedValue(new Error('Autoplay denied'));
+    await wrapper.get('#content video').trigger('canplay');
+    await flushPromises();
+    expect(wrapper.findComponent(Preview).props('playing')).toBe(false);
+    expect(wrapper.get('[role=alert]').text()).toContain('Could not play a.mp4: Autoplay denied');
+    expect(logged).toHaveBeenCalled();
+    await clock.exit();
+  });
+  it('keeps presentation controls out of project data and disables editing shortcuts in fullscreen', async () => {
+    await addFiles('a.mp4');
+    await wrapper.get('#btnDownload').trigger('click');
+    const before = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    const clock = await startPresentation(), preview = wrapper.findComponent(Preview);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '.', bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findAll('#content video')).toHaveLength(1);
+    expect(preview.props('cur')).toBe(0);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(preview.props('playing')).toBe(false);
+    await wrapper.get('.presentation-controls [aria-pressed]').trigger('click');
+    expect(wrapper.get('#content video').element.muted).toBe(false);
+    await clock.exit();
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(before);
+  });
+  it('shows decoding errors and stops fullscreen playback', async () => {
+    await addFiles('broken.mp4');
+    const clock = await startPresentation();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await wrapper.get('#content video').trigger('error');
+    expect(wrapper.findComponent(Preview).props('playing')).toBe(false);
+    expect(wrapper.get('[role=alert]').text()).toContain('Could not load broken.mp4');
+    await clock.exit();
+  });
   it('persists source trims, paths, placements and FPS and restores missing media without losing timing', async () => {
     await addFiles('a.mp4', 'b.mp4');
     await wrapper.get('#settings-tab').trigger('click');

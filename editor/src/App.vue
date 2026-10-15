@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
-import Preview from './components/Preview.vue';
+import PreviewPlayer from './components/PreviewPlayer.vue';
 import ProjectSettings from './components/ProjectSettings.vue';
 import TabGroup from './components/TabGroup.vue';
 import TimelineDock from './components/TimelineDock.vue';
@@ -18,6 +18,7 @@ const state = ref(createProject(DEFAULT));
 const handle = shallowRef(null), reconnectHandle = shallowRef(null);
 const dirty = ref(false), saving = ref(false), autosave = ref(true);
 const cur = ref(0), selectedId = ref(null), playing = ref(false);
+const presenting = ref(false), buffering = ref(false);
 const editorTab = ref('chapters');
 const editorTabs = [
   { id: 'chapters', label: 'Chapters & headlines' },
@@ -37,7 +38,7 @@ watch([followPlayhead, playingChapter], ([follow, chapter]) => {
 });
 const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
-const fileInput = ref(null), chapterEditor = ref(null);
+const fileInput = ref(null), chapterEditor = ref(null), previewPlayer = ref(null);
 const mediaFiles = shallowRef(new Map());
 const clips = computed(() => state.value.clips.map(clip => {
   const media = state.value.media.find(m => m.id === clip.media_id), file = mediaFiles.value.get(clip.media_id);
@@ -265,16 +266,33 @@ function seek(time) {
   stop();
   setCur(time);
 }
+function present(active) {
+  stop();
+  presenting.value = active;
+  buffering.value = false;
+  if (active) {
+    followPlayhead.value = false;
+    cur.value = 0;
+    play();
+  }
+}
+function playbackError(error) {
+  stop();
+  report('Playback failed', error);
+}
 function play() {
   if (playing.value) return stop();
-  if (cur.value >= totalDuration.value - 1) cur.value = 0;
+  if (cur.value >= totalDuration.value - (presenting.value ? 0 : 1)) cur.value = 0;
   playing.value = true;
   lastTimestamp = performance.now();
   const tick = timestamp => {
     if (!playing.value) return;
-    cur.value = Math.min(totalDuration.value, cur.value + (timestamp - lastTimestamp) / 1000);
+    const next = cur.value + (timestamp - lastTimestamp) / 1000;
     lastTimestamp = timestamp;
-    if (cur.value >= totalDuration.value) return stop();
+    if (!presenting.value || !buffering.value) {
+      cur.value = presenting.value ? next % totalDuration.value : Math.min(totalDuration.value, next);
+    }
+    if (!presenting.value && cur.value >= totalDuration.value) return stop();
     timer = requestAnimationFrame(tick);
   };
   timer = requestAnimationFrame(tick);
@@ -538,11 +556,11 @@ async function connectRemembered() {
 }
 async function refreshFile() {
   const fileHandle = handle.value, initialRevision = revision;
-  if (!fileHandle || dirty.value || saving.value) return;
+  if (!fileHandle || dirty.value || saving.value || presenting.value) return;
   try {
     if (await fileHandle.queryPermission({ mode: 'read' }) !== 'granted') return;
     const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
-    if (mounted && !dirty.value && revision === initialRevision && handle.value === fileHandle &&
+    if (mounted && !presenting.value && !dirty.value && revision === initialRevision && handle.value === fileHandle &&
         (notice || toProjectJSON(next) !== toProjectJSON(state.value))) {
       loadState(next, fileHandle, notice);
       toast('Updated from file', notice);
@@ -551,6 +569,13 @@ async function refreshFile() {
 }
 function keydown(event) {
   const target = document.activeElement;
+  if (presenting.value) {
+    if (event.code === 'Space' && !target.closest('button')) {
+      event.preventDefault();
+      play();
+    }
+    return;
+  }
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
     event.preventDefault(); save(event.shiftKey);
@@ -612,6 +637,9 @@ onUnmounted(() => {
     <label class="inline" title="Timecode your video editor shows at the start of the clip (often 01:00:00). Times typed as h:mm:ss have this subtracted.">
       timeline starts at <input id="offset" v-model="offsetText" size="8" @change="updateOffset"></label>
     <button id="btnUndo" class="ghost" title="Cmd/Ctrl+Z" @click="undo">Undo</button>
+    <button id="btnPresent" class="present" :disabled="!previewPlayer || previewPlayer.entering"
+      :title="previewPlayer?.unavailable || 'Play the full composition fullscreen in a muted loop'"
+      @click="previewPlayer.enterFullscreen()">{{ previewPlayer?.entering ? 'Opening…' : 'Play fullscreen loop' }}</button>
     <a href="https://github.com/SUSE-Technical-Marketing/demo-booth-video-template#readme" target="_blank" rel="noopener" class="help">Help</a>
   </header>
 
@@ -650,13 +678,9 @@ onUnmounted(() => {
     </template>
     <template #preview>
       <section class="preview-pane" aria-label="Layout preview">
-        <div class="preview-heading">
-          <h2>Preview</h2><span class="chip">1920 × 1080</span>
-        </div>
-        <div class="preview-canvas">
-          <Preview :state="previewState" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx"
-            :clips="clips" :playing="playing" />
-        </div>
+        <PreviewPlayer ref="previewPlayer" :state="previewState" :cur="cur" :headline-px="headlineFit.px" :pill-px="pillPx" :product-px="productPx"
+          :clips="clips" :playing="playing" @present="present" @toggle-play="play" @playback-error="playbackError"
+          @buffering="buffering = $event" />
         <div id="stats" class="statline">
           <span class="chip">{{ state.headlines.length }} headlines</span>
           <span class="chip">{{ state.chapters.length }} chapters</span>

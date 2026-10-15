@@ -91,6 +91,25 @@ keeping the same relative media layout or updating the paths.
 Choose the render frame rate in **Videos & settings**. The renderer normalizes source sizes/frame rates and audio;
 the final output is 1920 × 1080 with stereo 48 kHz audio. Source clips without audio and timeline gaps produce silence.
 
+### Fullscreen booth playback (no export required)
+
+After adding or relinking all videos, click the orange **Play fullscreen loop** button in the main header. The full branded composition
+starts at the beginning and repeats continuously: clip placements and source trims, chapters, headline wipes and
+chapter scrolling all remain active. The 16:9 layout fits the display without cropping, with black letterboxing where
+needed. Timeline gaps are black and silent, without editor placeholder labels.
+
+Playback starts **muted**. Move the pointer to reveal **Enable audio**, pause/play and exit controls; the controls and
+pointer disappear after three seconds of inactivity while playing. `Space` pauses/resumes; `Escape` exits fullscreen
+and pauses at the current position. Presentation settings do not change the saved project. Missing media must be
+relinked before starting; playback/decoding failures pause playback and display an error instead of silently looping.
+Buffering pauses the presentation clock so chapters and headlines do not run ahead of a waiting video.
+
+Keep the browser in the foreground and disable the computer's screen sleep/screensaver for unattended playback.
+Browser playback uses the display's refresh rate, available codecs, browser audio handling and CSS/text rendering;
+it is not a frame-identical replacement for the renderer. The preview's remote SUSE logo/font resources also require
+network access (fallbacks are used if unavailable). Use an exported MP4 for TV/USB players, offline portability,
+precise frame-rate/color/audio normalization, or more predictable playback on different hardware.
+
 On desktop, the editor uses a video-editing workspace: videos, chapters and headlines scroll independently in the left
 panel (about 30% of the width), the large preview fits the remaining space without cropping, and the full-width
 timeline and playback controls stay docked at the bottom. Headline text fields use the full panel width, with timing,

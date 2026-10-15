@@ -12,7 +12,10 @@ const props = defineProps({
   productPx: { type: Number, required: true },
   clips: { type: Array, default: () => [] },
   playing: { type: Boolean, default: false },
+  muted: { type: Boolean, default: false },
+  presentation: { type: Boolean, default: false },
 });
+const emit = defineEmits(['playback-error', 'buffering']);
 const view = ref(null), scale = ref(1), logoFailed = ref(false);
 let observer;
 onMounted(() => {
@@ -26,14 +29,30 @@ onUnmounted(() => observer?.disconnect());
 const videos = new Map();
 const clip = computed(() => clipAt(props.clips, props.cur));
 const setVideo = (id, el) => { if (el) videos.set(id, el); else videos.delete(id); };
+let previousTime = props.cur;
+function mediaError(c, event) {
+  const error = event.target.error;
+  emit('playback-error', new Error(`Could not load ${c.name}: ${error?.message || 'video decoding failed'}`));
+}
+function waiting(c) {
+  if (props.playing && clip.value?.id === c.id) emit('buffering', true);
+}
 function syncVideo() {
+  const rewound = props.cur < previousTime;
+  previousTime = props.cur;
   const current = clip.value;
   videos.forEach((el, id) => { if (id !== current?.id && !el.paused) el.pause(); });
   const el = current && videos.get(current.id);
+  emit('buffering', !!el && props.playing && el.readyState < 3);
   if (!el) return;
   const want = (current.source_in ?? 0) + props.cur - current.start;
-  if (!props.playing || Math.abs(el.currentTime - want) > 0.4) el.currentTime = want;
-  if (props.playing && el.paused) el.play?.()?.catch?.(() => {});
+  const drift = Math.abs(el.currentTime - want);
+  if (drift > 0.001 && (rewound || !props.playing || drift > 0.4)) el.currentTime = want;
+  if (props.playing && el.paused && !el.ended) el.play?.()?.catch?.(error => {
+    if (props.playing && clip.value?.id === current.id && clip.value.url === current.url && videos.get(current.id) === el) {
+      emit('playback-error', new Error(`Could not play ${current.name}: ${error.message}`));
+    }
+  });
   else if (!props.playing && !el.paused) el.pause();
 }
 watch([() => props.cur, () => props.playing, clip, () => props.clips.length], syncVideo, { flush: 'post' });
@@ -81,10 +100,11 @@ const headlineStyle = computed(() => {
         title="More chapters below" :style="indicatorStyle(CHAPTER_SCROLL.arrow_x, CHAPTER_SCROLL.indicator_y, 24)">v</div>
       <div id="content" class="abs">
         <video v-for="c in clips.filter(c => c.url)" v-show="clip?.id === c.id" :key="c.id" :ref="el => setVideo(c.id, el)" :src="c.url"
-          playsinline preload="auto"></video>
+          :muted="muted" playsinline preload="auto" @waiting="waiting(c)" @canplay="syncVideo"
+          @playing="syncVideo" @seeked="syncVideo" @error="mediaError(c, $event)"></video>
         <span v-if="!clips.length">your video here</span>
-        <span v-else-if="!clip" class="gap">no video at this time</span>
-        <span v-else-if="!clip.url" class="gap">Missing media: {{ clip.name }}. Relink in Videos &amp; settings.</span>
+        <span v-else-if="!clip && !presentation" class="gap">no video at this time</span>
+        <span v-else-if="clip && !clip.url" class="gap">Missing media: {{ clip.name }}. Relink in Videos &amp; settings.</span>
       </div>
       <div id="bar" class="abs"><div id="hl" :style="headlineStyle"><AccentText :text="headline?.text ?? ''" /></div></div>
     </div>
