@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '../../tests/fixtures/project.json';
-import { DEFAULT_RESOLUTION, RESOLUTIONS, createProject, fromProject, mediaPathForFile, normalizeMediaFolder,
-  projectFPS, projectResolution, resolveMediaPath, toProjectJSON } from './project.js';
+import { DEFAULT_RESOLUTION, FORMATS, RESOLUTIONS, createProject, fromProject, mediaPathForFile, normalizeMediaFolder,
+  projectFPS, projectFormat, projectResolution, resolveMediaPath, toProjectJSON } from './project.js';
 import { DEFAULT } from './timing.js';
 import { THEMES, themeLayout } from './themes.js';
 
@@ -108,10 +108,20 @@ describe('project documents', () => {
     expect(fromProject(project).output.resolution).toBe('1280x720');
     expect(JSON.parse(toProjectJSON(fromProject(project)))).toEqual(project);
   });
-  it('fills in the default frame rate when a project has none', () => {
+  it('persists the output format, defaults to MP4 and fills in the default frame rate when a project has none', () => {
+    expect(projectFormat(undefined)).toBe('mp4');
+    expect(FORMATS.map(([id]) => id)).toEqual(['mp4', 'gif']);
+    expect(createProject(DEFAULT).output.format).toBeUndefined();
     const project = copy();
+    project.output.format = 'gif';
+    expect(fromProject(project).output.format).toBe('gif');
+    expect(JSON.parse(toProjectJSON(fromProject(project)))).toEqual(project);
     delete project.output.fps;
     expect(fromProject(project).output.fps).toBe('25/1');
+    for (const format of ['webm', '', 'GIF', 4, {}]) {
+      project.output.format = format;
+      expect(() => fromProject(project)).toThrow('Output format');
+    }
   });
   it('persists output settings and the shared media-folder base together', () => {
     const project = copy();

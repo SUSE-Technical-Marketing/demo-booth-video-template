@@ -104,6 +104,11 @@ describe('Vue editor', () => {
     expect(wrapper.get('#status').classes()).toContain('dirty');
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output).toEqual({ fps: '25/1', theme: 'dark-rail', resolution: '1280x720' });
+    await wrapper.get('#outputFormat').setValue('gif');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).output.format).toBe('gif');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#outputFormat').element.value).toBe('mp4');
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.get('#outputResolution').element.value).toBe('1920x1080');
     await wrapper.get('#btnDownload').trigger('click');
