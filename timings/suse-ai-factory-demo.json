@@ -1,7 +1,8 @@
 {
   "project_version": 1,
   "output": {
-    "fps": "25/1"
+    "fps": "25/1",
+    "theme": "dark-rail"
   },
   "media": [],
   "clips": [],
