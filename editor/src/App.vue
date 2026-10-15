@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } fr
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
 import Preview from './components/Preview.vue';
+import ProjectSettings from './components/ProjectSettings.vue';
+import TabGroup from './components/TabGroup.vue';
 import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
@@ -15,6 +17,11 @@ const state = ref(fromJSON(DEFAULT));
 const handle = shallowRef(null), reconnectHandle = shallowRef(null);
 const dirty = ref(false), saving = ref(false), autosave = ref(true);
 const cur = ref(0), selectedId = ref(null), playing = ref(false);
+const editorTab = ref('chapters');
+const editorTabs = [
+  { id: 'chapters', label: 'Chapters & headlines' },
+  { id: 'settings', label: 'Videos & settings' },
+];
 const selectedChapterId = ref(state.value.chapter_starts[0].id), followPlayhead = ref(false);
 const playingChapter = computed(() => state.value.chapter_starts.find(c => c.ch === activeChapter(state.value, cur.value)));
 watch(() => state.value.chapter_starts.map(c => c.id), ids => {
@@ -90,6 +97,7 @@ async function newVideo() {
     title: 'New video', product_name: '', chapters: ['Chapter 1'], chapter_starts: [[0, 1]],
     headlines: [[0, 'Your first *headline*']], headlines_end: null, wipe_seconds: 0.8,
   }), null);
+  editorTab.value = 'chapters';
   clearClips();
   setCur(0);
   try { await rememberHandle(null); }          // a reload should not reopen the file we just left
@@ -121,6 +129,7 @@ function chooseChapter(chapter) {      // from the chapter list: the editing pan
   setCur(chapter.t + 0.1);
 }
 function moveHeadline(h, time) {       // dragged on the timeline: h.t is relative to its chapter
+  editorTab.value = 'chapters';
   const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
   h.t = +(time - chapter.t).toFixed(2);
   selectedChapterId.value = chapter.id;
@@ -129,6 +138,7 @@ function moveHeadline(h, time) {       // dragged on the timeline: h.t is relati
   markDirty();
 }
 function moveChapter(chapter, time) {  // its headlines are relative to it, so they move with it
+  editorTab.value = 'chapters';
   chapter.t = time;
   selectedChapterId.value = chapter.id;
   selectedId.value = null;
@@ -136,6 +146,7 @@ function moveChapter(chapter, time) {  // its headlines are relative to it, so t
   markDirty();
 }
 function moveHeadlineEnd(h, time) {    // time = null puts the end back to automatic
+  editorTab.value = 'chapters';
   const chapter = state.value.chapter_starts.find(c => c.id === h.chapterId);
   h.end = time == null ? null : +(time - chapter.t).toFixed(2);
   selectedChapterId.value = chapter.id;
@@ -144,11 +155,13 @@ function moveHeadlineEnd(h, time) {    // time = null puts the end back to autom
   markDirty();
 }
 function selectChapter(chapter) {
+  editorTab.value = 'chapters';
   followPlayhead.value = false;
   selectedChapterId.value = chapter.id;
   selectedId.value = null;
 }
 async function selectTimelineHeadline(h) {
+  editorTab.value = 'chapters';
   followPlayhead.value = false;
   selectedChapterId.value = h.chapterId;
   selectedId.value = h.id;
@@ -198,6 +211,7 @@ function play() {
   timer = requestAnimationFrame(tick);
 }
 function activateHeadline(h) {
+  editorTab.value = 'chapters';
   stop();
   followPlayhead.value = false;
   selectedChapterId.value = h.chapterId;
@@ -532,51 +546,33 @@ onUnmounted(() => {
 
   <EditorWorkspace>
     <template #editor>
-      <aside id="editor-panel" class="editor-panel" aria-label="Chapters and headlines" tabindex="0">
-        <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :starts="state.chapter_starts" :headlines="state.headlines"
-          :offset="offset" :end="totalDuration" :selected-chapter-id="selectedChapterId"
-          :playing-chapter-id="playingChapter.id" :follow-playhead="followPlayhead"
-          :headline-end="state.headlines_end" :selected-id="selectedId"
-          :chapters-end="state.chapters_end" @change-chapters-end="updateChaptersEnd"
-          :text-size-id="state.headlines[headlineFit.idx]?.id"
-          @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
-          @select="chooseChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
-          @delete-chapter="deleteChapter" @add-chapter="addChapter"
-          @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
-          @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
-        />
-
-        <details class="project-settings">
-          <summary>Videos and project settings<span v-if="clips.length"> · {{ clips.length }} videos</span></summary>
-          <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
-            @remove="removeClip" @error="toast" />
-          <section class="card">
-            <h2>Video title and product</h2>
-            <div id="meta" class="names">
-              <label class="inline">title <input id="titleIn" :value="state.title" placeholder="Video title (for your own reference)"
-                @focus="beginEdit" @input="updateMetadata('title', $event.target.value)"></label>
-              <label class="inline">product <input id="productIn" :value="state.product_name" placeholder="Shown under the logo"
-                @focus="beginEdit" @input="updateMetadata('product_name', $event.target.value)"></label>
+      <aside id="editor-panel" class="editor-panel" aria-label="Project editor" tabindex="0">
+        <TabGroup v-model="editorTab" :tabs="editorTabs" label="Editor sections">
+          <template #chapters>
+            <ChapterEditor ref="chapterEditor" :chapters="state.chapters" :starts="state.chapter_starts" :headlines="state.headlines"
+              :offset="offset" :end="totalDuration" :selected-chapter-id="selectedChapterId"
+              :playing-chapter-id="playingChapter.id" :follow-playhead="followPlayhead"
+              :headline-end="state.headlines_end" :selected-id="selectedId"
+              :chapters-end="state.chapters_end" @change-chapters-end="updateChaptersEnd"
+              :text-size-id="state.headlines[headlineFit.idx]?.id"
+              @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
+              @select="chooseChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
+              @delete-chapter="deleteChapter" @add-chapter="addChapter"
+              @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
+              @set-playhead="setHeadlineToPlayhead" @delete-headline="deleteHeadline"
+            />
+          </template>
+          <template #settings>
+            <div class="project-settings">
+              <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+                @remove="removeClip" @error="toast" />
+              <ProjectSettings :title="state.title" :product-name="state.product_name"
+                :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
+                v-model:ripple-by="rippleBy" @begin-edit="beginEdit" @update-metadata="updateMetadata"
+                @change-end="updateEnd" @change-wipe="updateWipe" @ripple="ripple" />
             </div>
-          </section>
-        <section class="card">
-          <h2>Headline settings</h2>
-          <div class="tools">
-            <label class="inline">headlines end at <input id="endAt" :value="state.headlines_end == null ? '' : fmt(state.headlines_end)"
-              size="7" placeholder="video end" @change="updateEnd"></label>
-            <label class="inline">wipe <input id="wipe" :value="state.wipe_seconds" type="number"
-              min="0" max="3" step="0.1" @change="updateWipe"> s</label>
-          </div>
-        </section>
-        <section class="card">
-          <h2>Ripple <span class="heading-hint">cut dead space? slide everything after the playhead</span></h2>
-          <div class="tools ripple-tools">
-            <span>Shift all chapters &amp; headlines at or after <b id="rippleAt">{{ fmt(cur) }}</b> by</span>
-            <input id="rippleBy" v-model="rippleBy" type="number" step="0.5" aria-label="Ripple seconds"> s
-            <button id="btnRipple" @click="ripple">Apply</button>
-          </div>
-        </section>
-        </details>
+          </template>
+        </TabGroup>
       </aside>
     </template>
     <template #preview>

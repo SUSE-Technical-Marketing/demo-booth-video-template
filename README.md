@@ -151,8 +151,10 @@ precisely: each step doubles the zoom, the ruler adds finer ticks, and the view 
 Other controls: **Save as…** (`Cmd+Shift+S`) writes the current timing to a new file and keeps working in it, leaving the
 previous file untouched; **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
 **wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).
-Videos, metadata, headline settings and ripple controls are grouped under **Videos and project settings**
-so they do not crowd the chapter/headline editor. Secondary row actions appear on hover or keyboard focus
+The left panel has two tabs: **Chapters & headlines** for timing edits, and **Videos & settings** for
+videos, metadata, headline settings and ripple controls. Switching tabs preserves your edits and selection;
+selecting a chapter or headline on the timeline returns to its editing tab. Use Left/Right arrows or Home/End
+when a tab is focused to switch tabs. Secondary row actions appear on hover or keyboard focus
 (and stay visible on touch devices).
 
 For more than six chapters, the sidebar becomes a six-button viewport. At each chapter start it scrolls smoothly
@@ -340,6 +342,9 @@ The editor's `App.vue` owns document changes, undo, autosave, and playback. `Edi
 and `HeadlineEditor`/`HeadlineRow` handle the editing sections through props and emitted actions; the timeline dock, preview,
 video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too. Pure timing and
 JSON helpers live in `timing.js`.
+`TabGroup` renders named slots using reusable `TabPane` panels, with controlled selection, keyboard navigation
+and panels kept mounted between switches. Tab IDs must be unique on the page. `ProjectSettings` renders the metadata,
+headline settings and ripple forms, emitting actions back to `App.vue` rather than changing the document directly.
 
 ### Design decisions
 

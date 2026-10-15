@@ -50,6 +50,20 @@ describe('videos and New in the editor', () => {
     await input.trigger('change');
     await new Promise(r => setTimeout(r, 20)); await flushPromises();
   }
+  it('preserves loaded video elements and object URLs when switching sidebar tabs', async () => {
+    await wrapper.get('#settings-tab').trigger('click');
+    await addFiles('a.mp4');
+    const video = wrapper.get('#content video').element;
+    expect(wrapper.get('#vlist').isVisible()).toBe(true);
+    await wrapper.get('#chapters-tab').trigger('click');
+    expect(wrapper.get('#vlist').isVisible()).toBe(false);
+    expect(wrapper.get('#chapters').isVisible()).toBe(true);
+    await wrapper.get('#settings-tab').trigger('click');
+    expect(wrapper.get('#vlist .name').text()).toBe('a.mp4');
+    expect(wrapper.get('#content video').element).toBe(video);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  });
   it('adds several videos in order, one after another, and shows them on the timeline', async () => {
     await addFiles('a.mp4', 'b.mp4');
     const rows = wrapper.findAll('#vlist .vrow');

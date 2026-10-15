@@ -7,7 +7,6 @@
 }
 @media (max-width: 980px) {
   .chapter-editor { height: 520px; }
-  .editor-panel { grid-template-rows: auto auto; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text);
@@ -41,25 +40,33 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .resize-handle > span { width: 4px; height: 48px; border-radius: 4px; background: var(--scrollbar-thumb); }
 .resize-handle:hover > span, .resize-handle:focus-visible > span, .resize-handle.dragging > span { background: var(--green); }
 .resize-handle:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; border-radius: 6px; }
-.workspace, .editor-panel, .chapter-list, .headline-list, .project-settings {
+.workspace, .editor-panel, .chapter-list, .headline-list, .tab-pane {
   scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) var(--jungle); }
 @supports not (scrollbar-color: red blue) {
   .workspace::-webkit-scrollbar, .editor-panel::-webkit-scrollbar, .chapter-list::-webkit-scrollbar,
-  .headline-list::-webkit-scrollbar, .project-settings::-webkit-scrollbar { width: 10px; height: 10px; }
+  .headline-list::-webkit-scrollbar, .tab-pane::-webkit-scrollbar { width: 10px; height: 10px; }
   .workspace::-webkit-scrollbar-track, .editor-panel::-webkit-scrollbar-track,
   .chapter-list::-webkit-scrollbar-track, .headline-list::-webkit-scrollbar-track,
-  .project-settings::-webkit-scrollbar-track { background: var(--jungle); }
+  .tab-pane::-webkit-scrollbar-track { background: var(--jungle); }
   .workspace::-webkit-scrollbar-thumb, .editor-panel::-webkit-scrollbar-thumb,
   .chapter-list::-webkit-scrollbar-thumb, .headline-list::-webkit-scrollbar-thumb,
-  .project-settings::-webkit-scrollbar-thumb {
+  .tab-pane::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb); border: 2px solid var(--jungle); border-radius: 10px; }
   .workspace::-webkit-scrollbar-thumb:hover, .editor-panel::-webkit-scrollbar-thumb:hover,
   .chapter-list::-webkit-scrollbar-thumb:hover, .headline-list::-webkit-scrollbar-thumb:hover,
-  .project-settings::-webkit-scrollbar-thumb:hover { background: var(--green); }
+  .tab-pane::-webkit-scrollbar-thumb:hover { background: var(--green); }
 }
-.editor-panel { display: grid; grid-template-rows: minmax(520px, 1fr) auto; gap: 12px; min-width: 0; min-height: 0;
-  overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 4px; }
+.editor-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow: hidden; }
 .editor-panel:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.tab-group { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; }
+.tab-list { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; flex-shrink: 0;
+  padding: 4px; background: var(--jungle); border: 1px solid var(--line); border-radius: 10px; }
+.editor-panel > .tab-group > .tab-list { grid-template-columns: 1.15fr 1fr; }
+.tab-list [role=tab] { min-width: 0; font-size: 12px; font-weight: 600; background: transparent; border-color: transparent; }
+.tab-list [aria-selected=true] { background: var(--surface2); border-color: var(--green); color: var(--text); }
+.tab-list [role=tab]:focus-visible, .tab-pane:focus-visible {
+  outline: 2px solid var(--green); outline-offset: -2px; border-radius: 8px; }
+.tab-pane { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 4px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
 .card h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: .6px; text-transform: uppercase; color: var(--muted); font-weight: 650;
   display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
@@ -116,8 +123,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .headline-editor .tools, .headline-editor .hint { flex-shrink: 0; }
 .empty-state { color: var(--muted); font-size: 12px; padding: 12px 4px; }
 .project-settings { min-width: 0; }
-.project-settings > summary { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
-.project-settings > .card { margin-top: 10px; }
+.project-settings > .card + .card { margin-top: 12px; }
 .ruler { position: absolute; bottom: 0; left: 0; right: 0; height: 18px; font-size: 10px; color: var(--muted); }
 .ruler span { position: absolute; bottom: 2px; transform: translateX(-50%); }
 .ruler i { position: absolute; bottom: 0; width: 1px; height: 5px; background: var(--muted); }

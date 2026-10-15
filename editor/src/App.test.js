@@ -55,6 +55,66 @@ async function openLinkedFile(data = JSON.parse(toJSON(fromJSON(DEFAULT)))) {
 }
 
 describe('Vue editor', () => {
+  it('shows one sidebar tab at a time while preserving edits, selection and panel instances', async () => {
+    const chapters = wrapper.get('#chapters-panel'), settings = wrapper.get('#settings-panel');
+    const inspector = wrapper.get('.chapter-inspector').element;
+    expect(chapters.isVisible()).toBe(true);
+    expect(settings.isVisible()).toBe(false);
+    expect(wrapper.find('.project-settings summary').exists()).toBe(false);
+    expect(wrapper.get('#chapters-tab').attributes('aria-selected')).toBe('true');
+    await wrapper.get('#settings-tab').trigger('click');
+    expect(wrapper.get('#status').classes()).not.toContain('dirty');
+    expect(settings.isVisible()).toBe(true);
+    expect(chapters.isVisible()).toBe(false);
+    expect(wrapper.get('#settings-tab').attributes('aria-selected')).toBe('true');
+    await wrapper.get('#titleIn').trigger('focus');
+    await wrapper.get('#titleIn').setValue('Updated project');
+    await wrapper.get('#rippleBy').setValue('7');
+    await wrapper.get('#chapters-tab').trigger('click');
+    await chooseChapter(2);
+    const selected = wrapper.get('.chapter-inspector').attributes('data-chapter-id');
+    await wrapper.get('#settings-tab').trigger('click');
+    expect(wrapper.get('#titleIn').element.value).toBe('Updated project');
+    expect(wrapper.get('#rippleBy').element.value).toBe('7');
+    await wrapper.get('#chapters-tab').trigger('click');
+    expect(wrapper.get('.chapter-inspector').element).toBe(inspector);
+    expect(wrapper.get('.chapter-inspector').attributes('data-chapter-id')).toBe(selected);
+    expect(wrapper.get('#scrub').element.value).toBe('60.1');
+  });
+  it('supports accessible keyboard tab switching without starting playback', async () => {
+    const chapters = wrapper.get('#chapters-tab'), settings = wrapper.get('#settings-tab');
+    chapters.element.focus();
+    await chapters.trigger('keydown', { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(settings.element);
+    expect(settings.attributes('tabindex')).toBe('0');
+    expect(chapters.attributes('tabindex')).toBe('-1');
+    expect(wrapper.get('#settings-panel').attributes('aria-labelledby')).toBe(settings.attributes('id'));
+    await settings.trigger('keydown', { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(chapters.element);
+    await chapters.trigger('keydown', { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(settings.element);
+    await settings.trigger('keydown', { key: 'Home' });
+    expect(document.activeElement).toBe(chapters.element);
+    await chapters.trigger('keydown', { key: 'End' });
+    expect(document.activeElement).toBe(settings.element);
+    await settings.trigger('keydown', { key: ' ', code: 'Space' });
+    expect(wrapper.findComponent(Preview).props('playing')).toBe(false);
+  });
+  it('returns to chapter editing on timeline selection, but not when following playback', async () => {
+    await wrapper.get('#followPlayhead').setValue(true);
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('#scrub').setValue('60');
+    expect(wrapper.get('#settings-panel').isVisible()).toBe(true);
+    await wrapper.findAll('#tl .band')[1].trigger('click');
+    expect(wrapper.get('#chapters-panel').isVisible()).toBe(true);
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe(DEFAULT.chapters[1]);
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.findAll('#tl .headline-band')[4].trigger('click');
+    await nextTick();
+    expect(wrapper.get('#chapters-panel').isVisible()).toBe(true);
+    expect(wrapper.get('.chapter-inspector h3').text()).toBe(DEFAULT.chapters[2]);
+    expect(wrapper.get('.headline-list .row.sel').isVisible()).toBe(true);
+  });
   it('keeps timeline and playback separate from the scrolling editing workspace', () => {
     expect(wrapper.find('.editor-panel #chapters').exists()).toBe(true);
     expect(wrapper.find('.editor-panel .chapter-inspector .headline-list').exists()).toBe(true);
