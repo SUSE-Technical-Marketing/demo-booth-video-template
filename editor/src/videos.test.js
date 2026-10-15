@@ -121,6 +121,17 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(projectFixture);
   });
+  it('the export dialog gets the real folder handle (not the folder wrapper) to start its save picker in', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    const folder = nativeFolder();
+    await openNativeFolder(folder);
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    const startIn = wrapper.findComponent({ name: 'ExportDialog' }).props('startIn');
+    expect(startIn.kind).toBe('directory');
+    expect(startIn.name).toBe('demo');
+    expect(wrapper.findAll('#exportMissing')).toHaveLength(0);                    // linked from the folder: ready to export
+  });
   it('opens a configured media folder by combining the base with each relative path', async () => {
     const project = folderProject();
     const folder = nativeFolder({ 'project.json': project });
@@ -493,6 +504,34 @@ describe('videos and New in the editor', () => {
     await relink(0, 4);                                     // shorter than the In point: refused
     expect(wrapper.get('#toast').text()).toContain('shorter than where the clip starts');
     expect((await clips())[0]).toMatchObject({ source_in: 5, source_out: 20 });
+  });
+  it('the Export button opens the export dialog with the linked videos and the project resolution', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#exportNoVideo').text()).toContain('Add a video first');
+    await wrapper.get('.export-dialog .ghost').trigger('click');
+    await addFiles('a.mp4', 'b.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('#outputResolution').setValue('1280x720');
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('#exportNoVideo').exists()).toBe(false);
+    expect(wrapper.find('#exportMissing').exists()).toBe(false);
+    expect(wrapper.get('#exportResolution').element.value).toBe('1280x720');
+    expect(wrapper.get('.export-chips').text()).toContain('2 videos');
+    expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();
+    expect(wrapper.findComponent({ name: 'ExportDialog' }).props('startIn')).toBeNull();   // nothing linked to a folder yet
+    await wrapper.get('.export-x').trigger('click');
+    expect(wrapper.find('.export-dialog').exists()).toBe(false);
+  });
+  it('the export dialog asks to relink videos that were opened without their files', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    await importProject(structuredClone(projectFixture));
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#exportMissing').text()).toContain('not linked');
+    expect(wrapper.get('#exportStart').attributes('disabled')).toBeDefined();
   });
   it('applies the media folder to all videos and updates every reference when it changes, with undo', async () => {
     await wrapper.get('#settings-tab').trigger('click');

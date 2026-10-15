@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
+import ExportDialog from './components/ExportDialog.vue';
 import PreviewPlayer from './components/PreviewPlayer.vue';
 import ProjectFilePicker from './components/ProjectFilePicker.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
@@ -49,6 +50,8 @@ const fileInput = ref(null), chapterEditor = ref(null), previewPlayer = ref(null
 const folderInput = ref(null), projectPicker = ref(null);
 const shortcutHelp = ref(null);
 const mediaFiles = shallowRef(new Map());
+const exporting = ref(false);
+const exportFiles = computed(() => new Map([...mediaFiles.value].filter(([, media]) => media.file).map(([id, media]) => [id, media.file])));
 const clips = computed(() => state.value.clips.map(clip => {
   const media = state.value.media.find(m => m.id === clip.media_id), file = mediaFiles.value.get(clip.media_id);
   return { ...clip, name: media.path.split('/').at(-1), path: media.path,
@@ -806,6 +809,9 @@ onUnmounted(() => {
     <label class="inline" title="Timecode your video editor shows at the start of the clip (often 01:00:00). Times typed as h:mm:ss have this subtracted.">
       timeline starts at <input id="offset" v-model="offsetText" size="8" @change="updateOffset"></label>
     <button id="btnUndo" class="ghost" title="Cmd/Ctrl+Z" @click="undo">Undo</button>
+    <button id="btnExport" class="export-btn" title="Render the finished video" @click="exporting = true">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Export</button>
     <button id="btnPresent" class="present" :disabled="!previewPlayer || previewPlayer.entering"
       :title="previewPlayer?.unavailable || 'Play the full composition fullscreen in a muted loop'"
       @click="previewPlayer.enterFullscreen()">{{ previewPlayer?.entering ? 'Opening…' : 'Play fullscreen loop' }}</button>
@@ -870,6 +876,9 @@ onUnmounted(() => {
     @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
     @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter"
     @trim-clip="trimClip" />
+  <ExportDialog v-if="exporting" :clips="clips" :files="exportFiles" :get-project="checkedJSON" :title="state.title"
+    :duration="totalDuration" :resolution="state.output.resolution ?? DEFAULT_RESOLUTION" :start-in="projectFolder?.directory ?? handle"
+    @close="exporting = false" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
   <ShortcutHelp ref="shortcutHelp" @error="toast" />
   <ProjectFilePicker ref="projectPicker" />

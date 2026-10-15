@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "serve": "python3 render/server.py",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run"

@@ -37,6 +37,13 @@ from assemble import assemble_project  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 
 
+ASSEMBLY_SHARE = 0.1     # how much of a progress bar the clip-assembly step takes before the encode starts
+
+
+class RenderError(ValueError):
+    """A render that cannot continue. The command line prints it; the export service reports it to the editor."""
+
+
 # ---------------------------------------------------------------------------------------------- ffmpeg
 def find_ffmpeg(prefer_system=False):
     if os.environ.get("FFMPEG"):
@@ -63,7 +70,7 @@ def probe(ffmpeg, path):
     size = re.search(r"(\d{2,5})x(\d{2,5})", video.split("Video:")[1]) if video else None
     fps = re.search(r"(\d+(?:\.\d+)?)\s*fps", video)
     if not video:
-        sys.exit("No video stream found in %s\n%s" % (path, err[-400:]))
+        raise RenderError("No video stream found in %s\n%s" % (path, err[-400:]))
     seconds = (int(dur.group(1)) * 3600 + int(dur.group(2)) * 60 + float(dur.group(3))) if dur else None
     tagged = bool(re.search(r"bt709|bt470|smpte|bt2020|bt601", video))
     return (int(size.group(1)), int(size.group(2)), float(fps.group(1)) if fps else 30.0, seconds, tagged)
@@ -110,7 +117,7 @@ def grab_frame(ffmpeg, video, t, fps, matrix="auto", content=None):
            "-vf", slot_filter(fps, matrix, content).split(",", 1)[1], "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
     data = subprocess.run(cmd, capture_output=True).stdout
     if len(data) != cw * ch * 3:
-        sys.exit("Could not read a frame at %.1fs (is that inside the video?)" % t)
+        raise RenderError("Could not read a frame at %.1fs (is that inside the video?)" % t)
     return Image.frombytes("RGB", (cw, ch), data)
 
 
@@ -177,7 +184,9 @@ def chapter_metadata(lay, start, dur):
     return "\n".join(out) + "\n"
 
 
-def render_video(args, ffmpeg, lay):
+def render_video(args, ffmpeg, lay, progress=None, cancel=None):
+    """Compose the layout around args.input and encode args.output. progress(frames, total, fps) is called about once
+    a second; if cancel (a threading.Event) is set the encode stops early and False is returned."""
     w, h, src_fps, src_dur, tagged = probe(ffmpeg, args.input)
     matrix = source_matrix(w, h, tagged)
     size = getattr(args, "size_px", (L.W, L.H))
@@ -207,7 +216,7 @@ def render_video(args, ffmpeg, lay):
                            stdout=subprocess.PIPE, stderr=dec_err)
     vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", args.preset]
     if args.fast:
-        vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
+        vcodec = ["-c:v", "h264_videotoolbox", "-b:v", getattr(args, "bitrate", None) or "12M"]
     resize = resize_filter(size)
     enc = subprocess.Popen([ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                             "-s", "%dx%d" % (L.W, L.H), "-r", rate, "-i", "-"] + seek + lim +
@@ -223,8 +232,12 @@ def render_video(args, ffmpeg, lay):
                            stdin=subprocess.PIPE, stderr=enc_err)
     t0 = time.time()
     i = 0
+    cancelled = False
     try:
         while total_frames is None or i < total_frames:
+            if cancel is not None and cancel.is_set():
+                cancelled = True
+                break
             buf = dec.stdout.read(nbytes)
             while buf and len(buf) < nbytes:
                 more = dec.stdout.read(nbytes - len(buf))
@@ -238,6 +251,8 @@ def render_video(args, ffmpeg, lay):
             i += 1
             if i % int(max(1, fps)) == 0:
                 el = time.time() - t0
+                if progress:
+                    progress(i, total_frames, i / el)
                 msg = "\r%d frames  %.0f fps" % (i, i / el)
                 if total_frames:
                     msg += "  %3d%%  ~%ds left" % (100 * i / total_frames, el * (total_frames - i) / i)
@@ -262,13 +277,21 @@ def render_video(args, ffmpeg, lay):
         dec.kill()
         dec.wait()
     print()
-    if enc.returncode != 0 or i == 0 or (total_frames is not None and i != total_frames):
-        def tail(f):
-            f.seek(0)
-            return f.read().decode(errors="replace")[-600:]
-        sys.exit("Encoding failed (%s of %s frames).\nencoder: %s\ndecoder: %s" % (
-            i, total_frames, tail(enc_err), tail(dec_err)))
+
+    def tail(f):
+        f.seek(0)
+        return f.read().decode(errors="replace")[-600:]
+    failed = not cancelled and (enc.returncode != 0 or i == 0 or (total_frames is not None and i != total_frames))
+    message = ("Encoding failed (%s of %s frames).\nencoder: %s\ndecoder: %s" % (
+        i, total_frames, tail(enc_err), tail(dec_err))) if failed else None
+    dec_err.close()
+    enc_err.close()
+    if cancelled:
+        return False
+    if failed:
+        raise RenderError(message)
     print("Wrote %s  (%d frames, %.0fs)" % (args.output, i, time.time() - t0))
+    return True
 
 
 # ---------------------------------------------------------------------------------------------- self test
@@ -317,7 +340,9 @@ def selftest(args, ffmpeg):
 
 
 # ---------------------------------------------------------------------------------------------- main
-def render_project(args, ffmpeg):
+def render_project(args, ffmpeg, progress=None, cancel=None):
+    """Render args.project. Returns False if cancel was set (the export service), True otherwise.
+    progress(fraction, note) reports the assembly step, then the encode (see render_video)."""
     project, path = load_project(args.project)
     timing = copy.deepcopy(project["timing"])
     notice = normalize_chapters(timing)
@@ -339,9 +364,14 @@ def render_project(args, ffmpeg):
         validate_project(project)
     if args.frame is not None and not project["clips"]:
         fit_image(layers.Layout(timing, theme).frame(args.frame), size).save(output)
-        return
+        return True
     with tempfile.TemporaryDirectory(prefix="booth-assembly-") as directory:
-        master, duration = assemble_project(project, path, directory, ffmpeg, probe, slot_filter, source_matrix)
+        assembled = assemble_project(project, path, directory, ffmpeg, probe, slot_filter, source_matrix,
+                                     progress=(lambda f: progress(f * ASSEMBLY_SHARE, "Preparing clips")) if progress else None,
+                                     cancel=cancel)
+        if assembled is None:
+            return False
+        master, duration = assembled
         lay = layers.Layout(timing, theme, duration)
         args.input = master
         args.out_fps = float(project_fps(fps))
@@ -352,14 +382,16 @@ def render_project(args, ffmpeg):
             fit_image(lay.frame(args.frame, grab_frame(ffmpeg, master, args.frame, args.out_fps, content=lay.design.CONTENT)),
                       size).save(output)
             print("Wrote", output)
-            return
+            return True
         start = args.start or 0
         if start >= duration or (args.duration is not None and start + args.duration > duration + 1e-6):
             raise ValueError("Requested render range is outside the project")
         args.duration = args.duration if args.duration is not None else duration - start
         args.output = str(output)
         args.size_px = size
-        render_video(args, ffmpeg, lay)
+        return render_video(args, ffmpeg, lay, cancel=cancel, progress=(
+            lambda frames, total, fps: progress(ASSEMBLY_SHARE + (1 - ASSEMBLY_SHARE) * min(1.0, frames / total) if total else ASSEMBLY_SHARE,
+                                                "Rendering", fps=fps, remaining=(total - frames) / fps if total and fps else None)) if progress else None)
 
 
 def main():
