@@ -1,7 +1,7 @@
 """Design constants for the Python renderer.
 
-These mirror the constants in fusion/build_chapter_template.py (same pixel layout at 1920x1080, same
-brand colours). tests/check_layout_sync.py fails if the two drift apart, so change both together.
+The pixel layout at 1920x1080 and the brand colours. editor/src/timing.js mirrors the geometry for the
+live preview, so change both together.
 """
 W, H = 1920, 1080
 
@@ -29,7 +29,7 @@ BAR     = dict(cx=1184, cy=122, w=1468, h=217, r=30, line=3)
 CONTENT = dict(cx=1181, cy=657, w=1459, h=820,  r=0)
 LOGO_W_PX = 324
 LOGO_CY, PRODUCT_CY, PRODUCT_PX = 114, 197, 56
-TEXT_SCALE = 1.11            # Fusion's Text+ draws 11% wider than "Size"; used here so both paths look the same
+TEXT_SCALE = 1.11            # shared with editor/src/timing.js so the preview and the render fit text identically
 PRODUCT_MAX_W = 350
 PILL_TEXT_PAD = 28
 PILL_TEXT_PX = 28

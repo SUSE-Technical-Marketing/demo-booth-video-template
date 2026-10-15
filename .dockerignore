@@ -1,6 +1,5 @@
 .git
 .github
-docs
 editor
 node_modules
 dist

@@ -62,7 +62,7 @@ def paste_box(img, d, fill_hex, line_hex=None, cy=None):
 
 
 def parse_headline(s):
-    """'Plus the NVIDIA *AI stack*, now' -> [(word, is_accent)]. Same rules as the Fusion script and the editor."""
+    """'Plus the NVIDIA *AI stack*, now' -> [(word, is_accent)]. Same rules as the editor."""
     words, acc = [], False
     for tok in s.split():
         if tok.startswith("*"):
