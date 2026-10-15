@@ -255,7 +255,13 @@ The **Export** button (top right, orange) renders the finished video without lea
 **resolution** from the dropdown (it starts at the project's own setting, 4K UHD down to 640 × 360) and a **quality**
 (Draft, Standard or High). On a Mac you can also tick the hardware encoder, which is much faster with slightly larger
 files. The dialog shows an estimate of how much slower than 1080p Standard your choice will be, then a progress bar with
-frames per second and time left. **Cancel** stops it; when it is done, **Save video…** lets you choose where the MP4 goes.
+frames per second and time left. **Cancel** stops it.
+
+**Where the file goes:** the **Save to** row lets you choose the location before rendering (**Choose location…**, in
+Chrome or Edge). The picker opens in your project folder, and when the render finishes the MP4 is written there
+without asking again. If you don't choose, **Save video…** asks when it is done, again starting in the project folder.
+The dialog confirms the saved file's name. Browsers without a save picker (Firefox, Safari) can't pick a folder and
+put the file in the Downloads folder instead.
 
 A browser page cannot run ffmpeg, so Export talks to a small service on your own computer (`render/server.py`,
 listening only on `127.0.0.1:8766`):

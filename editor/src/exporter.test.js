@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { downloadUrl, formatBytes, formatEta, getInfo, runExport, sizeHint, slowdown } from './exporter.js';
+import { downloadUrl, saveVideo, formatBytes, formatEta, getInfo, runExport, sizeHint, slowdown } from './exporter.js';
 
 describe('helpers', () => {
   it('estimates how much slower than 1080p Standard an export is', () => {
@@ -23,6 +23,37 @@ describe('helpers', () => {
   });
   it('builds a download link with the job token', () => {
     expect(downloadUrl('abc', 'x y')).toBe('/api/jobs/abc/download?token=x%20y');
+  });
+});
+
+describe('saving the video', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const done = { job: 'j', token: 't' };
+  it('writes to the location chosen up front without asking again', async () => {
+    const written = [];
+    const target = { name: 'chosen.mp4', createWritable: async () => ({ id: 1 }) };
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn() });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, body: { pipeTo: async w => written.push(w) } })));
+    const out = await saveVideo(done, 'x.mp4', { target });
+    expect(window.showSaveFilePicker).not.toHaveBeenCalled();
+    expect(written).toEqual([{ id: 1 }]);
+    expect(out).toEqual({ name: 'chosen.mp4', where: 'the location you chose' });
+  });
+  it('opens the picker in the project folder when no location was chosen', async () => {
+    const startIn = { name: 'proj' };
+    const handle = { name: 'out.mp4', createWritable: async () => ({}) };
+    vi.stubGlobal('window', { showSaveFilePicker: vi.fn(async () => handle) });
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, body: { pipeTo: async () => {} } })));
+    await saveVideo(done, 'x.mp4', { startIn });
+    expect(window.showSaveFilePicker).toHaveBeenCalledWith(expect.objectContaining({ suggestedName: 'x.mp4', startIn }));
+  });
+  it('falls back to a download and says where it goes', async () => {
+    vi.stubGlobal('window', {});
+    const click = vi.fn();
+    vi.spyOn(document, 'createElement').mockReturnValue({ click });
+    const out = await saveVideo(done, 'x.mp4');
+    expect(click).toHaveBeenCalled();
+    expect(out.where).toContain('download folder');
   });
 });
 

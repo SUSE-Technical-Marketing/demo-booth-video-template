@@ -112,22 +112,32 @@ export async function runExport({ project, files, size, quality, fast, filename,
 export const downloadUrl = (job, token) => `${BASE}/jobs/${job}/download?token=${encodeURIComponent(token)}`;
 export const removeJob = job => json(`/jobs/${job}`, { method: 'DELETE' }).catch(() => {});
 
-// Save with the browser's file picker when it has one (choose where it goes), otherwise a normal download.
-export async function saveVideo({ job, token }, filename) {
-  if (window.showSaveFilePicker) {
-    const handle = await window.showSaveFilePicker({ suggestedName: filename,
-      types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] });
+export const canChooseLocation = () => typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
+
+// Ask where the MP4 should go. startIn (the project's folder or file handle) makes the picker open there.
+export function chooseLocation(filename, startIn) {
+  return window.showSaveFilePicker({
+    suggestedName: filename, ...(startIn ? { startIn } : {}),
+    types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }],
+  });
+}
+
+// Write the finished video to a chosen file, or ask now (picker, starting in startIn), or fall back to a plain
+// browser download. Resolves with { name, where } so the dialog can say where it went.
+export async function saveVideo({ job, token }, filename, { target = null, startIn = null } = {}) {
+  if (target || canChooseLocation()) {
+    const handle = target || await chooseLocation(filename, startIn);
     const res = await fetch(downloadUrl(job, token));
     if (!res.ok) throw new Error(`Could not fetch the video (${res.status})`);
     const writable = await handle.createWritable();
     await res.body.pipeTo(writable);
-    return handle.name;
+    return { name: handle.name, where: 'the location you chose' };
   }
   const link = document.createElement('a');
   link.href = downloadUrl(job, token);
   link.download = filename;
   link.click();
-  return filename;
+  return { name: filename, where: "your browser's download folder (Downloads, unless you changed it)" };
 }
 
 export function formatEta(seconds) {

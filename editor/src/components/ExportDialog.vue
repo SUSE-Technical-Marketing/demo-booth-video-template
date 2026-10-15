@@ -1,6 +1,6 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
-import { formatBytes, formatEta, getInfo, QUALITIES, removeJob, runExport, saveVideo, sizeHint, slowdown } from '../exporter.js';
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue';
+import { canChooseLocation, chooseLocation, formatBytes, formatEta, getInfo, QUALITIES, removeJob, runExport, saveVideo, sizeHint, slowdown } from '../exporter.js';
 import { DEFAULT_RESOLUTION, RESOLUTIONS } from '../project.js';
 import { fmt } from '../timing.js';
 
@@ -9,6 +9,7 @@ const props = defineProps({
   files: { type: Object, required: true },           // Map: media id -> the File that was linked
   getProject: { type: Function, required: true },    // returns the project file's JSON text (throws if it is invalid)
   resolution: { type: String, default: DEFAULT_RESOLUTION },
+  startIn: { type: Object, default: null },          // project folder or file handle: the save picker opens there
   title: { type: String, default: '' },
   duration: { type: Number, default: 0 },
 });
@@ -19,7 +20,8 @@ const size = ref(props.resolution), quality = ref('standard'), fast = ref(false)
 const filename = ref((props.title || 'booth-video').replace(/[^\w .-]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'booth-video');
 const stage = ref('form');                           // form | running | done | error
 const update = ref({ phase: 'uploading', fraction: 0, message: '' });
-const errorText = ref(''), result = ref(null), savedAs = ref('');
+const errorText = ref(''), result = ref(null), saved = ref(null), target = shallowRef(null);
+const canChoose = canChooseLocation(), saveError = ref('');
 const dialog = ref(null), nameInput = ref(null);
 let controller = null;
 
@@ -60,6 +62,7 @@ async function start() {
       onUpdate: value => { update.value = value; },
     });
     stage.value = 'done';
+    if (target.value) await save();               // a location was chosen up front: write there straight away
   } catch (error) {
     if (error.name === 'AbortError') { stage.value = 'form'; return; }
     errorText.value = error.message;
@@ -67,11 +70,19 @@ async function start() {
   } finally { controller = null; }
 }
 function cancel() { controller?.abort(); }
-async function save() {
-  try { savedAs.value = await saveVideo(result.value, result.value.view.filename); }
+async function choose() {
+  try { target.value = await chooseLocation(`${filename.value.trim() || 'booth-video'}.mp4`, props.startIn); }
   catch (error) { if (error.name !== 'AbortError') { errorText.value = error.message; stage.value = 'error'; } }
 }
-function again() { if (result.value) removeJob(result.value.job); result.value = null; savedAs.value = ''; stage.value = 'form'; }
+async function save(askAgain = false) {
+  try {
+    saved.value = await saveVideo(result.value, result.value.view.filename,
+      { target: askAgain === true ? null : target.value, startIn: props.startIn });
+  } catch (error) {
+    if (error.name !== 'AbortError') saveError.value = error.message;
+  }
+}
+function again() { if (result.value) removeJob(result.value.job); result.value = null; saved.value = null; saveError.value = ''; stage.value = 'form'; }
 function close() { if (stage.value === 'running') return; emit('close'); }
 function keydown(event) { if (event.key === 'Escape') close(); }
 
@@ -124,6 +135,15 @@ onUnmounted(() => {
         <label class="export-field"><span>File name</span>
           <span class="export-name"><input ref="nameInput" id="exportName" v-model="filename" spellcheck="false" aria-label="File name"><em>.mp4</em></span></label>
 
+        <div class="export-field"><span id="saveLabel">Save to</span>
+          <div v-if="canChoose" class="export-where">
+            <span id="exportTarget" :class="{ chosen: target }">{{ target ? target.name : (startIn ? 'Asks when it is done, starting in your project folder' : 'Asks when it is done') }}</span>
+            <button id="exportChoose" type="button" aria-labelledby="saveLabel" @click="choose">{{ target ? 'Change…' : 'Choose location…' }}</button>
+            <button v-if="target" type="button" class="ghost" aria-label="Forget the chosen location" @click="target = null">✕</button>
+          </div>
+          <small v-else id="exportTarget">This browser can't choose a folder: the video goes to your Downloads folder. Use Chrome or Edge to pick the location.</small>
+        </div>
+
         <div class="export-field"><span id="resLabel">Resolution</span>
           <div class="export-select">
             <select id="exportResolution" v-model="size" aria-labelledby="resLabel">
@@ -170,10 +190,11 @@ onUnmounted(() => {
         <div class="export-callout ok">
           <strong>Your video is ready.</strong>
           <p>{{ result.view.filename }} · {{ formatBytes(result.view.size) }} · {{ width }} × {{ height }}</p>
-          <p v-if="savedAs" class="export-saved">Saved as {{ savedAs }}</p>
+          <p v-if="saved" id="exportSaved" class="export-saved">Saved as {{ saved.name }} in {{ saved.where }}.</p>
+          <p v-if="saveError" id="exportSaveError" class="export-saved bad">{{ saveError }}</p>
         </div>
         <footer class="export-foot"><button class="ghost" @click="again">Export another</button>
-          <button id="exportSave" class="primary" @click="save">{{ savedAs ? 'Save again…' : 'Save video…' }}</button></footer>
+          <button id="exportSave" class="primary" @click="save(true)">{{ saved ? 'Save another copy…' : 'Save video…' }}</button></footer>
       </div>
 
       <div v-else id="exportError" class="export-body">
