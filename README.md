@@ -142,6 +142,9 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    The preview's size summary also identifies it. Shortening it makes all of
    them bigger.
 
+**Videos on the timeline:** loaded videos appear as a labelled row above the chapter names, showing where each one plays
+and for how long. Use the **Videos** toggle in the timeline toolbar to show or hide that row (it remembers your choice).
+
 **Zoom** the timeline with the **− / + / Fit** buttons above it (or Ctrl/Cmd + scroll, or a trackpad pinch) to place handles
 precisely: each step doubles the zoom, the ruler adds finer ticks, and the view scrolls to keep the playhead visible.
 

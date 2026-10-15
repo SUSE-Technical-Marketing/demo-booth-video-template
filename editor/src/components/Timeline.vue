@@ -10,9 +10,11 @@ const props = defineProps({
   selectedChapterId: { type: Number, default: null },
   clips: { type: Array, default: () => [] },
   zoom: { type: Number, default: 1 },
+  showVideos: { type: Boolean, default: false },
 });
 const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end', 'move-chapter', 'zoom']);
 const timeline = ref(null), scroller = ref(null);
+const lane = computed(() => props.showVideos && props.clips.length > 0);   // the videos row above the chapters
 let dragging = false;
 const pct = t => `${t / props.duration * 100}%`;
 const clamp = t => Math.max(0, Math.min(props.duration, t));
@@ -131,7 +133,7 @@ function keyboardSelect(event, kind, row, start) {
 
 <template>
   <div ref="scroller" class="tl-scroll" @wheel="wheel">
-  <div id="tl" ref="timeline" :style="{ width: `${zoom * 100}%` }" @pointerdown="pointerdown" @pointermove="dragging && seek($event)"
+  <div id="tl" ref="timeline" :style="{ width: `${zoom * 100}%`, '--vt': lane ? '26px' : '0px' }" @pointerdown="pointerdown" @pointermove="dragging && seek($event)"
     @pointerup="dragging = false" @pointercancel="dragging = false" @lostpointercapture="dragging = false">
     <button v-for="chapter in state.chapter_starts" :key="chapter.id" class="band" :data-chapter-id="chapter.id"
       :class="{ sel: selectedChapterId === chapter.id, playing: activeChapter(state, cur) === chapter.ch }"
@@ -165,8 +167,10 @@ function keyboardSelect(event, kind, row, start) {
       :style="{ left: pct(clamp(handle.value)) }" @pointerdown.stop="handleDown($event, handle)"
       @pointermove="handleMove" @pointerup="handleDrag = null" @pointercancel="handleDrag = null"
       @lostpointercapture="handleDrag = null" @keydown="handleKey($event, handle)"></div>
-    <div v-for="clip in clips" :key="clip.id" class="vclip" :title="clip.name"
-      :style="{ left: pct(clip.start), width: pct(clip.dur) }"></div>
+    <template v-if="lane">
+      <div v-for="clip in clips" :key="clip.id" class="vclip" :title="`${clip.name}  ${fmt(clip.start)} – ${fmt(clip.start + clip.dur)}`"
+        :style="{ left: pct(clip.start), width: pct(clip.dur) }"><span>{{ clip.name }}</span><small>{{ fmt(clip.dur) }}</small></div>
+    </template>
     <div class="ruler">
       <template v-for="tick in ruler" :key="tick.t">
         <i :style="{ left: pct(tick.t) }"></i>

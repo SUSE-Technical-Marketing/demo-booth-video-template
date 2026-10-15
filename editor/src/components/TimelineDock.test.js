@@ -15,9 +15,40 @@ describe('timeline dock', () => {
     const clips = [{ id: 1, name: 'First.mp4', start: 0, dur: 40 },
       { id: 2, name: 'Second.mp4', start: 40, dur: 40 }];
     const dock = mountDock(clips), strips = dock.findAll('.vclip');
-    expect(strips.map(strip => strip.attributes('title'))).toEqual(['First.mp4', 'Second.mp4']);
+    expect(strips.map(strip => strip.attributes('title'))).toEqual(['First.mp4  0:00 – 0:40', 'Second.mp4  0:40 – 1:20']);
+    expect(strips[0].text()).toContain('First.mp4');
+    expect(strips[0].text()).toContain('0:40');
     expect(parseFloat(strips[1].element.style.left)).toBeCloseTo(40 / 195 * 100);
     expect(dock.find('.timeline-legend .video-key').exists()).toBe(true);
+    dock.unmount();
+  });
+  it('shows the videos row above the chapters and lets you toggle it off and on, remembering the choice', async () => {
+    localStorage.removeItem('timeline_show_videos');
+    const clips = [{ id: 1, name: 'First.mp4', start: 0, dur: 40 }];
+    const dock = mountDock(clips);
+    const toggle = dock.get('#toggleVideos');
+    expect(toggle.attributes('aria-pressed')).toBe('true');
+    expect(dock.findAll('.vclip')).toHaveLength(1);
+    expect(dock.get('#tl').element.style.getPropertyValue('--vt')).toBe('26px');   // everything below shifts down
+    await toggle.trigger('click');
+    expect(toggle.attributes('aria-pressed')).toBe('false');
+    expect(dock.findAll('.vclip')).toHaveLength(0);
+    expect(dock.get('#tl').element.style.getPropertyValue('--vt')).toBe('0px');
+    expect(localStorage.getItem('timeline_show_videos')).toBe('0');
+    dock.unmount();
+    const again = mountDock(clips);                                                // a later visit starts hidden
+    expect(again.get('#toggleVideos').attributes('aria-pressed')).toBe('false');
+    await again.get('#toggleVideos').trigger('click');
+    expect(again.findAll('.vclip')).toHaveLength(1);
+    expect(localStorage.getItem('timeline_show_videos')).toBe('1');
+    again.unmount();
+    localStorage.removeItem('timeline_show_videos');
+  });
+  it('disables the videos toggle and adds no row when no video is loaded', () => {
+    const dock = mountDock();
+    expect(dock.get('#toggleVideos').attributes('disabled')).toBeDefined();
+    expect(dock.get('#toggleVideos').attributes('aria-pressed')).toBe('false');
+    expect(dock.get('#tl').element.style.getPropertyValue('--vt')).toBe('0px');
     dock.unmount();
   });
   it('renders all chapter bands, selected headline cues and playback time', () => {
