@@ -31,7 +31,7 @@ function syncVideo() {
   videos.forEach((el, id) => { if (id !== current?.id && !el.paused) el.pause(); });
   const el = current && videos.get(current.id);
   if (!el) return;
-  const want = props.cur - current.start;
+  const want = (current.source_in ?? 0) + props.cur - current.start;
   if (!props.playing || Math.abs(el.currentTime - want) > 0.4) el.currentTime = want;
   if (props.playing && el.paused) el.play?.()?.catch?.(() => {});
   else if (!props.playing && !el.paused) el.pause();
@@ -80,10 +80,11 @@ const headlineStyle = computed(() => {
       <div v-if="scrolling && offset < state.chapters.length - count - 1e-6" id="chaptersBelow" class="abs chapterIndicator"
         title="More chapters below" :style="indicatorStyle(CHAPTER_SCROLL.arrow_x, CHAPTER_SCROLL.indicator_y, 24)">v</div>
       <div id="content" class="abs">
-        <video v-for="c in clips" v-show="clip?.id === c.id" :key="c.id" :ref="el => setVideo(c.id, el)" :src="c.url"
+        <video v-for="c in clips.filter(c => c.url)" v-show="clip?.id === c.id" :key="c.id" :ref="el => setVideo(c.id, el)" :src="c.url"
           playsinline preload="auto"></video>
         <span v-if="!clips.length">your video here</span>
         <span v-else-if="!clip" class="gap">no video at this time</span>
+        <span v-else-if="!clip.url" class="gap">Missing media: {{ clip.name }}. Relink in Videos &amp; settings.</span>
       </div>
       <div id="bar" class="abs"><div id="hl" :style="headlineStyle"><AccentText :text="headline?.text ?? ''" /></div></div>
     </div>

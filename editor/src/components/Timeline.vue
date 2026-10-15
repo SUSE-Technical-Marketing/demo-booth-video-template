@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { activeChapter, chapterEnd, CH_COLORS, fmt, headlineChapter, headlineEnd, headlineOutside, headlineTime, plain } from '../timing.js';
+import { projectFPS } from '../project.js';
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -12,11 +13,14 @@ const props = defineProps({
   zoom: { type: Number, default: 1 },
   showVideos: { type: Boolean, default: false },
 });
-const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end', 'move-chapter', 'zoom']);
+const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end', 'move-chapter', 'trim-clip', 'zoom']);
 const timeline = ref(null), scroller = ref(null);
 const lane = computed(() => props.showVideos && props.clips.length > 0);   // the videos row above the chapters
 let dragging = false;
-const pct = t => `${t / props.duration * 100}%`;
+// Keep the time scale stable while trimming the last clip changes the project duration.
+const clipDragDuration = ref(null);
+const displayDuration = computed(() => clipDragDuration.value ?? props.duration);
+const pct = t => `${t / displayDuration.value * 100}%`;
 const clamp = t => Math.max(0, Math.min(props.duration, t));
 const headlineBands = computed(() => props.state.headlines.map(headline => {
   const start = headlineTime(props.state, headline), end = headlineEnd(props.state, headline, props.duration);
@@ -28,9 +32,9 @@ function headlineTitle(band) {
 }
 const ruler = computed(() => {
   // aim for roughly a dozen labels across what is visible, so zooming in adds finer ticks
-  const visible = props.duration / props.zoom;
+  const visible = displayDuration.value / props.zoom;
   const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => visible / s <= 12) ?? 600, ticks = [];
-  for (let t = 0; t <= props.duration; t += step) ticks.push({ t, label: t <= props.duration - step / 2 });
+  for (let t = 0; t <= displayDuration.value; t += step) ticks.push({ t, label: t <= displayDuration.value - step / 2 });
   return ticks;
 });
 // Each headline band has two handles. The one on its left edge moves when the words appear (and, since a headline
@@ -60,9 +64,33 @@ const chapterHandles = computed(() => props.state.chapter_starts.map((chapter, i
   const upper = Math.min(next ? next.t - STEP : Infinity, (props.state.chapters_end ?? Infinity) - STEP);
   return { kind: 'chapter', chapter, lower, upper: Math.max(lower, upper), value: chapter.t };
 }));
+const clipHandles = computed(() => {
+  const clips = props.clips.slice().sort((a, b) => a.start - b.start);
+  const minimum = Math.max(STEP, 1 / projectFPS(props.state.output.fps));
+  return clips.flatMap((clip, i) => {
+    const end = clip.start + clip.dur, length = Math.min(minimum, clip.dur);
+    return [
+      { kind: 'clip-start', clip, value: clip.start,
+        lower: Math.max(0, clip.start - clip.source_in, i ? clips[i - 1].start + clips[i - 1].dur : 0),
+        upper: end - length },
+      { kind: 'clip-end', clip, value: end, lower: clip.start + length,
+        upper: Math.min(clips[i + 1]?.start ?? Infinity,
+          clip.sourceDuration == null ? end : clip.start + clip.sourceDuration - clip.source_in) },
+    ];
+  });
+});
 const snap = t => Math.round(t / STEP) * STEP;
 let handleDrag = null;
 function moveTo(handle, time) {
+  if (handle.kind.startsWith('clip-')) {
+    const value = Math.max(handle.lower, Math.min(handle.upper, snap(time))), clip = handle.clip;
+    const patch = handle.kind === 'clip-start'
+      ? { start: value, source_in: Math.max(0, clip.source_in + value - clip.start) }
+      : { source_out: clip.source_in + value - clip.start };
+    const preview = handle.kind === 'clip-start' ? value : Math.max(clip.start, value - STEP);
+    emit('trim-clip', clip, patch, preview);
+    return;
+  }
   const clamped = +Math.max(handle.lower, Math.min(handle.upper, snap(time))).toFixed(2);
   if (handle.kind === 'chapter') emit('move-chapter', handle.chapter, clamped);
   else if (handle.kind === 'start') emit('move-headline', handle.band.headline, clamped);
@@ -70,13 +98,19 @@ function moveTo(handle, time) {
 }
 function handleDown(event, handle) {
   handleDrag = handle;
+  if (handle.kind.startsWith('clip-')) clipDragDuration.value = props.duration;
   emit('begin-edit');
   event.currentTarget.setPointerCapture(event.pointerId);
 }
 function handleMove(event) {
   if (!handleDrag) return;
   const rect = timeline.value.getBoundingClientRect();
-  moveTo(handleDrag, Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * props.duration);
+  const fraction = Math.max(0, (event.clientX - rect.left) / rect.width);
+  moveTo(handleDrag, (clipDragDuration.value == null ? Math.min(1, fraction) : fraction) * displayDuration.value);
+}
+function handleUp() {
+  handleDrag = null;
+  clipDragDuration.value = null;
 }
 function handleKey(event, handle) {
   const dir = { ArrowLeft: -1, ArrowRight: 1 }[event.key];
@@ -170,6 +204,15 @@ function keyboardSelect(event, kind, row, start) {
     <template v-if="lane">
       <div v-for="clip in clips" :key="clip.id" class="vclip" :title="`${clip.name}  ${fmt(clip.start)} – ${fmt(clip.start + clip.dur)}`"
         :style="{ left: pct(clip.start), width: pct(clip.dur) }"><span>{{ clip.name }}</span><small>{{ fmt(clip.dur) }}</small></div>
+      <div v-for="handle in clipHandles" :key="handle.kind + handle.clip.id" class="clip-handle"
+        :class="handle.kind === 'clip-start' ? 'start' : 'end'" role="slider" tabindex="0" :data-handle="handle.kind"
+        :aria-label="`Trim video ${handle.kind === 'clip-start' ? 'start' : 'end'}: ${handle.clip.name}`"
+        aria-orientation="horizontal" :aria-valuemin="handle.lower" :aria-valuemax="handle.upper"
+        :aria-valuenow="handle.value" :aria-valuetext="fmt(handle.value)"
+        :title="`Drag to trim where this video ${handle.kind === 'clip-start' ? 'starts' : 'ends'} (${fmt(handle.value)})`"
+        :style="{ left: pct(handle.value) }" @pointerdown.stop="handleDown($event, handle)"
+        @pointermove="handleMove" @pointerup="handleUp" @pointercancel="handleUp" @lostpointercapture="handleUp"
+        @keydown="handleKey($event, handle)"></div>
     </template>
     <div class="ruler">
       <template v-for="tick in ruler" :key="tick.t">

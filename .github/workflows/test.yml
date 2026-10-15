@@ -26,7 +26,7 @@ jobs:
       - run: pip install -r render/requirements.txt
       - name: Chapter scrolling and viewport regression tests
         run: python -m unittest discover -s tests
-      - name: Timing files are valid
-        run: python -c "import sys,json,glob;[json.load(open(f)) for f in glob.glob('timings/*.json')]"
+      - name: Example projects are valid
+        run: python -c "import sys,glob;sys.path.insert(0,'render');from project import load_project;[load_project(f) for f in glob.glob('timings/*.json')]"
       - name: Render a generated test video end to end
         run: python render/render.py --selftest

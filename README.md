@@ -3,9 +3,12 @@
 A browser-based **timing editor** for SUSE demo videos. Load your recording, name the chapters, write the on-screen
 headlines, and scrub a live preview of the finished layout: a **chapter panel** on the left whose orange button follows
 the demo, and a **headline bar** on top where short headlines wipe in from left to right. Everything is saved in one
-small JSON file per video, and a command-line renderer turns that file and your recording into the final branded MP4.
+project JSON per video, and a command-line renderer assembles its source clips into the final branded MP4.
 
-You still **cut your video in whatever editor you like**. This app adds the SUSE wrapper around the finished edit.
+Use an external video editor for complex editing, or arrange and trim clips here with hard cuts.
+Crossfades and other transitions are not supported yet.
+
+For planned technical and functional work, see the [improvement roadmap](IMPROVEMENTS.md).
 
 ## What you can do in the editor
 
@@ -16,14 +19,15 @@ You still **cut your video in whatever editor you like**. This app adds the SUSE
 - **Retime on the timeline**: drag a headline's start and end handles, zoom in for precision, click a chapter to jump
   there, and ripple everything after a cut.
 - **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
-- **Render the final MP4** with one command (or a container): branded layout, your audio, and an MP4 chapter marker
+- **Save complete projects**: source media paths, clip placements and trims, output frame rate, chapters and headlines.
+- **Render the final MP4** with one command (or a container): multiple clips, gaps, branded layout, your audio, and an MP4 chapter marker
   per chapter.
 
 ## How the pieces fit
 
 ```
 narration ──► LLM prompt ──► headlines ──► timing editor ──► timings/<video>.json ──► renderer ──► final .mp4
- (transcript)  prompts/       (words)       (times, ripple,    (single source          render/        (chapter markers
+ (transcript)  prompts/       (words)       (times, clips,     (single source          render/        (chapter markers
                                              video preview)     of truth)              render.py       included)
 ```
 
@@ -32,7 +36,7 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 | `editor/` | The Vue 3 timing editor, built with Vite into `dist/` for static hosting. |
 | `package.json`, `bun.lock`, `vite.config.js` | Editor scripts and locked dependencies, managed with Bun. |
 | `start_editor.command` | Double-click to run the editor locally instead of the hosted copy. |
-| `timings/*.json` | **All the text and timing for one video**: chapter names, start times, every headline. |
+| `timings/*.json` | Example project documents with chapters and headlines. Add your media before rendering. |
 | `render/` | `render.py` (command line), `Containerfile` and `run-container.sh` (SUSE BCI Python image). |
 | `prompts/headline-prompt.md` | A ready-to-use LLM prompt that turns narration into headlines. |
 | `assets/` | SUSE logo (PNG) and the SUSE Medium font file used by the renderer. |
@@ -52,14 +56,14 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 
    Then open <http://127.0.0.1:8765/>. The development server binds only to localhost and stops with Ctrl+C. If the
    port is busy, `start_editor.command` tells you what is using it.
-2. **Start or open a video.** **New** starts a blank timing file. **Open file…** opens an existing `timings/<video>.json`
+2. **Start or open a project.** **New** starts a blank project. **Open file…** opens an existing project JSON
    (copy `timings/example.json` to begin from a sample).
-3. **Add your recording** with **Add videos…** to preview it under the layout.
+3. **Add your recordings** in **Videos & settings**. Set timeline starts, source **In/Out** trims and relative media paths.
 4. **Write chapters and headlines** and set their times (see [Using the editor](#using-the-editor)).
-5. **Render** the final video (see [Render the finished video](#render-the-finished-video)).
+5. **Save** the project next to its media, then **render** it (see [Render the finished video](#render-the-finished-video)).
 
 Use **Chrome or Edge** so the page can save straight to your file. Other browsers can open a JSON file and use
-**Download** to save a replacement, but cannot link it for autosave or reconnect. Your timing file and videos stay in
+**Download** to save `project.json`, but cannot link it for autosave or reconnect. Your project and videos stay in
 your browser and on your own disk: there is no backend and nothing is uploaded.
 
 ## Write the headlines
@@ -72,9 +76,20 @@ were written with.
 
 ## Using the editor
 
-**New** starts a blank timing file. **Add videos…** loads one or more local videos to preview in the content slot (one per
-chapter, or one spanning several): set each one's start time or **snap** it to a chapter. They never leave your computer and
-are not saved in the timing file, and the renderer still takes a single video.
+**New** starts a blank project. **Add videos…** places local videos sequentially in the content slot.
+Change a clip's timeline start or **snap** it to a chapter, and set source **In/Out** to use part of a recording.
+Clips cannot overlap; hard cuts are supported, and gaps render black with silence. Chapters and clips are independent:
+one chapter can span several clips, and one clip can span several chapters.
+
+The project saves media references and clip data, never video bytes or temporary browser URLs. **Media path** is relative
+to the saved project JSON, using forward slashes, for example `media/demo.mp4`. Newly added files default to their filename:
+save the project beside them, or update their paths. After reopening, use each clip's **Relink media…** button to select
+the local source again for preview. Relinking does not change its saved path or trims. Missing media does not prevent
+editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
+keeping the same relative media layout or updating the paths.
+
+Choose the render frame rate in **Videos & settings**. The renderer normalizes source sizes/frame rates and audio;
+the final output is 1920 × 1080 with stereo 48 kHz audio. Source clips without audio and timeline gaps produce silence.
 
 On desktop, the editor uses a video-editing workspace: videos, chapters and headlines scroll independently in the left
 panel (about 30% of the width), the large preview fits the remaining space without cropping, and the full-width
@@ -144,6 +159,11 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
 
 **Videos on the timeline:** loaded videos appear as a labelled row above the chapter names, showing where each one plays
 and for how long. Use the **Videos** toggle in the timeline toolbar to show or hide that row (it remembers your choice).
+Drag a video's **left handle** to trim its beginning: its timeline start and source In move together, keeping its
+end fixed. Drag its **right handle** to adjust source Out, keeping its start fixed. Neither trim moves chapters,
+headlines or other clips. Handles stop at neighbouring clips and source limits; relink missing media before extending
+the right edge beyond its saved Out point. Use `←` / `→` for 0.1 s adjustments (`Shift` for 1 s).
+The preview and In/Out fields follow the trim, and **Undo** reverts the whole drag.
 
 **Zoom** the timeline with the **− / + / Fit** buttons above it (or Ctrl/Cmd + scroll, or a trackpad pinch) to place handles
 precisely: each step doubles the zoom, the ruler adds finer ticks, and the view scrolls to keep the playhead visible.
@@ -167,12 +187,20 @@ After saving, run the render command (see [Render the finished video](#render-th
 
 ## Render the finished video
 
-The editor previews the layout; the renderer produces the MP4. It takes your finished edit, puts it in the content
-slot, draws the chapter panel and timed headlines from the timing file, keeps your audio, and writes one MP4 chapter
+The editor previews the layout; the renderer produces the MP4. It assembles the clips from your project, puts them in the content
+slot, draws the chapter panel and timed headlines, keeps your audio, and writes one MP4 chapter
 marker per chapter (shown in the chapter menus of QuickTime, VLC and IINA).
 
-1. **Cut and export your video** from any editor as a normal MP4 (1920 × 1080 is ideal; other sizes are fitted into
-   the slot with black bars). Cut dead space first, because times are measured from the start of this file.
+1. **Arrange and save your project.** For example:
+   ```
+   my-demo/
+     project.json
+     media/
+       intro.mp4
+       demo.mp4
+   ```
+   The media paths in this project are `media/intro.mp4` and `media/demo.mp4`.
+   Paths resolve relative to the project file, not your shell's working directory.
 2. **One-time setup** (needs Python 3.10 or newer; nothing else, the renderer brings its own ffmpeg):
    ```bash
    cd demo-booth-video-template
@@ -181,22 +209,21 @@ marker per chapter (shown in the chapter menus of QuickTime, VLC and IINA).
    ```
 3. **Check a frame before rendering everything.** This writes one PNG of the finished layout at 75 seconds:
    ```bash
-   .venv/bin/python render/render.py my-edit.mp4 -t my-video.json --frame 75 --png check.png
+   .venv/bin/python render/render.py /path/to/my-demo/project.json --frame 75 --png check.png
    ```
-   (`-t` takes a file name from `timings/` or a path. Without a video it draws a grey slot, which is handy for
-   checking only the headlines and buttons.)
+   An empty project's frame preview draws a grey placeholder for checking the layout.
 4. **Render:**
    ```bash
-   .venv/bin/python render/render.py my-edit.mp4 -t my-video.json -o my-video-final.mp4
+   .venv/bin/python render/render.py /path/to/my-demo/project.json -o my-video-final.mp4
    ```
-   Progress prints as it goes. It keeps your audio (re-encoded to AAC), keeps the frame rate, and outputs 1920 × 1080
+   Progress prints as it goes. It keeps clip audio (re-encoded to AAC), uses the project's frame rate, and outputs 1920 × 1080
    H.264. On Apple-silicon Macs add `--fast` to use the hardware encoder.
-5. **Changing something later:** edit the timing file in the editor, save, and re-run step 4. Nothing is stored in
+5. **Changing something later:** edit the project in the editor, save, and re-run step 4. Nothing is stored in
    the video, so there is nothing to clean up. If you re-cut the video, re-export it and use the editor's
    **Ripple** tool to slide the times.
 
-Other options: `--start 30 --duration 60` renders just that part (timing times still count from the start of the
-source), `--fps 30`, `--crf 18` (quality; lower is better) and `--preset medium`. `--selftest` renders a generated
+Other options: `--start 30 --duration 60` renders just that part (chapter/headline times still count from the start of the
+project), `--crf 18` (quality; lower is better) and `--preset medium`. `--selftest` renders a generated
 clip to prove the install works.
 
 ### Using mise
@@ -207,7 +234,7 @@ root:
 
 ```bash
 mise install
-mise run build my-edit.mp4 -t my-video.json -o my-video-final.mp4
+mise run build /path/to/my-demo/project.json -o my-video-final.mp4
 ```
 
 The build task installs the renderer dependencies automatically. To check the project, run `mise run test`. To serve
@@ -220,8 +247,9 @@ out within a few levels of the brand values in any player. (ffmpeg's default wou
 duller.) `--selftest` measures this and fails if it drifts. Source videos that don't declare their colours are
 treated as BT.709, which is what players do.
 
-**Speed:** the check on a generated 1080p clip rendered at roughly 140 frames per second on an Apple-silicon Mac, so
-a ten minute video takes a few minutes. Your numbers will vary with the source video and the machine.
+**Temporary storage:** rendering first builds a lossless FFV1/PCM master, then applies branding and encodes the final MP4.
+The master and segment files are removed on completion or failure. Allow substantial temporary disk space for long projects.
+Source footage is not repeatedly lossy-encoded. Assembly currently also runs for single-frame checks of projects with clips.
 
 ### In a container (SUSE Base Container Image)
 
@@ -229,18 +257,17 @@ If you would rather not install anything, or you want to render on a server, the
 `registry.suse.com/bci/python`. Pillow and a static ffmpeg come from pip, so the image needs no extra repositories.
 
 ```bash
-cd ~/Movies/my-demo        # the folder that holds your edited video
-/path/to/demo-booth-video-template/render/run-container.sh my-edit.mp4 -t my-video.json -o final.mp4
+cd ~/Movies/my-demo        # project.json and its media/ subfolder
+/path/to/demo-booth-video-template/render/run-container.sh project.json -o final.mp4
 ```
 
 The script builds the image the first time (`docker`, `podman` or `nerdctl`; set `CONTAINER_ENGINE` to choose),
-mounts the current folder at `/work` and your repo's `timings/` folder read-only, so timing edits need no rebuild.
+mounts the current folder at `/work` and the project file's directory, so project edits need no rebuild.
+Keep referenced media inside that project directory for container use; parent-directory references outside the mounted folder
+are supported by the native renderer but need an additional mount when running a container manually.
 To build it yourself: `docker build -t booth-render -f render/Containerfile .` from the repo root.
 
-> Tested on Rancher Desktop (Apple silicon): the image builds from `registry.suse.com/bci/python:3.13` (SLES 15 SP7,
-> about 480 MB), `--selftest` passes inside it, and a full render through `run-container.sh` kept the audio and the
-> frame rate. Inside the Linux VM it renders at roughly 40 to 55 frames per second, slower than running natively on the
-> Mac (around 140), so prefer the virtual-environment route on your own machine and the container for servers and CI.
+The container uses `registry.suse.com/bci/python:3.13`. Assembly needs temporary disk space inside the container as well.
 
 ## Editing the video afterwards
 
@@ -248,32 +275,47 @@ Re-export the video, use **Ripple** in the editor to slide the times if you cut 
 cut, enter how many seconds you removed as a negative number such as `-8`, and click **Apply**), and render again.
 Nothing is stored in the video, so there is nothing to clean up.
 
-## Timing file format
+## Project file format
 
-`timings/<video>.json`. The editor writes it for you; you can also edit it in any text editor.
+The editor writes version 1 project JSON. Timing-only files are no longer accepted by the editor or render CLI.
+The examples in `timings/` are project templates without media; add recordings and save a copy before rendering.
 
 ```json
 {
-  "schema_version": 2,
-  "title": "SUSE AI Factory demo",
-  "product_name": "SUSE AI Factory",
-  "chapters": [
-    {
-      "title": "Apps from SUSE & NVIDIA",
-      "start": 0,
-      "headlines": [[0, "Tested, supported *applications* for AI"], [18, "..."]]
-    },
-    {
-      "title": "Blueprints",
-      "start": 121,
-      "headlines": [[5, "Start with a *blueprint*"]]
-    }
+  "project_version": 1,
+  "output": { "fps": "25/1" },
+  "media": [
+    { "id": "intro", "path": "media/intro.mp4" },
+    { "id": "demo", "path": "media/demo.mp4" }
   ],
-  "headlines_end": null,
-  "chapters_end": null,
-  "wipe_seconds": 0.8
+  "clips": [
+    { "id": "clip-1", "media_id": "intro", "start": 0, "source_in": 0, "source_out": 10 },
+    { "id": "clip-2", "media_id": "demo", "start": 12, "source_in": 5, "source_out": 25 }
+  ],
+  "timing": {
+    "schema_version": 2,
+    "title": "Demo",
+    "product_name": "SUSE",
+    "chapters": [
+      { "title": "Introduction", "start": 0, "headlines": [[0, "Meet the *product*"]] },
+      { "title": "Demonstration", "start": 12, "headlines": [[5, "Start with a *blueprint*"]] }
+    ],
+    "headlines_end": null,
+    "chapters_end": null,
+    "wipe_seconds": 0.8
+  }
 }
 ```
+
+`media` IDs and clip IDs are unique strings. A source can be referenced by several clips.
+Clip duration is `source_out - source_in`; `start` is absolute project time and is authoritative,
+regardless of array order. In this example there is a black/silent gap from 10 to 12 seconds and the project ends at 32 seconds.
+Source out is exclusive. Overlaps, transitions, invalid references and out-of-source trims fail explicitly.
+Output FPS is a positive rational string between 1 and 120 fps, including `30000/1001`.
+At render time, clip boundaries use the first output frame at or after their specified time.
+Clips that contain no output frames are rejected. Frame-rate quantization can extend the final duration by less than one frame.
+
+The following fields live inside `timing`:
 
 | Key | Meaning |
 |---|---|
@@ -288,24 +330,20 @@ Nothing is stored in the video, so there is nothing to clean up.
 | `title`, `schema_version` | For your reference and for future format changes. |
 
 Chapter starts are absolute elapsed seconds; headline times are chapter-relative seconds. For example,
-the Blueprint headline above appears at `121 + 5 = 126` seconds. Negative offsets or headlines past a chapter
+the Blueprint headline above appears at `12 + 5 = 17` seconds. Negative offsets or headlines past a chapter
 boundary remain editable with warnings but are never rendered. The renderer validates the file before encoding
 and reports skipped out-of-chapter headlines explicitly.
 
-The editor saves schema 2. The editor and the renderer also accept legacy schema-1 files with string chapter
-titles, `chapter_starts` and global absolute `headlines`. On import they convert
-legacy repeated chapter references into independent chapters, preserving every segment's title and start time.
-Titles with no start time are omitted, with an explicit import notice. Each legacy headline is assigned to the chapter
-active at its start; no text is carried into the following chapter. Headlines before the first chapter are retained
-there as negative offsets and flagged outside the chapter. The editor marks converted files as
-unsaved; use **Save** or **Download** to persist the nested schema. The renderer normalizes in memory without
-rewriting the source file.
+The project's nested timing data uses schema 2. The renderer normalizes it in memory without rewriting the project.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Editor says "sample data" | Click **Open file…** and choose your `timings/*.json`, or **New** to start a blank one. |
+| Editor says "sample project" | Click **Open file…** and choose your project JSON, or **New** to start a blank one. |
+| Preview says "Missing media" | Use **Relink media…** in Videos & settings. Saved placements and trims are retained. |
+| Renderer reports missing media | Correct the saved media path relative to the project JSON, or move the source into that location. |
+| Clips overlap | Move a clip later or shorten its source range. Crossfades are not supported yet. |
 | Editor won't save to the file | Use Chrome or Edge. In other browsers use **Download** and replace the file in `timings/`. |
 | `start_editor.command` says port 8765 is in use | Close the earlier editor window, or run `kill $(lsof -ti tcp:8765)` and start it again. |
 | A video won't load in the preview | The browser can't play that format. Export an H.264 `.mp4`. |
@@ -313,7 +351,7 @@ rewriting the source file.
 | Headlines show at the wrong time | Headline times are relative to their chapter; chapter starts are relative to the start of the video. Check both, and use **Ripple** after cuts. |
 | `ffmpeg not found` | Run `pip install -r render/requirements.txt` inside your virtual environment (the renderer uses the ffmpeg that package bundles). |
 | Colours look different from the preview | Run `--selftest`; its `colour check` line shows the measured error (expect 4 or less). A larger number means a changed encoder setting. |
-| Rendered video is silent | Your input has no audio track, or a type ffmpeg can't read. Check with `ffmpeg -i my-edit.mp4`. |
+| Rendered video is silent | Gaps and clips without audio intentionally produce silence. Check each source with `ffmpeg -i source.mp4`. |
 | `Could not read a frame at ...s` | That time is past the end of the video. |
 | Logo is replaced by the word "SUSE" | In the editor, the logo could not load from suse.com. In the renderer, `assets/SUSE_Logo-hor_Green.png` is missing. |
 | Headline words touch or have big gaps | Nudge `TEXT_SCALE` (default `1.11`) in `render/layout.py` and `editor/src/timing.js`, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
@@ -342,6 +380,9 @@ The editor's `App.vue` owns document changes, undo, autosave, and playback. `Edi
 and `HeadlineEditor`/`HeadlineRow` handle the editing sections through props and emitted actions; the timeline dock, preview,
 video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too. Pure timing and
 JSON helpers live in `timing.js`.
+`project.js` validates the portable project envelope; `videos.js` manages browser-local media URLs.
+The renderer's `project.py` validates the same contract and plans frame-aligned segments; `assemble.py` normalizes
+and concatenates those segments before branding. Both runtimes test `tests/fixtures/project.json`.
 `TabGroup` renders named slots using reusable `TabPane` panels, with controlled selection, keyboard navigation
 and panels kept mounted between switches. Tab IDs must be unique on the page. `ProjectSettings` renders the metadata,
 headline settings and ripple forms, emitting actions back to `App.vue` rather than changing the document directly.

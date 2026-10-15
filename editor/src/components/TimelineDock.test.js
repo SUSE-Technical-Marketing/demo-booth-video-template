@@ -4,7 +4,8 @@ import TimelineDock from './TimelineDock.vue';
 import { DEFAULT, fromJSON } from '../timing.js';
 
 function mountDock(clips = []) {
-  const state = fromJSON(DEFAULT);
+  const state = { ...fromJSON(DEFAULT), output: { fps: '25/1' } };
+  clips = clips.map(clip => ({ source_in: 0, source_out: clip.dur, sourceDuration: clip.dur, ...clip }));
   return mount(TimelineDock, { props: {
     state, duration: 195, cur: 0, selectedId: state.headlines[0].id, playing: false, offset: 3600, clips,
   } });
@@ -49,6 +50,55 @@ describe('timeline dock', () => {
     expect(dock.get('#toggleVideos').attributes('disabled')).toBeDefined();
     expect(dock.get('#toggleVideos').attributes('aria-pressed')).toBe('false');
     expect(dock.get('#tl').element.style.getPropertyValue('--vt')).toBe('0px');
+    dock.unmount();
+  });
+  it('adds accessible trim handles and forwards source-aware keyboard edits without seeking', async () => {
+    const dock = mountDock([
+      { id: 1, name: 'Before.mp4', start: 0, dur: 8 },
+      { id: 2, name: 'Trimmed.mp4', start: 10, dur: 10, source_in: 5, source_out: 15, sourceDuration: 50 },
+      { id: 3, name: 'After.mp4', start: 25, dur: 10 },
+    ]);
+    const start = dock.get('[aria-label="Trim video start: Trimmed.mp4"]');
+    const end = dock.get('[aria-label="Trim video end: Trimmed.mp4"]');
+    expect(dock.findAll('.clip-handle')).toHaveLength(6);
+    expect(start.attributes('role')).toBe('slider');
+    expect(start.attributes('aria-valuemin')).toBe('8');
+    expect(start.attributes('aria-valuemax')).toBe('19.9');
+    expect(end.attributes('aria-valuemax')).toBe('25');
+    await start.trigger('keydown', { key: 'ArrowLeft', shiftKey: true });
+    await end.trigger('keydown', { key: 'ArrowRight' });
+    expect(dock.emitted('trim-clip')[0]).toEqual([expect.objectContaining({ id: 2 }), { start: 9, source_in: 4 }, 9]);
+    expect(dock.emitted('trim-clip')[1][1].source_out).toBeCloseTo(15.1);
+    expect(dock.emitted('begin-edit')).toHaveLength(2);
+    expect(dock.emitted('seek')).toBeUndefined();
+    await dock.get('#toggleVideos').trigger('click');
+    expect(dock.findAll('.clip-handle')).toHaveLength(0);
+    await dock.get('#toggleVideos').trigger('click');
+    dock.unmount();
+    localStorage.removeItem('timeline_show_videos');
+  });
+  it('limits trims to source bounds and keeps at least one frame for low output rates', async () => {
+    const dock = mountDock([{ id: 1, name: 'Short.mp4', start: 2, dur: 2, source_in: 0.5, source_out: 2.5, sourceDuration: 3 }]);
+    await dock.setProps({ state: { ...dock.props('state'), output: { fps: '1/1' } } });
+    const start = dock.get('.clip-handle.start'), end = dock.get('.clip-handle.end');
+    expect(start.attributes('aria-valuemin')).toBe('1.5');
+    expect(start.attributes('aria-valuemax')).toBe('3');
+    expect(end.attributes('aria-valuemin')).toBe('3');
+    expect(end.attributes('aria-valuemax')).toBe('4.5');
+    await start.trigger('keydown', { key: 'ArrowLeft', shiftKey: true });
+    await end.trigger('keydown', { key: 'ArrowRight', shiftKey: true });
+    expect(dock.emitted('trim-clip')[0][1]).toEqual({ start: 1.5, source_in: 0 });
+    expect(dock.emitted('trim-clip')[1][1]).toEqual({ source_out: 3 });
+    dock.unmount();
+  });
+  it('allows shortening missing media but not extending it past its known source out', async () => {
+    const dock = mountDock([{ id: 1, name: 'Missing.mp4', start: 2, dur: 10, source_in: 3, source_out: 13, sourceDuration: undefined }]);
+    const end = dock.get('.clip-handle.end');
+    expect(end.attributes('aria-valuemax')).toBe('12');
+    await end.trigger('keydown', { key: 'ArrowRight', shiftKey: true });
+    expect(dock.emitted('trim-clip')[0][1]).toEqual({ source_out: 13 });
+    await end.trigger('keydown', { key: 'ArrowLeft', shiftKey: true });
+    expect(dock.emitted('trim-clip')[1][1]).toEqual({ source_out: 12 });
     dock.unmount();
   });
   it('renders all chapter bands, selected headline cues and playback time', () => {

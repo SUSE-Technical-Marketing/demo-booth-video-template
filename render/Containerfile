@@ -1,6 +1,6 @@
 # Renders a booth video with nothing installed on the host.
 #   docker build -t booth-render -f render/Containerfile .
-#   render/run-container.sh my-edit.mp4 -t my-video.json -o my-video-final.mp4
+#   render/run-container.sh project.json -o my-video-final.mp4
 # Base: SUSE Linux Enterprise Base Container Image (BCI) with Python. Check
 # https://registry.suse.com/repositories/bci-python313 for the current tag and support dates.
 FROM registry.suse.com/bci/python:3.13
@@ -15,8 +15,7 @@ COPY render/ render/
 COPY assets/ assets/
 COPY timings/ timings/
 
-# Videos are mounted at /work (the current directory). timings/ is usually mounted over /app/timings so edits to
-# your timing files are picked up without a rebuild.
+# Projects and their relative source media are mounted by run-container.sh.
 WORKDIR /work
 ENTRYPOINT ["python3", "/app/render/render.py"]
 CMD ["--help"]

@@ -1,30 +1,102 @@
 {
-  "schema_version": 1,
-  "title": "SUSE portfolio overview (sample)",
-  "product_name": "SUSE portfolio",
-  "chapters": ["SUSE Rancher Prime", "SUSE Observability", "SUSE Virtualization", "SUSE Security", "SUSE Linux", "SUSE MLM"],
-  "chapter_starts": [
-    [0, 1],
-    [30, 2],
-    [60, 3],
-    [90, 4],
-    [120, 5],
-    [150, 6]
-  ],
-  "headlines": [
-    [0, "Manage any *Kubernetes*, anywhere"],
-    [15, "Open source with enterprise *control*"],
-    [30, "See your whole stack in *one* view"],
-    [45, "Isolate the root *cause* faster"],
-    [60, "Run *VMs* and containers together"],
-    [75, "Modernize without *rip and replace*"],
-    [90, "Zero trust for your *containers*"],
-    [105, "Scan and protect at *runtime*"],
-    [120, "Linux for *mission-critical* workloads"],
-    [135, "Apply fixes without a *reboot*"],
-    [150, "Manage mixed Linux from *one* console"],
-    [165, "Automate patching and *compliance*"]
-  ],
-  "headlines_end": null,
-  "wipe_seconds": 0.8
+  "project_version": 1,
+  "output": {
+    "fps": "25/1"
+  },
+  "media": [],
+  "clips": [],
+  "timing": {
+    "schema_version": 2,
+    "title": "SUSE portfolio overview (sample)",
+    "product_name": "SUSE portfolio",
+    "chapters": [
+      {
+        "title": "SUSE Rancher Prime",
+        "start": 0,
+        "headlines": [
+          [
+            0,
+            "Manage any *Kubernetes*, anywhere"
+          ],
+          [
+            15,
+            "Open source with enterprise *control*"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Observability",
+        "start": 30,
+        "headlines": [
+          [
+            0,
+            "See your whole stack in *one* view"
+          ],
+          [
+            15,
+            "Isolate the root *cause* faster"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Virtualization",
+        "start": 60,
+        "headlines": [
+          [
+            0,
+            "Run *VMs* and containers together"
+          ],
+          [
+            15,
+            "Modernize without *rip and replace*"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Security",
+        "start": 90,
+        "headlines": [
+          [
+            0,
+            "Zero trust for your *containers*"
+          ],
+          [
+            15,
+            "Scan and protect at *runtime*"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Linux",
+        "start": 120,
+        "headlines": [
+          [
+            0,
+            "Linux for *mission-critical* workloads"
+          ],
+          [
+            15,
+            "Apply fixes without a *reboot*"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE MLM",
+        "start": 150,
+        "headlines": [
+          [
+            0,
+            "Manage mixed Linux from *one* console"
+          ],
+          [
+            15,
+            "Automate patching and *compliance*"
+          ]
+        ]
+      }
+    ],
+    "headlines_end": null,
+    "chapters_end": null,
+    "wipe_seconds": 0.8
+  }
 }

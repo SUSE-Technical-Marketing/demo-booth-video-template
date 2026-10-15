@@ -220,12 +220,19 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
   padding: 9px 18px; border-radius: 10px; box-shadow: 0 6px 28px #0006; z-index: 40; opacity: 0; pointer-events: none; transition: opacity .15s; }
 .toast.show { opacity: 1; }
 
-.vclip { position: absolute; top: 3px; height: 20px; display: flex; align-items: center; gap: 6px; padding: 0 7px; overflow: hidden;
+.vclip { position: absolute; top: 3px; height: 20px; display: flex; align-items: center; gap: 6px; padding: 0 12px; overflow: hidden;
   border: 1px solid #ffffff55; border-radius: 4px; background: repeating-linear-gradient(135deg, #ffffff10 0 6px, transparent 6px 12px), var(--pine);
   font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--text); }
 .vclip::before { content: ''; flex: none; width: 9px; height: 9px; border-radius: 2px; background: var(--orange); }
 .vclip small { color: var(--muted); font-weight: 400; margin-left: auto; padding-left: 8px; }
 .vclip span { overflow: hidden; text-overflow: ellipsis; }
+.clip-handle { position: absolute; top: 1px; height: 24px; width: 10px; z-index: 5; cursor: ew-resize; touch-action: none; }
+.clip-handle.end { margin-left: -10px; }
+.clip-handle::after { content: ''; position: absolute; top: 4px; bottom: 4px; width: 4px; border-radius: 2px; background: var(--text); opacity: .75; }
+.clip-handle.start::after { left: 2px; }
+.clip-handle.end::after { right: 2px; }
+.clip-handle:hover::after, .clip-handle:focus-visible::after { background: var(--orange); opacity: 1; }
+.clip-handle:focus-visible { outline: 2px solid var(--text); border-radius: 4px; }
 .zoom + .zoom, .videos-toggle { margin-left: 4px; }
 .videos-toggle { display: inline-flex; align-items: center; gap: 6px; }
 .videos-toggle::before { content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--muted); }
@@ -237,9 +244,15 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .vrow input.time { grid-column: 1; grid-row: 3; }
 .vrow select { grid-column: 2; grid-row: 3; width: 100%; }
 .vrow button { grid-column: 3; grid-row: 3; }
+.vrow .clip-source { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.clip-source label { display: inline-flex; align-items: center; gap: 4px; }
+.vrow .clip-path { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.clip-path input { width: 100%; }
+.vrow .relink-media { grid-column: 1 / -1; grid-row: auto; justify-self: start; font-size: 12px; }
 .timeline-legend .video-key { height: 4px; background: var(--text); opacity: .55; }
 #content video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 #content .gap { font-size: 32px; }
+#content .gap { width: 100%; height: 100%; display: grid; place-items: center; padding: 30px; background: #000; color: #fff; }
 
 @media (max-width: 900px) {
   .workspace { grid-template-columns: minmax(0, 1fr); align-content: start; overflow: auto; gap: 14px; }

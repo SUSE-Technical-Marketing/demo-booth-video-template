@@ -1,190 +1,198 @@
 {
-  "schema_version": 2,
-  "title": "SUSE AI Factory demo",
-  "product_name": "SUSE AI Factory",
-  "chapters": [
-    {
-      "title": "Apps from SUSE & NVIDIA",
-      "start": 0,
-      "headlines": [
-        [
-          0,
-          "Tested, supported *applications* for AI"
-        ],
-        [
-          18,
-          "Rebuilt and scanned for *security*"
-        ],
-        [
-          33,
-          "Plus the NVIDIA *AI stack*"
-        ],
-        [
-          41,
-          "Secure AI *components* to build your apps"
-        ],
-        [
-          48,
-          "Install an app in a few *clicks*"
-        ],
-        [
-          53,
-          "Let's install *LiteLLM*"
-        ],
-        [
-          59,
-          "Deploy via *Fleet*, Git or Helm"
-        ],
-        [
-          83.9,
-          "Select destination *clusters*"
-        ],
-        [
-          94.6,
-          "*Customize* the deployment"
-        ],
-        [
-          113,
-          "Deploy to multiple clusters in *one step*"
+  "project_version": 1,
+  "output": {
+    "fps": "25/1"
+  },
+  "media": [],
+  "clips": [],
+  "timing": {
+    "schema_version": 2,
+    "title": "SUSE AI Factory demo",
+    "product_name": "SUSE AI Factory",
+    "chapters": [
+      {
+        "title": "Apps from SUSE & NVIDIA",
+        "start": 0,
+        "headlines": [
+          [
+            0,
+            "Tested, supported *applications* for AI"
+          ],
+          [
+            18,
+            "Rebuilt and scanned for *security*"
+          ],
+          [
+            33,
+            "Plus the NVIDIA *AI stack*"
+          ],
+          [
+            41,
+            "Secure AI *components* to build your apps"
+          ],
+          [
+            48,
+            "Install an app in a few *clicks*"
+          ],
+          [
+            53,
+            "Let's install *LiteLLM*"
+          ],
+          [
+            59,
+            "Deploy via *Fleet*, Git or Helm"
+          ],
+          [
+            83.9,
+            "Select destination *clusters*"
+          ],
+          [
+            94.6,
+            "*Customize* the deployment"
+          ],
+          [
+            113,
+            "Deploy to multiple clusters in *one step*"
+          ]
         ]
-      ]
-    },
-    {
-      "title": "Blueprints",
-      "start": 121,
-      "headlines": [
-        [
-          0,
-          "Apps are components, *blueprints* are stacks"
-        ],
-        [
-          12,
-          "Platform engineers build, teams *deploy*"
-        ],
-        [
-          37,
-          "Ready-to-deploy *AI stacks*"
-        ],
-        [
-          69,
-          "Edit an existing *blueprint*"
-        ],
-        [
-          82,
-          "Customize settings for your *environment*"
+      },
+      {
+        "title": "Blueprints",
+        "start": 121,
+        "headlines": [
+          [
+            0,
+            "Apps are components, *blueprints* are stacks"
+          ],
+          [
+            12,
+            "Platform engineers build, teams *deploy*"
+          ],
+          [
+            37,
+            "Ready-to-deploy *AI stacks*"
+          ],
+          [
+            69,
+            "Edit an existing *blueprint*"
+          ],
+          [
+            82,
+            "Customize settings for your *environment*"
+          ]
         ]
-      ]
-    },
-    {
-      "title": "Install Blueprints",
-      "start": 224,
-      "headlines": [
-        [
-          0,
-          "*Install* a blueprint in a few clicks"
-        ],
-        [
-          6,
-          "Select a name and *namespace*"
-        ],
-        [
-          11,
-          "Select your target *cluster*"
-        ],
-        [
-          17,
-          "*Review* and install"
+      },
+      {
+        "title": "Install Blueprints",
+        "start": 224,
+        "headlines": [
+          [
+            0,
+            "*Install* a blueprint in a few clicks"
+          ],
+          [
+            6,
+            "Select a name and *namespace*"
+          ],
+          [
+            11,
+            "Select your target *cluster*"
+          ],
+          [
+            17,
+            "*Review* and install"
+          ]
         ]
-      ]
-    },
-    {
-      "title": "Create Blueprints",
-      "start": 244,
-      "headlines": [
-        [
-          0,
-          "Create your own *blueprint*"
-        ],
-        [
-          16,
-          "Search and add *applications*"
-        ],
-        [
-          23,
-          "Add *LiteLLM* and an NVIDIA NIM LLM"
-        ],
-        [
-          34,
-          "*Customize* the install for your environment"
+      },
+      {
+        "title": "Create Blueprints",
+        "start": 244,
+        "headlines": [
+          [
+            0,
+            "Create your own *blueprint*"
+          ],
+          [
+            16,
+            "Search and add *applications*"
+          ],
+          [
+            23,
+            "Add *LiteLLM* and an NVIDIA NIM LLM"
+          ],
+          [
+            34,
+            "*Customize* the install for your environment"
+          ]
         ]
-      ]
-    },
-    {
-      "title": "Observing AI Applications",
-      "start": 301,
-      "headlines": [
-        [
-          0,
-          "See how your AI apps *connect*"
-        ],
-        [
-          21,
-          "Track *token usage*"
-        ],
-        [
-          34,
-          "Performance and *cost*, per application"
-        ],
-        [
-          51,
-          "Is your LLM engine *healthy*?"
-        ],
-        [
-          85,
-          "Latency and *time to first token*"
-        ],
-        [
-          90,
-          "*Token throughput*, prompt and generation"
-        ],
-        [
-          111,
-          "Cost for the *model*, not just the app"
-        ],
-        [
-          118,
-          "GPU *power* and usage"
-        ],
-        [
-          124,
-          "Tokens to *heat*: see the link"
+      },
+      {
+        "title": "Observing AI Applications",
+        "start": 301,
+        "headlines": [
+          [
+            0,
+            "See how your AI apps *connect*"
+          ],
+          [
+            21,
+            "Track *token usage*"
+          ],
+          [
+            34,
+            "Performance and *cost*, per application"
+          ],
+          [
+            51,
+            "Is your LLM engine *healthy*?"
+          ],
+          [
+            85,
+            "Latency and *time to first token*"
+          ],
+          [
+            90,
+            "*Token throughput*, prompt and generation"
+          ],
+          [
+            111,
+            "Cost for the *model*, not just the app"
+          ],
+          [
+            118,
+            "GPU *power* and usage"
+          ],
+          [
+            124,
+            "Tokens to *heat*: see the link"
+          ]
         ]
-      ]
-    },
-    {
-      "title": "Viewing Application Traces",
-      "start": 435,
-      "headlines": [
-        [
-          0,
-          "Full *traces*, deep inside the app"
-        ],
-        [
-          28,
-          "Follow a question through the *HR assistant*"
-        ],
-        [
-          35,
-          "Every step, *timed*"
-        ],
-        [
-          56,
-          "Get *notified* when something slows down"
+      },
+      {
+        "title": "Viewing Application Traces",
+        "start": 435,
+        "headlines": [
+          [
+            0,
+            "Full *traces*, deep inside the app"
+          ],
+          [
+            28,
+            "Follow a question through the *HR assistant*"
+          ],
+          [
+            35,
+            "Every step, *timed*"
+          ],
+          [
+            56,
+            "Get *notified* when something slows down"
+          ]
         ]
-      ]
-    }
-  ],
-  "headlines_end": null,
-  "chapters_end": null,
-  "wipe_seconds": 0.8
+      }
+    ],
+    "headlines_end": null,
+    "chapters_end": null,
+    "wipe_seconds": 0.8
+  }
 }

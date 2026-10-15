@@ -9,11 +9,12 @@ import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { activeChapter, chapterImportNotice, DEFAULT, duration, fitPx, fmt, fromJSON, headlineChapter, headlineEnd,
+import { createProject, fromProject, mediaPathValid, projectFPS, toProjectJSON, validateProject } from './project.js';
+import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
   headlineOutside, headlineTime, newRow, parseClock,
-  parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE, toJSON } from './timing.js';
+  parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE } from './timing.js';
 
-const state = ref(fromJSON(DEFAULT));
+const state = ref(createProject(DEFAULT));
 const handle = shallowRef(null), reconnectHandle = shallowRef(null);
 const dirty = ref(false), saving = ref(false), autosave = ref(true);
 const cur = ref(0), selectedId = ref(null), playing = ref(false);
@@ -37,18 +38,23 @@ watch([followPlayhead, playingChapter], ([follow, chapter]) => {
 const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
 const fileInput = ref(null), chapterEditor = ref(null);
-const clips = ref([]);
+const mediaFiles = shallowRef(new Map());
+const clips = computed(() => state.value.clips.map(clip => {
+  const media = state.value.media.find(m => m.id === clip.media_id), file = mediaFiles.value.get(clip.media_id);
+  return { ...clip, name: media.path.split('/').at(-1), path: media.path,
+    url: file?.url, sourceDuration: file?.dur, dur: clip.source_out - clip.source_in };
+}));
 const history = [];
-let timer, saveTimer, toastTimer, lastTimestamp = 0, revision = 0, mounted = false;
+let timer, saveTimer, toastTimer, lastTimestamp = 0, revision = 0, mounted = false, documentGeneration = 0;
 const context = document.createElement('canvas').getContext('2d');
 const totalDuration = computed(() => clips.value.length ? Math.max(...clips.value.map(clipEnd)) : duration(state.value));
 watch(totalDuration, end => {
-  if (!clips.value.length && state.value.chapters_end != null && cur.value > end) seek(end);
+  if (cur.value > end) seek(end);
 });
 const previewState = computed(() => ({ ...state.value, preview_end: totalDuration.value }));
 const status = computed(() => dirty.value
   ? (handle.value ? 'unsaved changes…' : 'unsaved (not linked to a file)')
-  : (handle.value ? `saved to ${handle.value.name}` : 'sample data: click Open file… and pick a timings/*.json'));
+  : (handle.value ? `saved to ${handle.value.name}` : 'sample project: open a project JSON or add videos'));
 function measure(text, px) {
   fontsVersion.value;
   context.font = `500 ${px}px SUSE, system-ui, sans-serif`;
@@ -69,36 +75,99 @@ const shortCount = computed(() => state.value.headlines.filter(h => !headlineOut
 
 async function addVideos(files) {
   stop();
+  const generation = documentGeneration;
   let added = 0;
-  for (const file of files) {          // one at a time so they land in the order picked
+  for (const file of files) {
     try {
-      const start = clips.value.length ? Math.max(...clips.value.map(clipEnd)) : 0;
-      clips.value.push(await loadClip(file, start));
+      const path = file.webkitRelativePath || file.name;
+      if (!mediaPathValid(path)) throw new Error('Video filename must be a relative path using forward slashes');
+      const loaded = await loadClip(file, 0);
+      if (generation !== documentGeneration) {
+        releaseClip(loaded);
+        return toast('Project changed; stopped adding videos');
+      }
+      if (!added) pushHistory();
+      const mediaId = crypto.randomUUID(), clipId = crypto.randomUUID();
+      state.value.media.push({ id: mediaId, path });
+      state.value.clips.push({ id: clipId, media_id: mediaId,
+        start: clips.value.length ? Math.max(...clips.value.map(clipEnd)) : 0, source_in: 0, source_out: loaded.dur });
+      mediaFiles.value = new Map(mediaFiles.value).set(mediaId, loaded);
+      markDirty();
       added++;
     } catch (error) { toast(error.message); }
   }
   if (added) toast(`Added ${added} ${added > 1 ? 'videos' : 'video'}`);
 }
 function updateClipStart(clip, time) {
-  clip.start = Math.max(0, time);
-  clips.value.sort((a, b) => a.start - b.start);
+  updateClip(clip, { start: time });
+}
+function updateClip(clip, patch, recordHistory = true) {
+  const next = state.value.clips.map(c => c.id === clip.id ? { ...c, ...patch } : c);
+  try {
+    const changed = next.find(c => c.id === clip.id), source = mediaFiles.value.get(clip.media_id);
+    if (source && changed.source_out > source.dur + 1e-6) throw new Error('Source out exceeds the video duration');
+    validateProject({ project_version: 1, ...state.value, clips: next, timing: { schema_version: 2 } });
+  } catch (error) { return toast(error.message); }
+  if (recordHistory) pushHistory();
+  state.value.clips = next.sort((a, b) => a.start - b.start);
+  markDirty();
+  return true;
+}
+function trimClip(clip, patch, time) {
+  if (!updateClip(clip, patch, false)) return;
+  editorTab.value = 'settings';
+  seek(time);
+}
+function updateMediaPath(clip, path) {
+  if (!mediaPathValid(path)) return toast('Use a relative media path with forward slashes');
+  pushHistory();
+  state.value.media.find(m => m.id === clip.media_id).path = path;
+  markDirty();
+}
+async function relinkMedia(clip, file) {
+  const generation = documentGeneration;
+  try {
+    const loaded = await loadClip(file, 0);
+    if (generation !== documentGeneration) {
+      releaseClip(loaded);
+      return toast('Project changed; media was not linked');
+    }
+    if (state.value.clips.some(c => c.media_id === clip.media_id && c.source_out > loaded.dur + 1e-6)) {
+      releaseClip(loaded);
+      return toast('Selected video is shorter than the saved source out point');
+    }
+    const previous = mediaFiles.value.get(clip.media_id);
+    if (previous) releaseClip(previous);
+    mediaFiles.value = new Map(mediaFiles.value).set(clip.media_id, loaded);
+    toast('Linked ' + file.name);
+  } catch (error) { toast(error.message); }
+}
+function updateFPS(value) {
+  try {
+    projectFPS(value);
+    validateProject({ project_version: 1, ...state.value, output: { fps: value }, timing: { schema_version: 2 } });
+  }
+  catch (error) { return toast(error.message); }
+  pushHistory();
+  state.value.output.fps = value;
+  markDirty();
 }
 function removeClip(clip) {
-  releaseClip(clip);
-  clips.value.splice(clips.value.indexOf(clip), 1);
+  pushHistory();
+  state.value.clips = state.value.clips.filter(c => c.id !== clip.id);
+  markDirty();
 }
 function clearClips() {
-  clips.value.forEach(releaseClip);
-  clips.value = [];
+  mediaFiles.value.forEach(releaseClip);
+  mediaFiles.value = new Map();
 }
 async function newVideo() {
   if (dirty.value && !window.confirm('You have unsaved changes. Start a new video anyway?')) return;
-  loadState(fromJSON({
+  loadState(createProject({
     title: 'New video', product_name: '', chapters: ['Chapter 1'], chapter_starts: [[0, 1]],
     headlines: [[0, 'Your first *headline*']], headlines_end: null, wipe_seconds: 0.8,
   }), null);
   editorTab.value = 'chapters';
-  clearClips();
   setCur(0);
   try { await rememberHandle(null); }          // a reload should not reopen the file we just left
   catch (error) { report('Could not forget the previous file', error); }
@@ -367,6 +436,8 @@ function loadState(next, fileHandle, notice = '') {
   clearTimeout(saveTimer);
   stop();
   pushHistory();
+  documentGeneration++;
+  clearClips();
   state.value = next;
   handle.value = fileHandle;
   reconnectHandle.value = null;
@@ -378,7 +449,7 @@ function loadState(next, fileHandle, notice = '') {
 }
 function readTiming(text) {
   const source = JSON.parse(text);
-  return { next: fromJSON(source), notice: chapterImportNotice(source) };
+  return { next: fromProject(source), notice: '' };
 }
 async function loadFromHandle(fileHandle) {
   const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
@@ -406,14 +477,12 @@ async function importFile(event) {
   finally { event.target.value = ''; }
 }
 function checkedJSON() {
-  const text = toJSON(state.value);
-  fromJSON(JSON.parse(text));
-  return text;
+  return toProjectJSON(state.value);
 }
 function download() {
   try {
     downloadJSON(checkedJSON());
-    toast('Downloaded headline_timing.json');
+    toast('Downloaded project.json');
   } catch (error) { report('Download failed', error); }
 }
 // Save writes to the linked file, asking for one the first time. Save As always asks, then links to the new file
@@ -427,7 +496,7 @@ async function save(saveAs = false) {
     let target = handle.value;
     if (!target || saveAs === true) {
       if (!window.showSaveFilePicker) return download();
-      target = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: handle.value?.name ?? 'headline_timing.json' });
+      target = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: handle.value?.name ?? 'project.json' });
     }
     const writable = await target.createWritable();
     await writable.write(text);
@@ -474,7 +543,7 @@ async function refreshFile() {
     if (await fileHandle.queryPermission({ mode: 'read' }) !== 'granted') return;
     const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
     if (mounted && !dirty.value && revision === initialRevision && handle.value === fileHandle &&
-        (notice || toJSON(next) !== toJSON(state.value))) {
+        (notice || toProjectJSON(next) !== toProjectJSON(state.value))) {
       loadState(next, fileHandle, notice);
       toast('Updated from file', notice);
     }
@@ -516,6 +585,8 @@ onMounted(() => {
 });
 onUnmounted(() => {
   mounted = false;
+  documentGeneration++;
+  clearClips();
   stop();
   clearTimeout(saveTimer);
   clearTimeout(toastTimer);
@@ -529,7 +600,7 @@ onUnmounted(() => {
   <header class="top">
     <h1>Timing editor</h1>
     <button id="btnNew" title="Start a blank timing file and clear the loaded videos" @click="newVideo">New</button>
-    <button id="btnOpen" title="Open a timing JSON file" @click="openFile">Open file…</button>
+    <button id="btnOpen" title="Open a project JSON file" @click="openFile">Open file…</button>
     <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="importFile">
     <button v-if="reconnectHandle" id="btnReconnect" class="primary" @click="reconnect">Reconnect {{ reconnectHandle.name }}</button>
     <button id="btnSave" class="primary" title="Cmd/Ctrl+S" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
@@ -565,9 +636,11 @@ onUnmounted(() => {
           <template #settings>
             <div class="project-settings">
               <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+                @update-clip="updateClip" @update-path="updateMediaPath" @relink="relinkMedia"
                 @remove="removeClip" @error="toast" />
               <ProjectSettings :title="state.title" :product-name="state.product_name"
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
+                :fps="state.output.fps" @update-fps="updateFPS"
                 v-model:ripple-by="rippleBy" @begin-edit="beginEdit" @update-metadata="updateMetadata"
                 @change-end="updateEnd" @change-wipe="updateWipe" @ripple="ripple" />
             </div>
@@ -597,6 +670,7 @@ onUnmounted(() => {
   <TimelineDock :state="state" :duration="totalDuration" :cur="cur" :selected-id="selectedId" :playing="playing"
     :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
     @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
-    @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter" />
+    @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter"
+    @trim-clip="trimClip" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
 </template>

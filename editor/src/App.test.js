@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
 import Preview from './components/Preview.vue';
 import TimeInput from './components/TimeInput.vue';
-import { DEFAULT, fromJSON, toJSON } from './timing.js';
+import { DEFAULT, fromJSON } from './timing.js';
+import { createProject, toProjectJSON } from './project.js';
 import { downloadJSON, rememberHandle, rememberedHandle } from './fileAccess.js';
 
 vi.mock('./fileAccess.js', () => ({
@@ -15,6 +16,8 @@ vi.mock('./fileAccess.js', () => ({
 }));
 
 let wrapper;
+const toJSON = state => toProjectJSON({ output: { fps: '25/1' }, media: [], clips: [], ...state });
+const projectDocument = timing => JSON.parse(toJSON(fromJSON(timing)));
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
@@ -43,6 +46,7 @@ async function chooseChapter(index) {
   return wrapper.get('.chapter-inspector');
 }
 async function openLinkedFile(data = JSON.parse(toJSON(fromJSON(DEFAULT)))) {
+  if (!data.project_version && data.chapters?.length) data = projectDocument(data);
   const writable = { write: vi.fn().mockResolvedValue(), close: vi.fn().mockResolvedValue() };
   const fileHandle = {
     name: 'linked.json', getFile: vi.fn().mockResolvedValue({ text: async () => JSON.stringify(data) }),
@@ -159,7 +163,7 @@ describe('Vue editor', () => {
     expect(wrapper.findAll('#chapters .chapter-title').map(input => input.element.value)).toEqual(orderedTitles);
     expect(wrapper.get('.pill.on').text()).toBe(DEFAULT.chapters[2]);
     await wrapper.get('#btnDownload').trigger('click');
-    const saved = JSON.parse(downloadJSON.mock.calls[0][0]);
+    const saved = JSON.parse(downloadJSON.mock.calls[0][0]).timing;
     expect(saved.chapters.map(c => c.title)).toEqual(orderedTitles);
     expect(saved.chapters.slice(0, 3).map(c => c.start)).toEqual([0, 10, 30]);
     await wrapper.get('#btnUndo').trigger('click');
@@ -176,24 +180,23 @@ describe('Vue editor', () => {
     expect(wrapper.findAll('#stage .pill')[1].text()).toBe('Inserted chapter');
     expect(wrapper.get('#chapters input[data-chapter="2"]').element.value).toBe('Inserted chapter');
   });
-  it('migrates legacy chapter reuse and keeps the resulting chapters independent', async () => {
+  it('keeps independent chapters with repeated titles independent', async () => {
     const { writable } = await openLinkedFile({
       ...DEFAULT, chapters: ['Intro', 'Details', 'Wrap up'],
       chapter_starts: [[0, 1], [10, 2], [20, 3], [30, 2]],
     });
     expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Details', 'Wrap up', 'Details']);
-    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
-    expect(wrapper.get('#status').text()).toContain('unsaved');
+    expect(wrapper.get('#status').text()).toBe('saved to linked.json');
     expect(writable.write).not.toHaveBeenCalled();
     await editTitle(2, 'Renamed details');
     expect(wrapper.findAll('#stage .pill').at(-1).text()).toBe('Details');
     await wrapper.findAll('#chapters .crow')[1].get('button[title="Delete chapter"]').trigger('click');
     expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Wrap up', 'Details']);
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters.map(c => c.start)).toEqual([0, 20, 30]);
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).timing.chapters.map(c => c.start)).toEqual([0, 20, 30]);
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters.map(c => c.start)).toEqual([0, 20, 30]);
+    expect(JSON.parse(writable.write.mock.calls[0][0]).timing.chapters.map(c => c.start)).toEqual([0, 20, 30]);
     expect(wrapper.get('#status').text()).toBe('saved to linked.json');
   });
   it('offers only direct chapter editing, with no switch or reuse controls', () => {
@@ -267,13 +270,13 @@ describe('Vue editor', () => {
     await editTitle(1, 'Renamed');
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters[0].title).toBe('Renamed');
+    expect(JSON.parse(writable.write.mock.calls[0][0]).timing.chapters[0].title).toBe('Renamed');
     expect(wrapper.get('#status').text()).toBe('saved to linked.json');
     vi.useFakeTimers();
     await editTitle(1, 'Autosaved');
     await vi.advanceTimersByTimeAsync(700);
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).chapters[0].title).toBe('Autosaved');
+    expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).timing.chapters[0].title).toBe('Autosaved');
   });
   it('preserves edits made during an asynchronous save', async () => {
     const { writable } = await openLinkedFile();
@@ -294,7 +297,7 @@ describe('Vue editor', () => {
     await editTitle(1, 'New file title');
     await wrapper.get('#btnSave').trigger('click');
     await flushPromises();
-    expect(JSON.parse(writable.write.mock.calls[0][0]).chapters[0].title).toBe('New file title');
+    expect(JSON.parse(writable.write.mock.calls[0][0]).timing.chapters[0].title).toBe('New file title');
     expect(rememberHandle).toHaveBeenCalledWith(fileHandle);
     expect(wrapper.get('#status').text()).toBe('saved to new.json');
   });
@@ -357,7 +360,8 @@ describe('Vue editor', () => {
     await flushPromises();
     expect(wrapper.findAll('#stage .pill')[0].text()).toBe('New local edits');
   });
-  it('converts reused chapters when restoring a remembered file', async () => {
+  it('rejects timing-only files when restoring a remembered file', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     wrapper.unmount();
     rememberedHandle.mockResolvedValue({
       name: 'legacy.json', queryPermission: vi.fn().mockResolvedValue('granted'),
@@ -367,9 +371,8 @@ describe('Vue editor', () => {
     });
     wrapper = mount(App, { attachTo: document.body });
     await flushPromises();
-    expect(wrapper.findAll('#stage .pill').map(pill => pill.text())).toEqual(['Intro', 'Details', 'Intro']);
-    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
-    expect(wrapper.get('#status').text()).toContain('unsaved');
+    expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
+    expect(wrapper.get('#toast').text()).toContain('Expected a version 1 project');
   });
   it('shows failed saves rather than claiming success', async () => {
     const { fileHandle } = await openLinkedFile();
@@ -384,7 +387,7 @@ describe('Vue editor', () => {
   it('refreshes a linked file on focus without overwriting dirty edits', async () => {
     const { fileHandle } = await openLinkedFile();
     const changed = { ...DEFAULT, chapters: ['Changed externally', ...DEFAULT.chapters.slice(1)] };
-    fileHandle.getFile.mockResolvedValue({ text: async () => JSON.stringify(changed) });
+    fileHandle.getFile.mockResolvedValue({ text: async () => JSON.stringify(projectDocument(changed)) });
     window.dispatchEvent(new Event('focus'));
     await flushPromises();
     expect(wrapper.findAll('#stage .pill')[0].text()).toBe('Changed externally');
@@ -393,20 +396,21 @@ describe('Vue editor', () => {
     await flushPromises();
     expect(wrapper.findAll('#stage .pill')[0].text()).toBe('Local unsaved edit');
   });
-  it('notices legacy reuse on refresh even when the converted contents are unchanged', async () => {
+  it('rejects timing-only files on refresh without replacing the project', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const legacy = { ...DEFAULT, chapters: ['Intro', 'Details'], chapter_starts: [[0, 1], [10, 2], [20, 1]] };
     const { fileHandle, writable } = await openLinkedFile(JSON.parse(toJSON(fromJSON(legacy))));
     fileHandle.getFile.mockResolvedValue({ text: async () => JSON.stringify(legacy) });
     window.dispatchEvent(new Event('focus'));
     await flushPromises();
-    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
-    expect(wrapper.get('#status').text()).toContain('unsaved');
+    expect(wrapper.get('#toast').text()).toContain('Expected a version 1 project');
+    expect(wrapper.get('#status').text()).toBe('saved to linked.json');
     expect(writable.write).not.toHaveBeenCalled();
   });
   it('downloads the renderer-compatible JSON schema', async () => {
     await editTitle(1, 'Download me');
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0])).toMatchObject({
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).timing).toMatchObject({
       schema_version: 2, chapters: [{ title: 'Download me', start: 0 }, ...DEFAULT.chapters.slice(1).map(title => ({ title }))],
     });
   });
@@ -418,15 +422,14 @@ describe('Vue editor', () => {
   });
   it('supports browser import fallback', async () => {
     const input = wrapper.get('input[type="file"]');
-    const file = { text: async () => JSON.stringify({
+    const file = { text: async () => JSON.stringify(projectDocument({
       ...DEFAULT, title: 'Fallback file', chapters: ['Intro', 'Details'], chapter_starts: [[0, 1], [10, 2], [20, 1]],
-    }), name: 'fallback.json' };
+    })), name: 'fallback.json' };
     Object.defineProperty(input.element, 'files', { value: [file], configurable: true });
     await input.trigger('change');
     await flushPromises();
     expect(wrapper.get('#titleIn').element.value).toBe('Fallback file');
     expect(wrapper.get('#toast').text()).toContain('use Download');
-    expect(wrapper.get('#toast').text()).toContain('Converted repeated chapter switches');
     expect(wrapper.findAll('#chapters .chapter-title').map(title => title.element.value)).toEqual(['Intro', 'Details', 'Intro']);
   });
 
@@ -452,7 +455,7 @@ describe('Vue editor', () => {
     expect(wrapper.get('#hl').text()).toBe('');
     expect(wrapper.findAll('#tl .band').at(-1).attributes('title')).toBe('0:20 – 0:25');
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters_end).toBe(25);
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).timing.chapters_end).toBe(25);
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.get('#chapterEndAt').element.value).toBe('');
     expect(wrapper.get('#durChip').text()).toBe('to 1:30');
@@ -516,7 +519,7 @@ describe('Vue editor', () => {
     await wrapper.get('#scrub').setValue('9');
     expect(wrapper.get('#hl').text()).toBe('Delayed');
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters[1]).toEqual({
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).timing.chapters[1]).toEqual({
       title: 'Later', start: 5, headlines: [[3, 'Delayed']],
     });
     await wrapper.get('#btnUndo').trigger('click');
@@ -535,7 +538,7 @@ describe('Vue editor', () => {
     await wrapper.get('#scrub').setValue('8');
     expect(wrapper.get('#hl').text()).toBe('');
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters[0].headlines).toEqual(ownedDocument.chapters[0].headlines);
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).timing.chapters[0].headlines).toEqual(ownedDocument.chapters[0].headlines);
   });
   it('adds, edits and sets headline times relative to the chosen chapter', async () => {
     await openLinkedFile(ownedDocument);
@@ -553,7 +556,7 @@ describe('Vue editor', () => {
     await group.get('button[title="Set time to the playhead"]').trigger('click');
     expect(group.get('.headline-list .time').element.value).toBe('0:02');
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls[0][0]).chapters[1].headlines).toEqual([[2, 'Owned by empty']]);
+    expect(JSON.parse(downloadJSON.mock.calls[0][0]).timing.chapters[1].headlines).toEqual([[2, 'Owned by empty']]);
   });
   it('selects the owning chapter when jumping to its next headline', async () => {
     await openLinkedFile(ownedDocument);
@@ -589,7 +592,7 @@ describe('Vue editor', () => {
     await wrapper.get('#rippleBy').setValue('2');
     await wrapper.get('#btnRipple').trigger('click');
     await wrapper.get('#btnDownload').trigger('click');
-    const saved = JSON.parse(downloadJSON.mock.calls[0][0]);
+    const saved = JSON.parse(downloadJSON.mock.calls[0][0]).timing;
     expect(saved.chapters[0].headlines).toEqual([[0, 'First'], [10, 'Last'], [14, 'Outside']]);
     expect(saved.chapters[1].start).toBe(12);
     expect(saved.chapters[2]).toEqual({ title: 'Later', start: 22, headlines: [[3, 'Delayed']] });

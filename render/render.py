@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Render a booth demo video from the command line.
 
-    python render/render.py my-recording.mp4 -t my-video.json -o my-video-final.mp4
+    python render/render.py project.json -o my-video-final.mp4
 
-Takes a finished edit (any video file), puts it in the content slot, and draws the chapter panel and timed
-headlines from the timings/*.json file the timing editor writes.
+Assembles the project's source clips with hard cuts, then draws the chapter panel and timed headlines.
 
-    python render/render.py my-recording.mp4 -t my-video.json --frame 75 --png check.png    # one frame, no encode
+    python render/render.py project.json --frame 75 --png check.png
     python render/render.py --selftest                                                      # quick end-to-end test
 
 Needs only `pip install -r render/requirements.txt` (Pillow and a bundled static ffmpeg). A system ffmpeg is used
@@ -14,6 +13,8 @@ instead if the FFMPEG environment variable points at one, or if `ffmpeg` is on y
 """
 import argparse
 import json
+import copy
+import math
 import os
 import re
 import shutil
@@ -29,6 +30,8 @@ from PIL import Image  # noqa: E402
 import layout as L  # noqa: E402
 import layers  # noqa: E402
 from timing import normalize_chapters  # noqa: E402
+from project import load_project, project_fps  # noqa: E402
+from assemble import assemble_project  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -135,11 +138,12 @@ def render_video(args, ffmpeg, lay):
     w, h, src_fps, src_dur, tagged = probe(ffmpeg, args.input)
     matrix = source_matrix(w, h, tagged)
     fps = args.fps or src_fps
+    rate = getattr(args, "rate", str(fps))
     start = args.start or 0.0
     dur = args.duration if args.duration else (src_dur - start if src_dur else None)
     cw, ch = L.CONTENT["w"], L.CONTENT["h"]
     nbytes = cw * ch * 3
-    total_frames = int(dur * fps) if dur else None
+    total_frames = math.ceil(dur * fps - 1e-7) if dur else None
     print("Input %dx%d @ %.3g fps, %s (colour: %s)  ->  %dx%d @ %.3g fps" % (w, h, src_fps,
           ("%.1fs" % dur) if dur else "unknown length", matrix if matrix != "auto" else "as tagged",
           L.W, L.H, fps))
@@ -147,21 +151,21 @@ def render_video(args, ffmpeg, lay):
     meta = chapter_metadata(lay, start, dur) if dur else None
     meta_args = []
     if meta:
-        meta_file = Path(tempfile.mkdtemp(prefix="booth-chapters-")) / "chapters.txt"
+        meta_file = Path(args.input).parent / "chapters.ffmetadata"
         meta_file.write_text(meta, encoding="utf-8")
         meta_args = ["-f", "ffmetadata", "-i", str(meta_file), "-map_chapters", "2"]
 
     dec_err, enc_err = tempfile.TemporaryFile(), tempfile.TemporaryFile()   # files, not pipes: can never fill up and block
-    seek = ["-ss", "%.3f" % start] if start else []
-    lim = ["-t", "%.3f" % dur] if args.duration else []
+    seek = ["-ss", "%.9f" % start] if start else []
+    lim = ["-t", "%.9f" % dur] if args.duration else []
     dec = subprocess.Popen([ffmpeg, "-v", "error"] + seek + ["-i", str(args.input)] + lim +
-                           ["-vf", slot_filter(fps, matrix), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                           ["-vf", slot_filter(rate, matrix), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                            stdout=subprocess.PIPE, stderr=dec_err)
     vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", args.preset]
     if args.fast:
         vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
     enc = subprocess.Popen([ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-                            "-s", "%dx%d" % (L.W, L.H), "-r", str(fps), "-i", "-"] + seek + lim +
+                            "-s", "%dx%d" % (L.W, L.H), "-r", rate, "-i", "-"] + seek + lim +
                            ["-i", str(args.input)] + meta_args + ["-map", "0:v", "-map", "1:a?"] + vcodec +
                            # RGB -> video colours with the HD matrix, and say so in the file, so players show the
                            # exact brand colours (ffmpeg's default would be BT.601 and shift SUSE green)
@@ -169,13 +173,13 @@ def render_video(args, ffmpeg, lay):
                                    "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
                             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
                             "-color_range", "tv",
-                            "-c:a", "aac", "-b:a", "192k", "-shortest",
+                            "-c:a", "aac", "-b:a", "192k",
                             "-movflags", "+faststart", str(args.output)],
                            stdin=subprocess.PIPE, stderr=enc_err)
     t0 = time.time()
     i = 0
     try:
-        while True:
+        while total_frames is None or i < total_frames:
             buf = dec.stdout.read(nbytes)
             while buf and len(buf) < nbytes:
                 more = dec.stdout.read(nbytes - len(buf))
@@ -213,11 +217,12 @@ def render_video(args, ffmpeg, lay):
         dec.kill()
         dec.wait()
     print()
-    if enc.returncode != 0 or i == 0:
+    if enc.returncode != 0 or i == 0 or (total_frames is not None and i != total_frames):
         def tail(f):
             f.seek(0)
             return f.read().decode(errors="replace")[-600:]
-        sys.exit("Encoding failed.\nencoder: %s\ndecoder: %s" % (tail(enc_err), tail(dec_err)))
+        sys.exit("Encoding failed (%s of %s frames).\nencoder: %s\ndecoder: %s" % (
+            i, total_frames, tail(enc_err), tail(dec_err)))
     print("Wrote %s  (%d frames, %.0fs)" % (args.output, i, time.time() - t0))
 
 
@@ -231,14 +236,18 @@ def selftest(args, ffmpeg):
                     "-c:a", "aac", "-shortest", str(clip)], check=True)
     timing = tmp / "t.json"
     timing.write_text(json.dumps({
-        "chapters": ["Intro", "Details", "Wrap up"], "product_name": "Self test",
-        "chapter_starts": [[0, 1], [2, 2], [4, 3]],
-        "headlines": [[0, "First *headline*"], [2, "Second one with *two words*"], [4, "Last *one*"]],
-        "headlines_end": None, "wipe_seconds": 0.5}))
-    ns = argparse.Namespace(input=str(clip), output=str(out), fps=None, start=None, duration=None,
+        "project_version": 1, "output": {"fps": "25/1"},
+        "media": [{"id": "source", "path": "in.mp4"}],
+        "clips": [{"id": "clip", "media_id": "source", "start": 0, "source_in": 0, "source_out": 6}],
+        "timing": {"schema_version": 2, "product_name": "Self test",
+                   "chapters": [{"title": title, "start": start, "headlines": [[0, text]]} for title, start, text in
+                                [("Intro", 0, "First *headline*"), ("Details", 2, "Second one with *two words*"),
+                                 ("Wrap up", 4, "Last *one*")]], "wipe_seconds": 0.5}}))
+    ns = argparse.Namespace(project=str(timing), output=str(out), frame=None, png=None, start=None, duration=None,
                             crf=23, preset="veryfast", fast=False)
-    lay = layers.Layout(load_timing(str(timing)))
-    render_video(ns, ffmpeg, lay)
+    render_project(ns, ffmpeg)
+    project, _ = load_project(timing)
+    lay = layers.Layout(project["timing"])
     _, _, fps, dur, _ = probe(ffmpeg, out)
     lay.frame(3.0, grab_frame(ffmpeg, clip, 3.0, 25, "bt709")).save(png)
     # brand colours must survive the trip into the MP4: decode a frame the way a player does (HD = BT.709)
@@ -263,16 +272,50 @@ def selftest(args, ffmpeg):
 
 
 # ---------------------------------------------------------------------------------------------- main
+def render_project(args, ffmpeg):
+    project, path = load_project(args.project)
+    timing = copy.deepcopy(project["timing"])
+    notice = normalize_chapters(timing)
+    if notice:
+        print("Project timing: " + notice, file=sys.stderr)
+    lay = layers.Layout(timing)
+    for key in ("start", "duration", "frame"):
+        value = getattr(args, key, None)
+        if value is not None and (not math.isfinite(value) or value < 0 or (key == "duration" and value == 0)):
+            raise ValueError("%s must be a finite %s time" % (key, "positive" if key == "duration" else "non-negative"))
+    output = Path(args.png or "frame.png") if args.frame is not None else Path(args.output or path.with_name(path.stem + "-branded.mp4"))
+    if output.resolve() == path or any(output.resolve() == (path.parent / m["path"]).resolve() for m in project["media"]):
+        raise ValueError("Output must not overwrite the project or source media")
+    if args.frame is not None and not project["clips"]:
+        lay.frame(args.frame).save(output)
+        return
+    with tempfile.TemporaryDirectory(prefix="booth-assembly-") as directory:
+        master, duration = assemble_project(project, path, directory, ffmpeg, probe, slot_filter, source_matrix)
+        args.input = master
+        args.fps = float(project_fps(project["output"]["fps"]))
+        args.rate = project["output"]["fps"]
+        if args.frame is not None:
+            if args.frame >= duration:
+                raise ValueError("Preview frame is past the project end")
+            lay.frame(args.frame, grab_frame(ffmpeg, master, args.frame, args.fps)).save(output)
+            print("Wrote", output)
+            return
+        start = args.start or 0
+        if start >= duration or (args.duration is not None and start + args.duration > duration + 1e-6):
+            raise ValueError("Requested render range is outside the project")
+        args.duration = args.duration if args.duration is not None else duration - start
+        args.output = str(output)
+        render_video(args, ffmpeg, lay)
+
+
 def main():
-    ap = argparse.ArgumentParser(description="Add the chapter panel and timed headlines to a video.")
-    ap.add_argument("input", nargs="?", help="finished video to put in the content slot")
-    ap.add_argument("-t", "--timing", default="example.json", help="timings/<name>.json, or a path (default example.json)")
-    ap.add_argument("-o", "--output", help="output .mp4 (default: <input>-branded.mp4)")
+    ap = argparse.ArgumentParser(description="Render a video project with hard cuts, audio, chapters and headlines.")
+    ap.add_argument("project", nargs="?", help="project JSON; media paths are relative to this file")
+    ap.add_argument("-o", "--output", help="output .mp4 (default: <project>-branded.mp4)")
     ap.add_argument("--frame", type=float, metavar="SECONDS", help="render just this moment")
     ap.add_argument("--png", help="where to write the --frame image (default: frame.png)")
     ap.add_argument("--start", type=float, help="start this many seconds into the input")
     ap.add_argument("--duration", type=float, help="only render this many seconds")
-    ap.add_argument("--fps", type=float, help="output frame rate (default: same as input)")
     ap.add_argument("--crf", type=int, default=18, help="x264 quality, lower is better (default 18)")
     ap.add_argument("--preset", default="medium", help="x264 speed preset (default medium)")
     ap.add_argument("--fast", action="store_true", help="use the Mac hardware encoder (h264_videotoolbox)")
@@ -283,23 +326,12 @@ def main():
     ffmpeg = find_ffmpeg(args.system_ffmpeg)
     if args.selftest:
         sys.exit(selftest(args, ffmpeg))
-    lay = layers.Layout(load_timing(args.timing))
-
-    if args.frame is not None:
-        video = None
-        if args.input:
-            w, h, _, _, tagged = probe(ffmpeg, args.input)
-            video = grab_frame(ffmpeg, args.input, args.frame, args.fps or 30, source_matrix(w, h, tagged))
-        out = Path(args.png or "frame.png")
-        lay.frame(args.frame, video).save(out)
-        print("Wrote", out)
-        return
-    if not args.input:
-        ap.error("give an input video (or use --selftest / --frame with --png)")
-    if not Path(args.input).exists():
-        sys.exit("Input not found: %s" % args.input)
-    args.output = args.output or str(Path(args.input).with_suffix("")) + "-branded.mp4"
-    render_video(args, ffmpeg, lay)
+    if not args.project:
+        ap.error("give a project JSON (or use --selftest)")
+    try:
+        render_project(args, ffmpeg)
+    except (ValueError, OSError) as error:
+        sys.exit(str(error))
 
 
 if __name__ == "__main__":

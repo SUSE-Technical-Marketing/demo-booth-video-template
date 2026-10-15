@@ -104,9 +104,15 @@ class ChapterScrollTests(unittest.TestCase):
             timing_file = Path(tmp) / "timing.json"
             # Keep all chapters scheduled while exercising the same simultaneous scroll targets.
             starts = [[0, 1]] + [[1, ch] for ch in range(2, 8)] + [[2, ch] for ch in range(8, 13)]
-            timing_file.write_text(json.dumps(timing(starts=starts)))
-            rendered = subprocess.run([sys.executable, str(ROOT / "render" / "render.py"), str(clip),
-                                       "-t", str(timing_file), "-o", str(output), "--crf", "23",
+            timing_file.write_text(json.dumps({
+                "project_version": 1, "output": {"fps": "25/1"},
+                "media": [{"id": "source", "path": clip.name}],
+                "clips": [{"id": "clip", "media_id": "source", "start": 0, "source_in": 0, "source_out": 3}],
+                "timing": {"schema_version": 2, "chapters": [
+                    {"title": "Chapter %d" % ch, "start": time, "headlines": [[0, "Scrolling"]] if i == 0 else []}
+                    for i, (time, ch) in enumerate(starts)]}}))
+            rendered = subprocess.run([sys.executable, str(ROOT / "render" / "render.py"), str(timing_file),
+                                       "-o", str(output), "--crf", "23",
                                        "--preset", "veryfast"], capture_output=True, text=True)
             self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
             width, height, fps, duration, _ = probe(ffmpeg, output)

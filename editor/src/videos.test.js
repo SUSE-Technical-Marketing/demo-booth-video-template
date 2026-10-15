@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
 import Preview from './components/Preview.vue';
 import { chaptersCovered, clipAt } from './videos.js';
-import { rememberHandle } from './fileAccess.js';
+import { downloadJSON, rememberHandle } from './fileAccess.js';
 
 vi.mock('./fileAccess.js', () => ({
   downloadJSON: vi.fn(), rememberHandle: vi.fn().mockResolvedValue(),
@@ -50,6 +50,142 @@ describe('videos and New in the editor', () => {
     await input.trigger('change');
     await new Promise(r => setTimeout(r, 20)); await flushPromises();
   }
+  async function importProject(project) {
+    const input = wrapper.get('header input[type=file]');
+    Object.defineProperty(input.element, 'files', {
+      value: [{ name: 'project.json', text: async () => JSON.stringify(project) }], configurable: true,
+    });
+    await input.trigger('change');
+    await flushPromises();
+  }
+  async function pointer(handle, type, clientX = 0) {
+    handle.element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, clientX }));
+    await wrapper.vm.$nextTick();
+  }
+  it('persists source trims, paths, placements and FPS and restores missing media without losing timing', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    const row = wrapper.findAll('#vlist .vrow')[0];
+    await row.get('[aria-label="Source in"]').setValue('5');
+    await row.get('[aria-label="Source out"]').setValue('15');
+    await row.get('[aria-label="Media path"]').setValue('media/a.mp4');
+    await wrapper.get('#outputFPS').setValue('30000/1001');
+    await wrapper.get('#scrub').setValue('5');
+    expect(wrapper.findAll('#content video')[0].element.currentTime).toBe(10);
+    await wrapper.get('#scrub').setValue('20');
+    expect(wrapper.get('#content').text()).toBe('no video at this time');
+    await wrapper.get('#btnDownload').trigger('click');
+    const project = JSON.parse(downloadJSON.mock.calls[0][0]);
+    expect(project.output.fps).toBe('30000/1001');
+    expect(project.media[0].path).toBe('media/a.mp4');
+    expect(project.clips[0]).toMatchObject({ start: 0, source_in: 5, source_out: 15 });
+    expect(project.clips[1].start).toBe(40);
+    expect(JSON.stringify(project)).not.toContain('blob:');
+    await importProject(project);
+    expect(wrapper.findAll('#vlist .vrow')).toHaveLength(2);
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+    await wrapper.get('#scrub').setValue('2');
+    expect(wrapper.get('#content').text()).toContain('Missing media: a.mp4');
+    expect(wrapper.get('#durChip').text()).toBe('to 1:20');
+    await wrapper.findAll('#vlist .vrow')[0].get('.relink-media').trigger('click');
+    const input = wrapper.get('#relinkFile');
+    Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.mp4')], configurable: true });
+    await input.trigger('change');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await flushPromises();
+    expect(wrapper.findAll('#content video')).toHaveLength(1);
+    expect(wrapper.get('#content video').element.currentTime).toBe(7);
+    expect(wrapper.findAll('#vlist .vrow')[0].get('.clip-path input').element.value).toBe('media/a.mp4');
+  });
+  it('rejects overlaps, out-of-source trims and invalid paths without changing the project', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    const [first, second] = wrapper.findAll('#vlist .vrow');
+    await second.get('[aria-label="Video start time"]').setValue('30');
+    expect(wrapper.get('#toast').text()).toContain('overlap');
+    expect(second.get('[aria-label="Video start time"]').element.value).toBe('0:40');
+    await first.get('[aria-label="Source out"]').setValue('41');
+    expect(wrapper.get('#toast').text()).toContain('exceeds the video duration');
+    expect(first.get('[aria-label="Source out"]').element.value).toBe('0:40');
+    await first.get('[aria-label="Media path"]').setValue('/absolute/a.mp4');
+    expect(wrapper.get('#toast').text()).toContain('relative media path');
+    expect(first.get('[aria-label="Media path"]').element.value).toBe('a.mp4');
+  });
+  it('undoes persisted clip removal and source edits', async () => {
+    await addFiles('a.mp4');
+    await wrapper.get('#vlist [aria-label="Source in"]').setValue('5');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#vlist [aria-label="Source in"]').element.value).toBe('0:00');
+    await wrapper.get('#vlist .vrow button').trigger('click');
+    expect(wrapper.findAll('#vlist .vrow')).toHaveLength(0);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('#content video')).toHaveLength(1);
+  });
+  it('trims a clip start without moving its end or other timings and undoes the entire drag', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    await wrapper.get('#btnDownload').trigger('click');
+    const before = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    const handle = wrapper.get('[aria-label="Trim video start: a.mp4"]'), timeline = wrapper.get('#tl');
+    handle.element.setPointerCapture = vi.fn();
+    vi.spyOn(timeline.element, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 800 });
+    await pointer(handle, 'pointerdown');
+    await pointer(handle, 'pointermove', 200);
+    await pointer(handle, 'pointermove', 300);
+    await pointer(handle, 'pointerup');
+    expect(wrapper.get('#settings-tab').attributes('aria-selected')).toBe('true');
+    expect(wrapper.findAll('#vlist [aria-label="Source in"]')[0].element.value).toBe('0:30');
+    expect(wrapper.get('#content video').element.currentTime).toBe(30);
+    await wrapper.get('#btnDownload').trigger('click');
+    const after = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(after.clips[0]).toMatchObject({ start: 30, source_in: 30, source_out: 40 });
+    expect(after.clips[1]).toEqual(before.clips[1]);
+    expect(after.timing).toEqual(before.timing);
+    await wrapper.get('#btnUndo').trigger('click');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(before);
+  });
+  it('keeps the timeline scale fixed while trimming the final clip and restores it on release', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    const handle = wrapper.get('[aria-label="Trim video end: b.mp4"]'), timeline = wrapper.get('#tl');
+    handle.element.setPointerCapture = vi.fn();
+    vi.spyOn(timeline.element, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 800 });
+    await pointer(handle, 'pointerdown');
+    await pointer(handle, 'pointermove', 600);
+    expect(wrapper.get('#durChip').text()).toBe('to 1:00');
+    expect(parseFloat(handle.element.style.left)).toBeCloseTo(75);
+    await pointer(handle, 'pointermove', 500);
+    expect(wrapper.get('#durChip').text()).toBe('to 0:50');
+    expect(parseFloat(handle.element.style.left)).toBeCloseTo(62.5);
+    await pointer(handle, 'pointerup');
+    expect(handle.element.style.left).toBe('100%');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).clips[1]).toMatchObject({ start: 40, source_in: 0, source_out: 10 });
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#durChip').text()).toBe('to 1:20');
+  });
+  it('allows extending the final clip with pointer capture past the old timeline end', async () => {
+    await addFiles('a.mp4');
+    await wrapper.get('#vlist [aria-label="Source out"]').setValue('20');
+    const handle = wrapper.get('.clip-handle.end'), timeline = wrapper.get('#tl');
+    handle.element.setPointerCapture = vi.fn();
+    vi.spyOn(timeline.element, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 800 });
+    await pointer(handle, 'pointerdown');
+    await pointer(handle, 'pointermove', 1200);
+    expect(wrapper.get('#durChip').text()).toBe('to 0:30');
+    await handle.trigger('lostpointercapture', { pointerId: 1 });
+    expect(handle.element.style.left).toBe('100%');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#durChip').text()).toBe('to 0:20');
+  });
+  it('clamps keyboard trims between clips and persists source edits', async () => {
+    await addFiles('a.mp4', 'b.mp4');
+    await wrapper.get('#vlist [aria-label="Source out"]').setValue('39.8');
+    await wrapper.get('[aria-label="Trim video end: a.mp4"]').trigger('keydown', { key: 'ArrowRight', shiftKey: true });
+    await wrapper.get('[aria-label="Trim video start: b.mp4"]').trigger('keydown', { key: 'ArrowLeft', shiftKey: true });
+    await wrapper.get('#btnDownload').trigger('click');
+    const project = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(project.clips[0]).toMatchObject({ start: 0, source_in: 0, source_out: 40 });
+    expect(project.clips[1]).toMatchObject({ start: 40, source_in: 0, source_out: 40 });
+  });
   it('preserves loaded video elements and object URLs when switching sidebar tabs', async () => {
     await wrapper.get('#settings-tab').trigger('click');
     await addFiles('a.mp4');

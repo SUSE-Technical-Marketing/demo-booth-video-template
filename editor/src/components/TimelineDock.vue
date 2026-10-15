@@ -28,7 +28,7 @@ const zoomIn = () => { zoom.value = Math.min(maxZoom.value, zoom.value * 2); };
 const zoomOut = () => { zoom.value = Math.max(1, zoom.value / 2); };
 function zoomBy(direction) { if (direction > 0) zoomIn(); else zoomOut(); }
 const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline',
-  'move-headline-end', 'move-chapter']);
+  'move-headline-end', 'move-chapter', 'trim-clip']);
 </script>
 
 <template>
@@ -56,13 +56,14 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
       @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)"
       @begin-edit="emit('begin-edit')" @move-headline="(h, time) => emit('move-headline', h, time)"
       @move-headline-end="(h, time) => emit('move-headline-end', h, time)"
-      @move-chapter="(c, time) => emit('move-chapter', c, time)" />
+      @move-chapter="(c, time) => emit('move-chapter', c, time)"
+      @trim-clip="(clip, patch, time) => emit('trim-clip', clip, patch, time)" />
     <div class="timeline-legend">
       <span><i class="chapter-key"></i> Chapters</span>
       <span><i class="headline-key"></i> Headlines</span>
       <span><i class="invalid-key"></i> Outside chapter</span>
       <span v-if="clips.length"><i class="video-key"></i> Videos</span>
-      <span class="timeline-help">Select a band to edit; drag to scrub; drag the edges of a chapter or headline to move them. Gaps mean no headline.</span>
+      <span class="timeline-help">Select a band to edit; drag to scrub; drag chapter/headline edges to retime or video edges to trim.</span>
     </div>
   </section>
 </template>

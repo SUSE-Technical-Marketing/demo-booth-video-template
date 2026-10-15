@@ -36,14 +36,14 @@ export async function rememberHandle(handle) {
 }
 
 export const pickerOptions = {
-  types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+  types: [{ description: 'Video project JSON', accept: { 'application/json': ['.json'] } }],
 };
 
 export function downloadJSON(text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'headline_timing.json';
+  link.download = 'project.json';
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

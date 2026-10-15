@@ -7,9 +7,10 @@ defineProps({
   headlineEnd: { type: Number, default: null },
   wipeSeconds: { type: Number, required: true },
   cur: { type: Number, required: true },
+  fps: { type: String, default: '25/1' },
 });
 const rippleBy = defineModel('rippleBy', { type: [Number, String], required: true });
-const emit = defineEmits(['begin-edit', 'update-metadata', 'change-end', 'change-wipe', 'ripple']);
+const emit = defineEmits(['begin-edit', 'update-metadata', 'change-end', 'change-wipe', 'ripple', 'update-fps']);
 </script>
 
 <template>
@@ -30,6 +31,18 @@ const emit = defineEmits(['begin-edit', 'update-metadata', 'change-end', 'change
       <label class="inline">wipe <input id="wipe" :value="wipeSeconds" type="number"
         min="0" max="3" step="0.1" @change="emit('change-wipe', $event)"> s</label>
     </div>
+  </section>
+  <section class="card">
+    <h2>Render output</h2>
+    <label class="inline">Frame rate
+      <select id="outputFPS" :value="fps" @change="emit('update-fps', $event.target.value); $event.target.value = fps">
+        <option v-for="rate in ['24/1', '24000/1001', '25/1', '30/1', '30000/1001', '50/1', '60/1', '60000/1001']"
+          :key="rate" :value="rate">{{ rate }} fps</option>
+        <option v-if="!['24/1', '24000/1001', '25/1', '30/1', '30000/1001', '50/1', '60/1', '60000/1001'].includes(fps)"
+          :value="fps">{{ fps }} fps</option>
+      </select>
+    </label>
+    <p class="hint">Output is 1920 × 1080. Run the renderer with this project JSON to assemble all clips.</p>
   </section>
   <section class="card">
     <h2>Ripple <span class="heading-hint">cut dead space? slide everything after the playhead</span></h2>

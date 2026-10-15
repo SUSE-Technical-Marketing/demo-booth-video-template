@@ -1,0 +1,24 @@
+{
+  "project_version": 1,
+  "output": { "fps": "25/1" },
+  "media": [
+    { "id": "red", "path": "media/one.mp4" },
+    { "id": "blue", "path": "media/two with spaces.mp4" }
+  ],
+  "clips": [
+    { "id": "first", "media_id": "red", "start": 0.2, "source_in": 0.4, "source_out": 1.4 },
+    { "id": "second", "media_id": "blue", "start": 1.6, "source_in": 0, "source_out": 0.8 }
+  ],
+  "timing": {
+    "schema_version": 2,
+    "title": "Two clip project",
+    "product_name": "Project test",
+    "chapters": [
+      { "title": "First", "start": 0, "headlines": [[0, "First *headline*"]] },
+      { "title": "Second", "start": 1.6, "headlines": [[0, "Second *headline*"]] }
+    ],
+    "chapters_end": null,
+    "headlines_end": null,
+    "wipe_seconds": 0.1
+  }
+}

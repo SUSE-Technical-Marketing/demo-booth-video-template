@@ -36,11 +36,14 @@ class HeadlineOwnershipTests(unittest.TestCase):
                             "color=c=gray:s=320x180:r=25:d=1", "-c:v", "libx264", str(clip)], check=True)
             timing_file = Path(tmp) / "timing.json"
             timing_file.write_text(json.dumps({
-                "schema_version": 2, "chapters_end": 0.8,
-                "chapters": [{"title": "Intro", "start": 0, "headlines": [[0, "Headline"]]}],
+                "project_version": 1, "output": {"fps": "25/1"},
+                "media": [{"id": "source", "path": clip.name}],
+                "clips": [{"id": "clip", "media_id": "source", "start": 0, "source_in": 0, "source_out": 1}],
+                "timing": {"schema_version": 2, "chapters_end": 0.8,
+                           "chapters": [{"title": "Intro", "start": 0, "headlines": [[0, "Headline"]]}]},
             }))
-            rendered = subprocess.run([sys.executable, str(ROOT / "render" / "render.py"), str(clip),
-                                       "-t", str(timing_file), "-o", str(output),
+            rendered = subprocess.run([sys.executable, str(ROOT / "render" / "render.py"), str(timing_file),
+                                       "-o", str(output),
                                        "--preset", "veryfast"], capture_output=True, text=True)
             self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
             self.assertAlmostEqual(probe(ffmpeg, output)[3], 1)
