@@ -153,6 +153,25 @@ function updateMediaPath(clip, path) {
   state.value.media.find(m => m.id === clip.media_id).path = path;
   markDirty();
 }
+// A re-exported file has a new length. Clips that played the whole old file follow it; clips trimmed inside it
+// keep their trim unless it no longer fits. Longer clips push later clips along so hard cuts stay valid.
+function fitClipsToSource(mediaId, oldDur, newDur) {
+  const eps = 0.05;
+  let changed = false, shift = 0, fits = true;
+  const clips = state.value.clips.slice().sort((a, b) => a.start - b.start).map(c => {
+    const moved = shift ? { ...c, start: c.start + shift } : c;
+    if (c.media_id !== mediaId) return moved;
+    let out = c.source_out;
+    if (oldDur != null && c.source_in < eps && Math.abs(out - oldDur) < eps) out = newDur;
+    else if (out > newDur + 1e-6) out = newDur;
+    if (out <= c.source_in + 1e-6) { fits = false; return moved; }
+    if (Math.abs(out - c.source_out) < 1e-6) return moved;
+    changed = true;
+    if (out > c.source_out) shift += out - c.source_out;
+    return { ...moved, source_out: out };
+  });
+  return fits ? { clips, changed } : null;
+}
 async function relinkMedia(clip, file) {
   const generation = documentGeneration;
   try {
@@ -161,14 +180,20 @@ async function relinkMedia(clip, file) {
       releaseClip(loaded);
       return toast('Project changed; media was not linked');
     }
-    if (state.value.clips.some(c => c.media_id === clip.media_id && c.source_out > loaded.dur + 1e-6)) {
-      releaseClip(loaded);
-      return toast('Selected video is shorter than the saved source out point');
-    }
     const previous = mediaFiles.value.get(clip.media_id);
+    const next = fitClipsToSource(clip.media_id, previous?.dur, loaded.dur);
+    if (!next) {
+      releaseClip(loaded);
+      return toast('Selected video is shorter than where the clip starts (In point)');
+    }
+    if (next.changed) {
+      pushHistory();
+      state.value.clips = next.clips;
+      markDirty();
+    }
     if (previous) releaseClip(previous);
     mediaFiles.value = new Map(mediaFiles.value).set(clip.media_id, loaded);
-    toast('Linked ' + file.name);
+    toast(next.changed ? `Linked ${file.name}; clip length updated to ${fmt(loaded.dur)}` : 'Linked ' + file.name);
   } catch (error) { toast(error.message); }
 }
 function updateFPS(value) {
