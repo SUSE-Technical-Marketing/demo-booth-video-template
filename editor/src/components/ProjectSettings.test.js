@@ -51,6 +51,12 @@ describe('project settings', () => {
     const options = wrapper.findAll('#outputResolution option').map(option => option.element.value);
     expect(options).toContain('1000x1000');
     expect(wrapper.get('#outputResolution').element.value).toBe('1000x1000');
+    expect(wrapper.get('#outputFormat').element.value).toBe('mp4');
+    await wrapper.get('#outputFormat').setValue('gif');
+    expect(wrapper.emitted('update-format')).toEqual([['gif']]);
+    expect(wrapper.get('#outputFormat').element.value).toBe('mp4');
+    await wrapper.setProps({ format: 'gif' });
+    expect(wrapper.get('#outputFormat').element.value).toBe('gif');
   });
   it('keeps the ripple input controlled and emits apply separately', async () => {
     await wrapper.get('#rippleBy').setValue('2.5');

@@ -16,12 +16,21 @@ export function projectFPS(value) {
 }
 
 export const DEFAULT_FPS = '25/1';
+export const DEFAULT_FORMAT = 'mp4';
+export const FORMATS = [['mp4', 'MP4 video'], ['gif', 'Animated GIF']];
 export const DEFAULT_RESOLUTION = '1920x1080';
 export const MAX_RESOLUTION = [7680, 4320];
 export const RESOLUTIONS = [
   ['3840x2160', '3840 × 2160 (4K UHD)'], ['2560x1440', '2560 × 1440 (QHD)'], ['1920x1080', '1920 × 1080 (Full HD)'],
   ['1280x720', '1280 × 720 (HD)'], ['960x540', '960 × 540'], ['640x360', '640 × 360'],
 ];
+
+/** Output container; undefined or null means MP4. */
+export function projectFormat(value) {
+  if (value == null) return DEFAULT_FORMAT;
+  if (!FORMATS.some(([id]) => id === value)) throw new Error('Output format must be mp4 or gif');
+  return value;
+}
 
 /** Output frame size as [width, height]; undefined or null keeps the 1920 × 1080 design size. */
 export function projectResolution(value) {
@@ -42,6 +51,7 @@ export function validateProject(project) {
   const fps = projectFPS(project.output.fps ?? DEFAULT_FPS);
   themeLayout(project.output.theme);
   projectResolution(project.output.resolution);
+  projectFormat(project.output.format);
   if (!Array.isArray(project.media) || !Array.isArray(project.clips)) throw new Error('Project needs media and clips arrays');
   const media = new Set(), clips = new Set();
   for (const item of project.media) {
@@ -80,6 +90,7 @@ export function fromProject(project) {
       fps: project.output.fps ?? DEFAULT_FPS,
       ...(project.output.theme === undefined ? {} : { theme: project.output.theme }),
       ...(project.output.resolution == null ? {} : { resolution: project.output.resolution }),
+      ...(project.output.format == null ? {} : { format: project.output.format }),
     },
     media: project.media.map(({ id, path }) => ({ id, path })),
     clips: project.clips.map(({ id, media_id, start, source_in, source_out }) =>

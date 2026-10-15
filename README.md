@@ -21,7 +21,8 @@ For planned technical and functional work, see the [improvement roadmap](IMPROVE
 - **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
 - **Save complete projects**: source media paths, clip placements and trims, output frame rate, chapters and headlines.
 - **Render the final MP4** with one command (or a container): multiple clips, gaps, branded layout, your audio, and an MP4 chapter marker
-  per chapter. Choose the frame rate and resolution in the editor, or override them per render.
+  per chapter. Choose the output format, frame rate and resolution in the editor, or override them per render; animated
+  GIFs of any part of the video are supported.
 
 ## How the pieces fit
 
@@ -100,8 +101,8 @@ save the project beside them, or update their paths. Opening only the JSON with 
 editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
 keeping the same relative media layout or updating the paths.
 
-Choose the render frame rate and **resolution** in **Videos & settings**. The renderer normalizes source
-sizes/frame rates and audio; the output has stereo 48 kHz audio and defaults to 1920 × 1080. Other resolutions (4K UHD
+Choose the render **format**, frame rate and **resolution** in **Videos & settings**. The renderer normalizes source
+sizes/frame rates and audio; MP4 output has stereo 48 kHz audio and defaults to 1920 × 1080. Other resolutions (4K UHD
 down to 640 × 360) scale the 1920 × 1080 composition, so the preview does not change. Source clips without audio and
 timeline gaps produce silence. Command-line options override the saved settings for one render.
 
@@ -271,28 +272,32 @@ marker per chapter (shown in the chapter menus of QuickTime, VLC and IINA).
    ```bash
    .venv/bin/python render/render.py /path/to/my-demo/project.json -o my-video-final.mp4
    ```
-   Progress prints as it goes. It keeps clip audio (re-encoded to AAC), uses the project's frame rate and
-   resolution (25 fps and 1920 × 1080 unless changed in **Videos & settings**), and outputs H.264. On
+   Progress prints as it goes. It keeps clip audio (re-encoded to AAC), uses the project's format, frame rate and
+   resolution (MP4, 25 fps and 1920 × 1080 unless changed in **Videos & settings**), and outputs H.264. On
    Apple-silicon Macs add `--fast` to use the hardware encoder.
 5. **Changing something later:** edit the project in the editor, save, and re-run step 4. Nothing is stored in
    the video, so there is nothing to clean up. If you re-cut the video, re-export it and use the editor's
    **Ripple** tool to slide the times.
 
 Other options: `--start 30 --duration 60` renders just that part (chapter/headline times still count from the start of the
-project), `--fps` and `--size` override the project's settings for this render (see below), `--crf 18`
-(quality; lower is better) and `--preset medium`. `--selftest` renders a generated clip to prove the install works.
+project), `--format`, `--fps` and `--size` override the project's settings for this render (see below), `--crf 18`
+(quality; lower is better) and `--preset medium`. `--selftest` renders a generated clip (and a short GIF) to prove the
+install works.
 
 ### Render settings: command line, then project, then defaults
 
-The frame rate and resolution are each resolved in the same order: a command-line option wins, otherwise the
-value saved in the project's `output` section applies, otherwise the default.
+The format, frame rate and resolution are each resolved in the same order: a command-line option wins, otherwise the
+value saved in the project's `output` section applies, otherwise the default for the format.
 
 | Setting | Command line | Project (`output`) | Default |
 |---|---|---|---|
-| Frame rate | `--fps 25`, `--fps 30000/1001` | `fps` | `25/1` |
-| Resolution | `--size 1280x720` | `resolution` | `1920x1080` |
+| Format | `--format mp4\|gif`, or a `-o` name ending in `.mp4`/`.gif` | `format` | `mp4` |
+| Frame rate | `--fps 25`, `--fps 30000/1001` | `fps` | `25/1` (MP4), `10/1` (GIF) |
+| Resolution | `--size 1280x720` | `resolution` | `1920x1080` (MP4), `960x540` (GIF) |
 
-Without `-o`, the output is `<project>-branded.mp4` next to the project.
+A `-o` name whose extension contradicts `--format` is an error. Without `-o`, the output is `<project>-branded.mp4` or
+`.gif` next to the project. The editor always saves `fps`, so a GIF rendered from an editor project uses the project's
+frame rate unless you pass `--fps 10`.
 
 ### Output resolution
 
@@ -303,6 +308,20 @@ resolution with a Lanczos filter, so text and buttons keep their proportions at 
 1920 × 1080 composition, which is softer than native 4K but keeps the branding exact. `--size WxH` on the command line
 overrides the saved value and accepts any even size between 16 × 16 and 7680 × 4320; sizes that are not 16:9 are
 letterboxed with black bars. `--frame` previews are written at the same size, so check one before a long render.
+
+### Animated GIF
+
+Choose **Animated GIF** as the format in **Videos & settings**, pass `--format gif`, or name the output `.gif`. GIFs are
+usually made from a short part of the video at a low frame rate:
+
+```bash
+.venv/bin/python render/render.py /path/to/my-demo/project.json -o teaser.gif --start 30 --duration 8 --fps 10 --size 960x540
+```
+
+The GIF loops forever, has no audio or chapter markers, and uses a palette computed from all of its frames. GIF timing
+is exact at 10, 20, 25 and 50 fps. GIFs grow quickly: a few seconds at 960 × 540 and 10 fps are fine for a chat or a web
+page, a full demo at Full HD and 25 fps is not. The renderer writes a lossless intermediate file of the composed frames
+while it works, so allow temporary disk space as for an MP4 render.
 
 ### Using mise
 
@@ -394,7 +413,7 @@ every `output` setting for one render (see [Render settings](#render-settings-co
 `output.theme` is `classic`, `dark-rail`, `minimal-stage` or `cinematic`; omitting it selects Classic. Unknown theme IDs are rejected
 by both the editor and renderer. `output.resolution` is `WIDTHxHEIGHT` with even sizes between `16x16` and `7680x4320`,
 such as `1280x720`; omitting it selects `1920x1080`. The editor offers 16:9 presets, and the renderer letterboxes other ratios.
-Omitting `fps` selects `25/1` (the editor always writes it).
+`output.format` is `mp4` or `gif`; omitting it selects MP4. Omitting `fps` selects `25/1` (the editor always writes it).
 At render time, clip boundaries use the first output frame at or after their specified time.
 Clips that contain no output frames are rejected. Frame-rate quantization can extend the final duration by less than one frame.
 
@@ -439,6 +458,7 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Logo is replaced by the word "SUSE" | In the editor, Classic's remote logo or a modern theme's bundled logo could not load. Check network access or the static deployment. |
 | Headline words touch or have big gaps | Nudge `text_scale` (default `1.11`) in `assets/themes.json`, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
 | Video doesn't fill the slot | The renderer fits other sizes into the slot with black bars; export 1920 × 1080 for a perfect fit. |
+| GIF is huge | Render only a short range with `--start` and `--duration`, lower `--size` (960 × 540 or less) and use `--fps 10`. |
 | Output has black bars top and bottom or left and right | The requested resolution is not 16:9; choose a 16:9 preset in **Videos & settings** or a 16:9 `--size`. |
 
 ## Customising

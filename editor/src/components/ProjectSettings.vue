@@ -1,7 +1,7 @@
 <script setup>
 import { fmt } from '../timing.js';
 import { THEMES } from '../themes.js';
-import { DEFAULT_RESOLUTION, RESOLUTIONS } from '../project.js';
+import { DEFAULT_FORMAT, DEFAULT_RESOLUTION, FORMATS, RESOLUTIONS } from '../project.js';
 
 defineProps({
   title: { type: String, required: true },
@@ -11,11 +11,12 @@ defineProps({
   cur: { type: Number, required: true },
   fps: { type: String, default: '25/1' },
   resolution: { type: String, default: DEFAULT_RESOLUTION },
+  format: { type: String, default: DEFAULT_FORMAT },
   theme: { type: String, default: 'classic' },
 });
 const rippleBy = defineModel('rippleBy', { type: [Number, String], required: true });
 const emit = defineEmits(['begin-edit', 'update-metadata', 'change-end', 'change-wipe', 'ripple', 'update-fps',
-  'update-resolution', 'update-theme']);
+  'update-resolution', 'update-format', 'update-theme']);
 const FPS_PRESETS = ['24/1', '24000/1001', '25/1', '30/1', '30000/1001', '50/1', '60/1', '60000/1001'];
 </script>
 
@@ -50,6 +51,12 @@ const FPS_PRESETS = ['24/1', '24000/1001', '25/1', '30/1', '30000/1001', '50/1',
   <section class="card">
     <h2>Render output</h2>
     <div class="tools">
+      <label class="inline">Format
+        <select id="outputFormat" :value="format"
+          @change="emit('update-format', $event.target.value); $event.target.value = format">
+          <option v-for="[id, label] in FORMATS" :key="id" :value="id">{{ label }}</option>
+        </select>
+      </label>
       <label class="inline">Frame rate
         <select id="outputFPS" :value="fps" @change="emit('update-fps', $event.target.value); $event.target.value = fps">
           <option v-for="rate in FPS_PRESETS" :key="rate" :value="rate">{{ rate }} fps</option>
@@ -66,7 +73,8 @@ const FPS_PRESETS = ['24/1', '24000/1001', '25/1', '30/1', '30000/1001', '50/1',
     </div>
     <p class="hint">The layout is composed at 1920 × 1080 and scaled to the chosen size by the renderer; the preview is
       not affected. Run the renderer with this project JSON to assemble all clips. Command-line options
-      (<code>--fps</code>, <code>--size</code>) override these settings for one render.</p>
+      (<code>--format</code>, <code>--fps</code>, <code>--size</code>) override these settings for one render; GIFs have
+      no audio and are best kept short, small and at 10 fps.</p>
   </section>
   <section class="card">
     <h2>Ripple <span class="heading-hint">cut dead space? slide everything after the playhead</span></h2>

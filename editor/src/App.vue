@@ -11,7 +11,7 @@ import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathValid, projectFPS, projectResolution, toProjectJSON, validateProject } from './project.js';
+import { DEFAULT_FORMAT, DEFAULT_RESOLUTION, createProject, fromProject, mediaPathValid, projectFPS, projectFormat, projectResolution, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { fitWrappedPx, themeLayout } from './themes.js';
 import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
@@ -170,6 +170,14 @@ function updateFPS(value) {
   catch (error) { return toast(error.message); }
   pushHistory();
   state.value.output.fps = value;
+  markDirty();
+}
+function updateFormat(value) {
+  try { projectFormat(value); }
+  catch (error) { return toast(error.message); }
+  if (value === (state.value.output.format ?? DEFAULT_FORMAT)) return;
+  pushHistory();
+  state.value.output.format = value;
   markDirty();
 }
 function updateResolution(value) {
@@ -805,6 +813,7 @@ onUnmounted(() => {
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
                 :fps="state.output.fps" @update-fps="updateFPS"
                 :resolution="state.output.resolution" @update-resolution="updateResolution"
+                :format="state.output.format" @update-format="updateFormat"
                 :theme="state.output.theme" @update-theme="updateTheme"
                 v-model:ripple-by="rippleBy" @begin-edit="beginEdit" @update-metadata="updateMetadata"
                 @change-end="updateEnd" @change-wipe="updateWipe" @ripple="ripple" />

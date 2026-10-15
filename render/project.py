@@ -20,6 +20,16 @@ def _id(value):
 
 
 DEFAULT_FPS = "25/1"
+FORMATS = ("mp4", "gif")
+
+
+def project_format(value):
+    """Output container: mp4 (default) or gif."""
+    if value is None:
+        return "mp4"
+    if value not in FORMATS:
+        raise ValueError("Output format must be mp4 or gif")
+    return value
 
 
 def project_fps(value):
@@ -55,6 +65,7 @@ def validate_project(project):
     fps = float(project_fps(project["output"].get("fps", DEFAULT_FPS)))
     theme_layout(project["output"].get("theme", "classic"))
     project_resolution(project["output"].get("resolution"))
+    project_format(project["output"].get("format"))
     media, clips = project.get("media"), project.get("clips")
     if not isinstance(media, list) or not isinstance(clips, list):
         raise ValueError("Project needs media and clips arrays")
