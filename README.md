@@ -190,6 +190,9 @@ precisely: each step doubles the zoom, the ruler adds finer ticks, and the view 
 Other controls: **Save as…** (`Cmd+Shift+S`) writes the current timing to a new file and keeps working in it, leaving the
 previous file untouched; **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
 **wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).
+Press **?** outside an editable field (or click **?** in the header) to open the keyboard-shortcut reference,
+including time-field nudges, timeline handles, tab navigation and sidebar resizing. Press **?** again, **Escape**,
+click **Close**, or click outside the popover to dismiss it. Editing/playback hotkeys are inactive while help is open.
 The left panel has two tabs: **Chapters & headlines** for timing edits, and **Videos & settings** for
 videos, metadata, headline settings and ripple controls. Switching tabs preserves your edits and selection;
 selecting a chapter or headline on the timeline returns to its editing tab. Use Left/Right arrows or Home/End

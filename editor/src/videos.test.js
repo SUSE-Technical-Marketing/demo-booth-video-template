@@ -177,6 +177,21 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(before);
   });
+  it('opens shortcut help during fullscreen and keeps playback hotkeys inactive until help closes', async () => {
+    await addFiles('a.mp4');
+    const clock = await startPresentation(), dialog = wrapper.get('dialog').element;
+    dialog.showModal = vi.fn(() => { dialog.open = true; });
+    dialog.close = vi.fn(() => { dialog.open = false; dialog.dispatchEvent(new Event('close')); });
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(dialog.open).toBe(true);
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findComponent(Preview).props('playing')).toBe(true);
+    await wrapper.get('dialog').trigger('cancel');
+    expect(dialog.open).toBe(false);
+    await clock.exit();
+  });
   it('shows decoding errors and stops fullscreen playback', async () => {
     await addFiles('broken.mp4');
     const clock = await startPresentation();

@@ -635,6 +635,109 @@ describe('Vue editor', () => {
   });
 });
 
+describe('keyboard shortcut help', () => {
+  let dialog;
+  beforeEach(() => {
+    dialog = wrapper.get('dialog').element;
+    dialog.showModal = vi.fn(() => {
+      dialog.open = true;
+      dialog.querySelector('button').focus();
+    });
+    dialog.close = vi.fn(() => {
+      dialog.open = false;
+      dialog.dispatchEvent(new Event('close'));
+    });
+  });
+  async function pressQuestion(options = {}) {
+    const event = new KeyboardEvent('keydown', { key: '?', shiftKey: true, bubbles: true, cancelable: true, ...options });
+    document.activeElement.dispatchEvent(event);
+    await nextTick();
+    return event;
+  }
+  it('opens a named shortcut dialog with ? and closes it with ? again', async () => {
+    expect(dialog.open).toBe(false);
+    const event = await pressQuestion();
+    expect(event.defaultPrevented).toBe(true);
+    expect(dialog.open).toBe(true);
+    expect(dialog.getAttribute('aria-labelledby')).toBe('shortcut-help-title');
+    expect(wrapper.get('#shortcut-help-title').text()).toBe('Keyboard shortcuts');
+    for (const shortcut of ['Ctrl / Cmd + S', 'Ctrl / Cmd + Shift + S', 'Ctrl / Cmd + Z',
+      'Alt + Up / Down', 'Shift + Left / Right', 'Ctrl / Cmd + scroll', 'Home / End']) {
+      expect(wrapper.get('.shortcut-help').text()).toContain(shortcut);
+    }
+    await pressQuestion();
+    expect(dialog.open).toBe(false);
+  });
+  it('opens from the header and dismisses with Close, Escape or a backdrop click', async () => {
+    await wrapper.get('header #btnShortcuts').trigger('click');
+    expect(dialog.open).toBe(true);
+    await wrapper.get('[aria-label="Close keyboard shortcuts"]').trigger('click');
+    expect(dialog.open).toBe(false);
+    await pressQuestion();
+    await wrapper.get('dialog').trigger('cancel');
+    expect(dialog.open).toBe(false);
+    await pressQuestion();
+    vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({ left: 100, top: 100, right: 600, bottom: 600 });
+    await wrapper.get('dialog').trigger('click', { clientX: 150, clientY: 150 });
+    expect(dialog.open).toBe(true);
+    await wrapper.get('dialog').trigger('click', { clientX: 20, clientY: 20 });
+    expect(dialog.open).toBe(false);
+  });
+  it.each(['[aria-label="Headline text"]', '[aria-label="Time within chapter"]', '[aria-label="Chapter 1 title"]'])(
+    'does not intercept ? typed in %s', async selector => {
+      wrapper.get(selector).element.focus();
+      const event = await pressQuestion();
+      expect(event.defaultPrevented).toBe(false);
+      expect(dialog.open).toBe(false);
+    });
+  it('ignores editable content and selectors', async () => {
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    editable.tabIndex = 0;
+    document.body.append(editable);
+    try {
+      editable.focus();
+      expect((await pressQuestion()).defaultPrevented).toBe(false);
+      expect(dialog.open).toBe(false);
+    } finally { editable.remove(); }
+    await wrapper.get('#settings-tab').trigger('click');
+    wrapper.get('#outputFPS').element.focus();
+    expect((await pressQuestion()).defaultPrevented).toBe(false);
+    expect(dialog.open).toBe(false);
+  });
+  it('ignores modifier shortcuts, IME composition and repeated keydown events', async () => {
+    for (const options of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { isComposing: true }, { repeat: true }]) {
+      await pressQuestion(options);
+      expect(dialog.open).toBe(false);
+    }
+    await pressQuestion();
+    await pressQuestion({ repeat: true });
+    expect(dialog.open).toBe(true);
+  });
+  it('does not play, save, undo or navigate headlines behind the open help', async () => {
+    await editTitle(1, 'Keep this title');
+    const timeBefore = wrapper.get('#scrub').element.value;
+    wrapper.get('#btnShortcuts').element.focus();
+    await pressQuestion();
+    for (const options of [{ key: ' ', code: 'Space' }, { key: 's', ctrlKey: true },
+      { key: 'z', ctrlKey: true }, { key: '.' }, { key: ',' }]) {
+      document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...options }));
+    }
+    await nextTick();
+    expect(wrapper.get('#btnPlay').text()).toBe('Play');
+    expect(wrapper.get('#scrub').element.value).toBe(timeBefore);
+    expect(wrapper.get('[aria-label="Chapter 1 title"]').element.value).toBe('Keep this title');
+    expect(downloadJSON).not.toHaveBeenCalled();
+    expect(dialog.open).toBe(true);
+  });
+  it('surfaces failures to open the dialog', async () => {
+    dialog.showModal.mockImplementation(() => { throw new Error('Dialog unavailable'); });
+    await pressQuestion();
+    expect(dialog.open).toBe(false);
+    expect(wrapper.get('#toast').text()).toContain('Could not show keyboard shortcuts: Dialog unavailable');
+  });
+});
+
 describe('Vue preview and time inputs', () => {
   it('reactively centers scrolling chapters and clamps the end', async () => {
     const state = fromJSON({

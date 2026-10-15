@@ -316,3 +316,19 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .controls-hidden .presentation-controls { opacity: 0; pointer-events: none; }
 .playback-error { position: absolute; bottom: 90px; left: 12px; right: 12px; z-index: 11;
   padding: 12px; border: 1px solid var(--orange); border-radius: 8px; background: var(--surface); color: var(--text); }
+
+.shortcut-help { width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px;
+  overflow: auto; border: 1px solid var(--green); border-radius: 12px; background: var(--surface); color: var(--text);
+  box-shadow: 0 16px 60px #0008; }
+.shortcut-help::backdrop { background: #0009; }
+.shortcut-help-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.shortcut-help h2 { font-size: 18px; margin: 0; }
+.shortcut-help h3 { font-size: 13px; color: var(--muted); margin: 18px 0 8px; }
+.shortcut-help dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 8px 16px; margin: 0; }
+.shortcut-help dt, .shortcut-help dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.shortcut-help kbd { white-space: normal; }
+@media (max-width: 480px) {
+  .shortcut-help { padding: 16px; }
+  .shortcut-help dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .shortcut-help dd { margin-bottom: 8px; }
+}

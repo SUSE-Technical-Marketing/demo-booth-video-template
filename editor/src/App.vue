@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } fr
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
 import PreviewPlayer from './components/PreviewPlayer.vue';
+import ShortcutHelp from './components/ShortcutHelp.vue';
 import ProjectSettings from './components/ProjectSettings.vue';
 import TabGroup from './components/TabGroup.vue';
 import TimelineDock from './components/TimelineDock.vue';
@@ -39,6 +40,7 @@ watch([followPlayhead, playingChapter], ([follow, chapter]) => {
 const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
 const fileInput = ref(null), chapterEditor = ref(null), previewPlayer = ref(null);
+const shortcutHelp = ref(null);
 const mediaFiles = shallowRef(new Map());
 const clips = computed(() => state.value.clips.map(clip => {
   const media = state.value.media.find(m => m.id === clip.media_id), file = mediaFiles.value.get(clip.media_id);
@@ -569,6 +571,14 @@ async function refreshFile() {
 }
 function keydown(event) {
   const target = document.activeElement;
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName) || target.isContentEditable ||
+    !!target.closest('[contenteditable="true"], [contenteditable=""], [contenteditable="plaintext-only"]');
+  if (!typing && !event.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === '?') {
+    event.preventDefault();
+    if (!event.repeat) shortcutHelp.value.toggle();
+    return;
+  }
+  if (shortcutHelp.value?.isOpen) return;
   if (presenting.value) {
     if (event.code === 'Space' && !target.closest('button')) {
       event.preventDefault();
@@ -576,7 +586,6 @@ function keydown(event) {
     }
     return;
   }
-  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName);
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
     event.preventDefault(); save(event.shiftKey);
   } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' &&
@@ -640,6 +649,8 @@ onUnmounted(() => {
     <button id="btnPresent" class="present" :disabled="!previewPlayer || previewPlayer.entering"
       :title="previewPlayer?.unavailable || 'Play the full composition fullscreen in a muted loop'"
       @click="previewPlayer.enterFullscreen()">{{ previewPlayer?.entering ? 'Opening…' : 'Play fullscreen loop' }}</button>
+    <button id="btnShortcuts" class="ghost" aria-label="Keyboard shortcuts" aria-haspopup="dialog" aria-keyshortcuts="?"
+      title="Keyboard shortcuts (?)" @click="shortcutHelp.toggle()">?</button>
     <a href="https://github.com/SUSE-Technical-Marketing/demo-booth-video-template#readme" target="_blank" rel="noopener" class="help">Help</a>
   </header>
 
@@ -697,4 +708,5 @@ onUnmounted(() => {
     @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter"
     @trim-clip="trimClip" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
+  <ShortcutHelp ref="shortcutHelp" @error="toast" />
 </template>
