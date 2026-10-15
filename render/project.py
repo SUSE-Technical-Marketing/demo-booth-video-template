@@ -93,6 +93,8 @@ def validate_project(project):
             raise ValueError("Clips need unique IDs and existing media")
         if any(not _time(clip.get(key)) for key in ("start", "source_in", "source_out")) or clip["source_out"] <= clip["source_in"]:
             raise ValueError("Clips need non-negative times and source out after source in")
+        if clip.get("freeze") is not None and not isinstance(clip["freeze"], bool):
+            raise ValueError("freeze must be true or false")
         if clip.get("transition_in") is not None:
             raise ValueError("Transitions are not supported yet; use hard cuts")
         clip_ids.add(clip["id"])
@@ -133,7 +135,8 @@ def timeline_segments(project):
             raise ValueError("Clip %s has no frames at the output frame rate" % clip["id"])
         if first > cursor:
             segments.append({"clip": None, "frames": first - cursor})
-        segments.append({"clip": clip, "frames": last - first,
-                         "source_start": clip["source_in"] + first / fps - clip["start"]})
+        # A freeze clip holds the single frame at source_in for its whole length (source_out - source_in).
+        source_start = clip["source_in"] if clip.get("freeze") else clip["source_in"] + first / fps - clip["start"]
+        segments.append({"clip": clip, "frames": last - first, "source_start": source_start})
         cursor = last
     return segments

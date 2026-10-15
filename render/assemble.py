@@ -30,8 +30,12 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
             w, h, src_fps, duration, tagged = probe(ffmpeg, path)
             inspected = subprocess.run([ffmpeg, "-hide_banner", "-i", str(path)], capture_output=True, text=True)
             info[path] = (w, h, src_fps, duration, tagged, "Audio:" in inspected.stderr)
-        if info[path][3] is None or clip["source_out"] > info[path][3] + max(0.01, 1 / info[path][2]):
-            raise ValueError("Source out exceeds media duration for %s: %s" % (clip["id"], path))
+        slack = max(0.01, 1 / info[path][2])
+        # a freeze clip only needs its one frame to exist: its source_out is just source_in plus the hold length
+        reach = clip["source_in"] if clip.get("freeze") else clip["source_out"]
+        if info[path][3] is None or reach > info[path][3] + slack:
+            raise ValueError("%s for %s: %s" % ("Freeze frame is past the end of the media" if clip.get("freeze")
+                                               else "Source out exceeds media duration", clip["id"], path))
     segments = timeline_segments(project)
     if not segments:
         raise ValueError("Project has no clips to render; add media in Videos & settings")
@@ -50,11 +54,18 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
             path = sources[clip["media_id"]]
             w, h, _, _, tagged, audio = info[path]
             source_start = segment["source_start"]
-            command += ["-ss", "%.9f" % source_start, "-t", "%.9f" % (clip["source_out"] - source_start),
-                        "-i", str(path)]
-            video = ("tpad=stop_mode=clone:stop_duration=%.9f," % duration +
-                     slot_filter(fps, source_matrix(w, h, tagged), content) +
-                     ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
+            if clip.get("freeze"):           # decode the one frame at source_in, hold it for the whole segment, no sound
+                command += ["-ss", "%.9f" % source_start, "-i", str(path)]
+                video = (slot_filter(fps, source_matrix(w, h, tagged), content) +
+                         ",trim=end_frame=1,tpad=stop_mode=clone:stop_duration=%.9f" % duration +
+                         ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
+                audio = False
+            else:
+                command += ["-ss", "%.9f" % source_start, "-t", "%.9f" % (clip["source_out"] - source_start),
+                            "-i", str(path)]
+                video = ("tpad=stop_mode=clone:stop_duration=%.9f," % duration +
+                         slot_filter(fps, source_matrix(w, h, tagged), content) +
+                         ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
         else:
             command += ["-f", "lavfi", "-i", "color=c=black:s=1920x1080:r=" + fps]
             video = "scale=%d:%d,format=rgb24,trim=end_frame=%d,setpts=PTS-STARTPTS" % (

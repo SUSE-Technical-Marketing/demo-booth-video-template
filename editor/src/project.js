@@ -77,6 +77,7 @@ export function validateProject(project) {
         !time(clip.start) || !time(clip.source_in) || !time(clip.source_out) || clip.source_out <= clip.source_in) {
       throw new Error('Clips need unique IDs, existing media, non-negative times and source out after source in');
     }
+    if (clip.freeze != null && typeof clip.freeze !== 'boolean') throw new Error('freeze must be true or false');
     if (clip.transition_in != null) throw new Error('Transitions are not supported yet; use hard cuts');
     if (clip.start < end - 1e-6) throw new Error('Clips overlap; move or trim them to use hard cuts');
     clips.add(clip.id);
@@ -104,8 +105,9 @@ export function fromProject(project) {
     },
     ...(project.media_folder === undefined ? {} : { media_folder: project.media_folder }),
     media: project.media.map(({ id, path }) => ({ id, path })),
-    clips: project.clips.map(({ id, media_id, start, source_in, source_out }) =>
-      ({ id, media_id, start, source_in, source_out })).sort((a, b) => a.start - b.start),
+    // A freeze clip holds the one frame at source_in for its length (source_out - source_in).
+    clips: project.clips.map(({ id, media_id, start, source_in, source_out, freeze }) =>
+      ({ id, media_id, start, source_in, source_out, ...(freeze ? { freeze: true } : {}) })).sort((a, b) => a.start - b.start),
   };
 }
 

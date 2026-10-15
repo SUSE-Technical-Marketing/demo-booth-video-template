@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
+import EditStrip from './components/EditStrip.vue';
 import ExportDialog from './components/ExportDialog.vue';
 import PreviewPlayer from './components/PreviewPlayer.vue';
 import ProjectFilePicker from './components/ProjectFilePicker.vue';
@@ -12,6 +13,7 @@ import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
+import { freezeFrame, freezeProblem, resizeFreeze, rippleDelete } from './edits.js';
 import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, mediaPathValid, normalizeMediaFolder,
   projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
@@ -129,7 +131,8 @@ function updateClip(clip, patch, recordHistory = true) {
   const next = state.value.clips.map(c => c.id === clip.id ? { ...c, ...patch } : c);
   try {
     const changed = next.find(c => c.id === clip.id), source = mediaFiles.value.get(clip.media_id);
-    if (source && changed.source_out > source.dur + 1e-6) throw new Error('Source out exceeds the video duration');
+    if (source && changed.freeze && changed.source_in > source.dur + 1e-6) throw new Error('The frozen frame is past the end of the video');
+    if (source && !changed.freeze && changed.source_out > source.dur + 1e-6) throw new Error('Source out exceeds the video duration');
     validateProject({ project_version: 1, ...state.value, clips: next, timing: { schema_version: 2 } });
   } catch (error) { return toast(error.message); }
   if (recordHistory) pushHistory();
@@ -138,9 +141,72 @@ function updateClip(clip, patch, recordHistory = true) {
   return true;
 }
 function trimClip(clip, patch, time) {
+  if (clip.freeze && patch.source_out != null) {           // dragging a freeze frame's edge: everything after follows
+    try { state.value = resizeFreeze(state.value, clip.id, patch.source_out - clip.source_in).state; }
+    catch (error) { return toast(error.message); }
+    markDirty();
+    editorTab.value = 'settings';
+    return seek(time);
+  }
   if (!updateClip(clip, patch, false)) return;
   editorTab.value = 'settings';
   seek(time);
+}
+// ---- editing tools: freeze frame and cut section ----
+const tool = ref(null), cutRange = ref(null);
+const freezeIssue = computed(() => tool.value === 'freeze' ? freezeProblem(state.value, cur.value) : null);
+const frameClip = computed(() => clips.value.find(c => cur.value >= c.start - 1e-6 && cur.value < clipEnd(c) - 1e-6));
+const frameFPS = () => projectFPS(state.value.output.fps);
+function openTool(name) {
+  stop();
+  if (tool.value === name) return closeTool();
+  tool.value = name;
+  if (name === 'cut') {
+    const room = Math.min(5, Math.max(0.1, totalDuration.value));
+    const start = Math.min(cur.value, Math.max(0, totalDuration.value - room));
+    cutRange.value = { start: +start.toFixed(2), end: +(start + room).toFixed(2) };
+  } else cutRange.value = null;
+}
+function closeTool() { tool.value = null; cutRange.value = null; }
+function updateCut(patch) {
+  const next = { ...cutRange.value, ...patch };
+  if (next.end <= next.start + 0.01) {                      // keep a usable range: the edge you did not touch gives way
+    if (patch.start != null) next.end = +(next.start + 0.1).toFixed(2);
+    else next.start = +Math.max(0, next.end - 0.1).toFixed(2);
+  }
+  cutRange.value = next;
+}
+function applyEdit(make, done) {
+  let result;
+  try { result = make(); } catch (error) { return toast(error.message); }
+  pushHistory();
+  state.value = result.state;
+  selectedId.value = null;
+  markDirty();
+  done(result);
+}
+function applyFreeze({ length, mode, shift }) {
+  const at = cur.value;
+  applyEdit(() => freezeFrame(state.value, at, length, { mode, shiftTiming: shift, min: 1 / frameFPS() }), () => {
+    closeTool();
+    setCur(at);
+    editorTab.value = 'settings';
+    toast(`Froze the frame at ${fmt(at)} for ${fmt(length)} (${mode === 'insert' ? 'inserted' : 'replacing video'}). `
+      + 'Drag its right edge in the Videos row to change the length.');
+  });
+}
+function applyCut({ from, to, shift }) {
+  applyEdit(() => rippleDelete(state.value, from, to, { shiftTiming: shift, min: 1 / frameFPS() }), ({ removed, inside }) => {
+    closeTool();
+    setCur(from);
+    const pulled = inside.chapters || inside.headlines ? ` ${inside.chapters} chapter(s) and ${inside.headlines} headline(s) `
+      + 'inside it were moved to the cut point.' : '';
+    toast(`Removed ${fmt(removed)} from ${fmt(from)} and closed the gap.${pulled}`);
+  });
+}
+function setFreezeLength(clip, length) {                     // from the Videos list: same ripple as dragging the edge
+  if (!(length >= 0.1)) return toast('A freeze frame must be at least 0.1 seconds long');
+  applyEdit(() => resizeFreeze(state.value, clip.id, length), () => toast(`Freeze frame is now ${fmt(length)} long`));
 }
 function updateMediaFolder(value) {
   let folder;
@@ -165,6 +231,7 @@ function fitClipsToSource(mediaId, oldDur, newDur) {
   const clips = state.value.clips.slice().sort((a, b) => a.start - b.start).map(c => {
     const moved = shift ? { ...c, start: c.start + shift } : c;
     if (c.media_id !== mediaId) return moved;
+    if (c.freeze) { if (c.source_in > newDur + 1e-6) fits = false; return moved; }   // a hold only needs its one frame
     let out = c.source_out;
     if (oldDur != null && c.source_in < eps && Math.abs(out - oldDur) < eps) out = newDur;
     else if (out > newDur + 1e-6) out = newDur;
@@ -529,6 +596,7 @@ function loadState(next, fileHandle, notice = '', folder = null, name = fileHand
   pushHistory();
   documentGeneration++;
   clearClips();
+  closeTool();
   state.value = next;
   handle.value = fileHandle;
   openedName.value = name;
@@ -843,7 +911,7 @@ onUnmounted(() => {
               <VideoList :clips="clips" :starts="state.chapter_starts" :media-folder="state.media_folder"
                 @update-folder="updateMediaFolder" @add="addVideos" @update-start="updateClipStart"
                 @update-clip="updateClip" @update-path="updateMediaPath" @relink="relinkMedia"
-                @remove="removeClip" @error="toast" />
+                @remove="removeClip" @update-freeze="setFreezeLength" @error="toast" />
               <ProjectSettings :title="state.title" :product-name="state.product_name"
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
                 :fps="state.output.fps" @update-fps="updateFPS"
@@ -875,7 +943,12 @@ onUnmounted(() => {
     :selected-chapter-id="selectedChapterId" :offset="offset" :clips="clips" @seek="seek" @toggle-play="play"
     @select-chapter="selectChapter" @select-headline="selectTimelineHeadline"
     @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter"
-    @trim-clip="trimClip" />
+    :tool="tool" :cut-range="cutRange" @tool="openTool" @update-cut="updateCut" @trim-clip="trimClip">
+    <template #tool>
+      <EditStrip v-if="tool" :tool="tool" :cur="cur" :problem="freezeIssue" :frame-name="frameClip?.name ?? ''" :cut-range="cutRange"
+        @apply-freeze="applyFreeze" @apply-cut="applyCut" @update-cut="updateCut" @close="closeTool" @error="toast" />
+    </template>
+  </TimelineDock>
   <ExportDialog v-if="exporting" :clips="clips" :files="exportFiles" :get-project="checkedJSON" :title="state.title"
     :duration="totalDuration" :resolution="state.output.resolution ?? DEFAULT_RESOLUTION" :start-in="projectFolder?.directory ?? handle"
     @close="exporting = false" />

@@ -272,3 +272,63 @@ class ProjectTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(message, result.stderr)
             self.assertEqual(load_project(path)[0], project)
+
+    def test_freeze_clip_holds_one_frame_silently_and_is_validated(self):
+        ffmpeg = find_ffmpeg()
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            source = directory / "rgb.mp4"
+            subprocess.run([ffmpeg, "-y", "-v", "error",
+                            "-f", "lavfi", "-i", "color=c=red:s=320x180:r=25:d=1",
+                            "-f", "lavfi", "-i", "color=c=green:s=320x180:r=25:d=1",
+                            "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=25:d=1",
+                            "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
+                            "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]",
+                            "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-c:a", "aac", str(source)], check=True)
+            project = copy.deepcopy(FIXTURE)
+            project["media"] = [{"id": "rgb", "path": source.name}]
+            project["media_folder"] = ""
+            project["clips"] = [
+                {"id": "a", "media_id": "rgb", "start": 0, "source_in": 0, "source_out": 1},
+                {"id": "hold", "media_id": "rgb", "start": 1, "source_in": 1.5, "source_out": 3.0, "freeze": True},
+                {"id": "c", "media_id": "rgb", "start": 2.5, "source_in": 2, "source_out": 3},
+            ]
+            validate_project(copy.deepcopy(project))
+            path = directory / "project.json"
+            path.write_text(json.dumps(project))
+            output = directory / "final.mp4"
+            result = subprocess.run([sys.executable, str(ROOT / "render/render.py"), str(path), "-o", str(output),
+                                     "--preset", "veryfast", "--crf", "18"], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            w, h, fps, duration, _ = probe(ffmpeg, output)
+            self.assertAlmostEqual(duration, 3.5, delta=0.05)         # 1 s + 1.5 s held + 1 s (frame aligned: 88 frames)
+            x, y = L.CONTENT["cx"], L.CONTENT["cy"]
+            for time, expected in [(0.5, (255, 0, 0)), (1.1, (0, 128, 0)), (1.9, (0, 128, 0)), (2.4, (0, 128, 0)),
+                                   (3.0, (0, 0, 255))]:
+                frame = subprocess.run([ffmpeg, "-v", "error", "-ss", str(time), "-i", str(output),
+                                        "-vf", "scale=in_color_matrix=bt709:in_range=tv:out_range=full,format=rgb24",
+                                        "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                       capture_output=True, check=True).stdout
+                pixel = frame[(y * w + x) * 3:(y * w + x) * 3 + 3]
+                self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, expected)), 16, (time, pixel))
+            for start, audible in [(0.3, True), (1.3, False), (2.0, False), (2.8, True)]:
+                audio = subprocess.run([ffmpeg, "-v", "error", "-ss", str(start), "-i", str(output), "-t", "0.08",
+                                        "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", "-"],
+                                       capture_output=True, check=True).stdout
+                samples = array("h", audio)
+                rms = (sum(v * v for v in samples) / len(samples)) ** 0.5
+                self.assertGreater(rms, 500, start) if audible else self.assertLess(rms, 50, start)
+            # the hold may be longer than the media: only the frozen frame has to exist
+            self.assertEqual([s["frames"] for s in timeline_segments(project)], [25, 38, 25])
+            beyond = copy.deepcopy(project)
+            beyond["clips"][1]["source_in"] = 9
+            beyond["clips"][1]["source_out"] = 10
+            path.write_text(json.dumps(beyond))
+            result = subprocess.run([sys.executable, str(ROOT / "render/render.py"), str(path)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Freeze frame is past the end", result.stderr)
+            for bad in ("yes", 1, "true"):
+                broken = copy.deepcopy(project)
+                broken["clips"][1]["freeze"] = bad
+                with self.assertRaisesRegex(ValueError, "freeze must be true or false"):
+                    validate_project(broken)

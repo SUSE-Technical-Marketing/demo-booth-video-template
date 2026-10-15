@@ -8,7 +8,7 @@ const props = defineProps({
   starts: { type: Array, required: true },
   mediaFolder: { type: String, default: '' },
 });
-const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'update-path', 'relink', 'remove', 'error']);
+const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'update-path', 'relink', 'remove', 'update-freeze', 'error']);
 const input = ref(null), relinkInput = ref(null), relinking = ref(null);
 function add(event) {
   const files = [...event.target.files];
@@ -29,6 +29,18 @@ function commitTrim(clip, key, event) {
   event.target.value = fmt(clip[key]);
   if (!Number.isFinite(time)) return emit('error', 'Enter a valid source time');
   emit('update-clip', clip, { [key]: time });
+}
+function commitFrame(clip, event) {                 // which frame a freeze holds; its length stays the same
+  const time = parseClock(event.target.value);
+  event.target.value = fmt(clip.source_in);
+  if (!Number.isFinite(time)) return emit('error', 'Enter a valid source time');
+  emit('update-clip', clip, { source_in: time, source_out: time + clip.dur });
+}
+function commitLength(clip, event) {
+  const seconds = parseClock(event.target.value.trim());
+  event.target.value = fmt(clip.dur);
+  if (!Number.isFinite(seconds)) return emit('error', 'Enter a length in seconds, such as 3 or 0:03.5');
+  emit('update-freeze', clip, seconds);
 }
 function commitPath(clip, event) {
   const path = event.target.value.trim();
@@ -62,9 +74,10 @@ function snap(clip, event) {
     <p id="mediaFolderHint" class="hint">Relative to the project JSON; leave blank for the JSON's folder.
       Applied automatically to every media path below. Changing it updates all references, without moving files.</p>
     <div id="vlist">
-      <div v-for="clip in clips" :key="clip.id" class="vrow">
-        <div class="name" :title="clip.name">{{ clip.name }}</div>
-        <span class="meta">{{ fmt(clip.dur) }} · {{ clip.url ? 'linked' : 'missing media' }}<template v-if="chaptersCovered(clip, starts).length"> · ch {{ chaptersCovered(clip, starts).join(', ') }}</template></span>
+      <div v-for="clip in clips" :key="clip.id" class="vrow" :class="{ freeze: clip.freeze }">
+        <div class="name" :title="clip.name">{{ clip.freeze ? 'Freeze frame' : clip.name }}</div>
+        <span v-if="clip.freeze" class="meta">of {{ clip.name }} · held {{ fmt(clip.dur) }}</span>
+        <span v-else class="meta">{{ fmt(clip.dur) }} · {{ clip.url ? 'linked' : 'missing media' }}<template v-if="chaptersCovered(clip, starts).length"> · ch {{ chaptersCovered(clip, starts).join(', ') }}</template></span>
         <input class="time" :value="fmt(clip.start)" aria-label="Video start time" title="Where this video starts on the timeline (m:ss)"
           @focus="$event.target.select()" @change="commitStart(clip, $event)" @keydown.enter="$event.target.blur()">
         <select aria-label="Snap to chapter" title="Start at the beginning of a chapter" @change="snap(clip, $event)">
@@ -72,17 +85,23 @@ function snap(clip, event) {
           <option v-for="s in starts" :key="s.id" :value="s.id">ch {{ s.ch }} · {{ fmt(s.t) }}</option>
         </select>
         <button class="icon ghost" title="Remove this video" @click="emit('remove', clip)">✕</button>
-        <div class="clip-source">
+        <div v-if="clip.freeze" class="clip-source">
+          <label>Frame at <input class="time" :value="fmt(clip.source_in)" aria-label="Frozen frame at"
+            title="Which moment of the source video is held" @change="commitFrame(clip, $event)"></label>
+          <label>Length <input class="time" :value="fmt(clip.dur)" aria-label="Freeze length"
+            title="How long the frame is held. Everything after it moves with it." @change="commitLength(clip, $event)"></label>
+        </div>
+        <div v-else class="clip-source">
           <label>In <input class="time" :value="fmt(clip.source_in)" aria-label="Source in"
             @change="commitTrim(clip, 'source_in', $event)"></label>
           <label>Out <input class="time" :value="fmt(clip.source_out)" aria-label="Source out"
             @change="commitTrim(clip, 'source_out', $event)"></label>
         </div>
-        <label class="clip-path">Media path <input :value="clip.path" aria-label="Media path"
+        <label v-if="!clip.freeze" class="clip-path">Media path <input :value="clip.path" aria-label="Media path"
           title="Relative to the media folder, using forward slashes" @change="commitPath(clip, $event)">
           <span class="hint resolved-media-path">Project path: {{ clip.resolvedPath }}</span>
         </label>
-        <button class="relink-media" @click="relinking = clip; relinkInput.click()">Relink media…</button>
+        <button v-if="!clip.freeze" class="relink-media" @click="relinking = clip; relinkInput.click()">Relink media…</button>
       </div>
     </div>
     <div class="tools">
