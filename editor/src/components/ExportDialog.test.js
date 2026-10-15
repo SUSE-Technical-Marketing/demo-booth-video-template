@@ -139,6 +139,39 @@ describe('Export dialog', () => {
     wrapper.unmount();
   });
 
+  it('does not reuse the previous export\'s location for "Export another", so it cannot overwrite that file', async () => {
+    const first = { name: 'demo-2k.mp4' };
+    chooseLocation.mockResolvedValue(first);
+    runExport.mockResolvedValue({ job: 'j1', token: 't', view: { filename: 'demo-2k.mp4', size: 5_000_000 } });
+    saveVideo.mockResolvedValue({ name: 'demo-2k.mp4', where: 'the location you chose' });
+    const wrapper = await mountDialog();
+    await wrapper.get('#exportChoose').trigger('click');
+    expect(wrapper.get('#exportName').element.value).toBe('demo-2k');                 // the name follows the chosen file
+    await wrapper.get('#exportStart').trigger('click');
+    await flushPromises();
+    expect(saveVideo.mock.calls[0][2].target).toBe(first);
+    await wrapper.findAll('#exportDone .ghost')[0].trigger('click');                  // Export another
+    expect(wrapper.get('#exportTarget').text()).not.toContain('demo-2k');
+    await wrapper.get('#exportName').setValue('demo-4k');
+    await wrapper.get('#exportStart').trigger('click');
+    await flushPromises();
+    expect(saveVideo).toHaveBeenCalledTimes(1);                                        // nothing is written automatically this time
+    await wrapper.get('#exportSave').trigger('click');
+    await flushPromises();
+    expect(saveVideo.mock.calls[1][2].target).toBeNull();                              // it asks where to save: nothing is overwritten
+    wrapper.unmount();
+  });
+
+  it('drops a chosen location as soon as the file name is changed to something else', async () => {
+    chooseLocation.mockResolvedValue({ name: 'demo-2k.mp4' });
+    const wrapper = await mountDialog();
+    await wrapper.get('#exportChoose').trigger('click');
+    expect(wrapper.get('#exportTarget').text()).toBe('demo-2k.mp4');
+    await wrapper.get('#exportName').setValue('demo-4k');
+    expect(wrapper.get('#exportTarget').text()).toContain('Asks when it is done');
+    wrapper.unmount();
+  });
+
   it('keeps the finished video and shows the reason when the chosen file cannot be written', async () => {
     chooseLocation.mockResolvedValue({ name: 'locked.mp4' });
     runExport.mockResolvedValue({ job: 'j1', token: 't', view: { filename: 'my-demo.mp4', size: 5_000_000 } });

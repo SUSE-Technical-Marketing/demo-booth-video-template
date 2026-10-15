@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { canChooseLocation, chooseLocation, formatBytes, formatEta, getInfo, QUALITIES, removeJob, runExport, saveVideo, sizeHint, slowdown } from '../exporter.js';
 import { DEFAULT_RESOLUTION, RESOLUTIONS } from '../project.js';
 import { fmt } from '../timing.js';
@@ -70,8 +70,15 @@ async function start() {
   } finally { controller = null; }
 }
 function cancel() { controller?.abort(); }
+// A chosen location belongs to one export and to one file name: the name field follows it, and typing a different
+// name drops it, so a later export can never be written over an earlier file by accident.
+const stem = name => name.replace(/\.mp4$/i, '');
 async function choose() {
-  try { target.value = await chooseLocation(`${filename.value.trim() || 'booth-video'}.mp4`, props.startIn); }
+  try {
+    const picked = await chooseLocation(`${filename.value.trim() || 'booth-video'}.mp4`, props.startIn);
+    filename.value = stem(picked.name);
+    target.value = picked;
+  }
   catch (error) { if (error.name !== 'AbortError') { errorText.value = error.message; stage.value = 'error'; } }
 }
 async function save(askAgain = false) {
@@ -82,7 +89,12 @@ async function save(askAgain = false) {
     if (error.name !== 'AbortError') saveError.value = error.message;
   }
 }
-function again() { if (result.value) removeJob(result.value.job); result.value = null; saved.value = null; saveError.value = ''; stage.value = 'form'; }
+watch(filename, name => { if (target.value && stem(target.value.name) !== name.trim()) target.value = null; });
+function again() {
+  if (result.value) removeJob(result.value.job);
+  result.value = null; saved.value = null; saveError.value = ''; target.value = null;   // the next export picks its own location
+  stage.value = 'form';
+}
 function close() { if (stage.value === 'running') return; emit('close'); }
 function keydown(event) { if (event.key === 'Escape') close(); }
 
