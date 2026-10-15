@@ -11,7 +11,7 @@ import TimelineDock from './components/TimelineDock.vue';
 import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { createProject, fromProject, mediaPathValid, projectFPS, toProjectJSON, validateProject } from './project.js';
+import { createProject, fromProject, mediaPathForFile, mediaPathValid, normalizeMediaFolder, projectFPS, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { fitWrappedPx, themeLayout } from './themes.js';
 import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
@@ -51,6 +51,7 @@ const mediaFiles = shallowRef(new Map());
 const clips = computed(() => state.value.clips.map(clip => {
   const media = state.value.media.find(m => m.id === clip.media_id), file = mediaFiles.value.get(clip.media_id);
   return { ...clip, name: media.path.split('/').at(-1), path: media.path,
+    resolvedPath: resolveMediaPath(media.path, state.value.media_folder),
     url: file?.url, sourceDuration: file?.dur, dur: clip.source_out - clip.source_in };
 }));
 const history = [];
@@ -99,8 +100,7 @@ async function addVideos(files) {
   let added = 0;
   for (const file of files) {
     try {
-      const path = file.webkitRelativePath || file.name;
-      if (!mediaPathValid(path)) throw new Error('Video filename must be a relative path using forward slashes');
+      const path = mediaPathForFile(file);
       const loaded = await loadClip(file, 0);
       if (generation !== documentGeneration) {
         releaseClip(loaded);
@@ -137,6 +137,15 @@ function trimClip(clip, patch, time) {
   if (!updateClip(clip, patch, false)) return;
   editorTab.value = 'settings';
   seek(time);
+}
+function updateMediaFolder(value) {
+  let folder;
+  try { folder = normalizeMediaFolder(value); }
+  catch (error) { return toast(error.message); }
+  if (folder === (state.value.media_folder ?? '')) return;
+  pushHistory();
+  state.value.media_folder = folder;
+  markDirty();
 }
 function updateMediaPath(clip, path) {
   if (!mediaPathValid(path)) return toast('Use a relative media path with forward slashes');
@@ -510,17 +519,18 @@ async function installProject(next, fileHandle, notice, folder, isCurrent, name 
     if (folder) {
       for (const media of next.media.filter(media => used.has(media.id))) {
         if (!isCurrent()) throw new Error('Project changed while opening; open the folder again');
+        const path = resolveMediaPath(media.path, next.media_folder);
         let loaded;
         try {
-          loaded = await loadClip(await folder.media(media.path), 0);
+          loaded = await loadClip(await folder.media(path), 0);
           if (next.clips.some(clip => clip.media_id === media.id && clip.source_out > loaded.dur + 1e-6)) {
             throw new Error('Video is shorter than the saved source out point');
           }
           files.set(media.id, loaded);
         } catch (error) {
           if (loaded) releaseClip(loaded);
-          console.warn('Could not link media', media.path, error);
-          issues.push(`${media.path}: ${error.message}`);
+          console.warn('Could not link media', path, error);
+          issues.push(`${path}: ${error.message}`);
         }
       }
     }
@@ -790,7 +800,8 @@ onUnmounted(() => {
           </template>
           <template #settings>
             <div class="project-settings">
-              <VideoList :clips="clips" :starts="state.chapter_starts" @add="addVideos" @update-start="updateClipStart"
+              <VideoList :clips="clips" :starts="state.chapter_starts" :media-folder="state.media_folder"
+                @update-folder="updateMediaFolder" @add="addVideos" @update-start="updateClipStart"
                 @update-clip="updateClip" @update-path="updateMediaPath" @relink="relinkMedia"
                 @remove="removeClip" @error="toast" />
               <ProjectSettings :title="state.title" :product-name="state.product_name"

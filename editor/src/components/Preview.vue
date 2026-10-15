@@ -70,6 +70,7 @@ const active = computed(() => activeChapter(props.state, props.cur));
 const headline = computed(() => activeHeadline(props.state, props.cur));
 const scrolling = computed(() => props.state.chapters.length > design.value.CHAPTER_SCROLL.visible);
 const count = computed(() => Math.min(props.state.chapters.length, design.value.CHAPTER_SCROLL.visible));
+const chapterCenter = computed(() => design.value.CHAPTER_VIEW.cx - (count.value - 1) * design.value.PILL.pitch / 2);
 const boxStyle = box => ({
   left: `${box.cx - box.w / 2}px`, top: `${box.cy - box.h / 2}px`,
   width: `${box.w}px`, height: `${box.h}px`, borderRadius: `${box.r}px`, borderWidth: `${box.line ?? 0}px`,
@@ -90,14 +91,6 @@ const progress = computed(() => {
   const end = chapterEnd(props.state, chapter, props.state.preview_end ?? duration(props.state));
   return Math.max(0, Math.min(1, (props.cur - chapter.t) / Math.max(0.001, end - chapter.t)));
 });
-const progressStyle = computed(() => {
-  const d = design.value, box = { ...d.PROGRESS };
-  if (!horizontal.value) return boxStyle(box);
-  box.cx += (active.value - 1 - offset.value) * d.PILL.pitch;
-  const left = box.cx - box.w / 2, viewLeft = d.CHAPTER_VIEW.cx - d.CHAPTER_VIEW.w / 2;
-  return { ...boxStyle(box),
-    clipPath: `inset(0 ${Math.max(0, left + box.w - viewLeft - d.CHAPTER_VIEW.w)}px 0 ${Math.max(0, viewLeft - left)}px)` };
-});
 function fadeStyle(fade) {
   const color = design.value.BRAND.canvas, alpha = value => value.toString(16).padStart(2, '0');
   return { left: 0, top: `${fade.y}px`, width: '1920px', height: `${fade.h}px`,
@@ -106,7 +99,7 @@ function fadeStyle(fade) {
 function pillStyle(i) {
   const d = design.value, pill = d.PILL, view = d.CHAPTER_VIEW, on = active.value === i + 1;
   const rows = modern.value ? d.CHAPTER_SCROLL.visible : count.value;
-  const cx = pill.cx + (horizontal.value ? (i - offset.value) * pill.pitch : 0);
+  const cx = horizontal.value ? chapterCenter.value + (i - offset.value) * pill.pitch : pill.cx;
   const cy = pill.cy_last - (horizontal.value ? 0 : (rows - i - 1 + offset.value) * pill.pitch);
   return { ...boxStyle({ ...pill, cx, cy }),
     left: `${cx - pill.w / 2 - (view.cx - view.w / 2)}px`,
@@ -149,7 +142,12 @@ const headlineStyle = computed(() => {
       <div id="prodname" class="abs" :style="productStyle">{{ state.product_name }}</div>
       <div v-if="!cinematic" id="chapterViewport" class="abs" :style="boxStyle(design.CHAPTER_VIEW)">
         <div v-for="(title, i) in state.chapters" :key="i" class="abs pill" :class="{ on: active === i + 1 }"
-          :data-number="String(i + 1).padStart(2, '0')" :style="pillStyle(i)">{{ title }}</div>
+          :data-number="String(i + 1).padStart(2, '0')" :style="pillStyle(i)">{{ title }}
+          <div v-if="horizontal && active === i + 1" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
+            :style="{ height: `${design.PROGRESS.h}px`, background: design.BRAND.pill_active }">
+            <span :style="{ width: `${progress * 100}%`, background: design.BRAND.accent }"></span>
+          </div>
+        </div>
       </div>
       <div v-if="!cinematic && (scrolling || modern)" id="chapterCounter" class="abs chapterIndicator"
         :style="indicatorStyle(design.CHAPTER_VIEW.cx, design.CHAPTER_SCROLL.indicator_y, modern ? 240 : 300)">Chapter {{ active }} of {{ state.chapters.length }}</div>
@@ -169,8 +167,8 @@ const headlineStyle = computed(() => {
         borderColor: design.BRAND.bar_line, justifyContent: modern ? 'flex-start' : 'center' }">
         <div id="hl" :style="headlineStyle"><AccentText :text="headline?.text ?? ''" /></div>
       </div>
-      <div v-if="design.PROGRESS" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
-        :style="{ ...progressStyle, background: design.BRAND.pill_active }">
+      <div v-if="design.PROGRESS && !horizontal" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
+        :style="{ ...boxStyle(design.PROGRESS), background: design.BRAND.pill_active }">
         <span :style="{ width: `${progress * 100}%`, background: design.BRAND.accent }"></span>
       </div>
     </div>

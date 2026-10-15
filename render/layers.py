@@ -116,6 +116,8 @@ class Layout:
         self.t = timing
         self.chapters = timing["chapters"]
         self.n = len(self.chapters)
+        self.chapter_cx = (D.CHAPTER_VIEW["cx"] - (min(self.n, D.CHAPTER_SCROLL["visible"]) - 1) * D.PILL["pitch"] / 2
+                           if self.horizontal else D.PILL["cx"])
         self.product = timing.get("product_name", "")
         self.wipe = float(timing.get("wipe_seconds", 0.8))
         self.chapter_starts = sorted((float(s), int(c)) for s, c in timing["chapter_starts"])
@@ -216,7 +218,7 @@ class Layout:
         pills = Image.new("RGB", (view["w"], view["h"]), rgb(B["panel"])) if clipped else img
         d = ImageDraw.Draw(pills)
         for i in range(1, self.n + 1):
-            cx = D.PILL["cx"] + ((i - 1 - offset) * D.PILL["pitch"] if self.horizontal else 0)
+            cx = self.chapter_cx + ((i - 1 - offset) * D.PILL["pitch"] if self.horizontal else 0)
             cy = D.PILL["cy_last"] - (0 if self.horizontal else (count - i + offset) * D.PILL["pitch"])
             if clipped:
                 cx -= left
@@ -330,14 +332,19 @@ class Layout:
             width = round(box["w"] * progress)
             if width:
                 ImageDraw.Draw(track).rectangle((0, 0, width - 1, box["h"] - 1), fill=rgb(D.BRAND["accent"]))
-            x = int(box["cx"] - box["w"] / 2 + ((active - 1 - offset) * D.PILL["pitch"] if self.horizontal else 0))
+            x = int(box["cx"] - box["w"] / 2 + (self.chapter_cx - D.PILL["cx"] +
+                    (active - 1 - offset) * D.PILL["pitch"] if self.horizontal else 0))
             y = int(box["cy"] - box["h"] / 2)
             mask = rrect_mask(box["w"], box["h"], box["r"])
             left, right = 0, box["w"]
             if self.horizontal:
+                mask = rrect_mask(D.PILL["w"], D.PILL["h"], D.PILL["r"]).crop(
+                    (0, D.PILL["h"] - box["h"], box["w"], D.PILL["h"]))
                 view_left = int(D.CHAPTER_VIEW["cx"] - D.CHAPTER_VIEW["w"] / 2)
                 left, right = max(0, view_left - x), min(box["w"], view_left + D.CHAPTER_VIEW["w"] - x)
             if right > left:
+                if self.horizontal:
+                    img.paste(rgb(D.BRAND["panel"]), (x + left, y, x + right, y + box["h"]))
                 img.paste(track.crop((left, 0, right, box["h"])), (x + left, y),
                           mask.crop((left, 0, right, box["h"])))
         return img

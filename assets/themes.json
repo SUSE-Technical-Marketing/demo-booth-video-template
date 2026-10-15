@@ -60,7 +60,7 @@
       "PRODUCT_CX": 160, "PRODUCT_CY": 84, "PRODUCT_PX": 24, "PRODUCT_MAX_W": 256,
       "PILL_TEXT_PX": 20, "PILL_TEXT_PAD": 44, "PILL_TEXT_MAX_W": 228, "PILL_LINES": 2,
       "HEADLINE_PX": 48, "HEADLINE_MAX_W": 1472,
-      "PROGRESS": { "cx": 208, "cy": 1066, "w": 288, "h": 4, "r": 2 }
+      "PROGRESS": { "cx": 208, "cy": 1062, "w": 288, "h": 4, "r": 2 }
     },
     "cinematic": {
       "label": "Cinematic",

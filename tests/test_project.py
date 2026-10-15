@@ -12,7 +12,7 @@ from array import array
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "render"))
 import layout as L
-from project import load_project, project_fps, timeline_segments, validate_project
+from project import load_project, project_fps, resolve_media_path, timeline_segments, validate_project
 from render import find_ffmpeg, probe
 
 FIXTURE = json.loads((ROOT / "tests/fixtures/project.json").read_text())
@@ -45,6 +45,46 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(path=path, value=value), self.assertRaises(ValueError):
                 validate_project(project)
 
+    def test_media_folder_base_does_not_get_baked_into_relative_paths(self):
+        for folder in ("", ".", "./", "media", "media/", "./media//demos/", "../shared videos", "media/\u89c6\u9891"):
+            project = copy.deepcopy(FIXTURE)
+            project["media_folder"] = folder
+            for item in project["media"]:
+                item["path"] = item["path"].removeprefix("media/")
+            relative_media = copy.deepcopy(project["media"])
+            with self.subTest(folder=folder):
+                self.assertIs(validate_project(project), project)
+                self.assertEqual(project["media_folder"], folder)
+                self.assertEqual(project["media"], relative_media)
+
+    def test_media_paths_resolve_relative_to_the_media_folder(self):
+        for path, folder, expected in [
+            ("demo clip.mp4", "media", "media/demo clip.mp4"),
+            ("demo clip.mp4", "./media//nested/", "media/nested/demo clip.mp4"),
+            ("demo clip.mp4", "../shared videos/", "../shared videos/demo clip.mp4"),
+            ("demo clip.mp4", "media/\u89c6\u9891", "media/\u89c6\u9891/demo clip.mp4"),
+            ("demo clip.mp4", "", "demo clip.mp4"),
+            ("demo clip.mp4", ".", "demo clip.mp4"),
+            ("nested/demo.mp4", "media", "media/nested/demo.mp4"),
+            ("media/demo.mp4", "media", "media/media/demo.mp4"),
+            ("../shared/demo.mp4", "media", "media/../shared/demo.mp4"),
+        ]:
+            with self.subTest(path=path, folder=folder):
+                self.assertEqual(resolve_media_path(path, folder), expected)
+        self.assertEqual(resolve_media_path("media/demo.mp4"), "media/demo.mp4")
+        for path in ("", "/absolute.mp4", "C:/video.mp4", "video\\file.mp4"):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "Media path must be a relative path"):
+                resolve_media_path(path, "media")
+
+    def test_invalid_media_folders(self):
+        for folder in (None, False, 42, {}, [], " ", "/media", "//server/media", "C:/media",
+                       "https://example.com/media", "./C:/media", "./https://example.com",
+                       "media\\videos", "media\0", "media\n", "media\r"):
+            project = copy.deepcopy(FIXTURE)
+            project["media_folder"] = folder
+            with self.subTest(folder=folder), self.assertRaisesRegex(ValueError, "Media folder must be a relative path"):
+                validate_project(project)
+
     def test_render_multiple_sources_with_trims_gaps_and_missing_audio(self):
         ffmpeg = find_ffmpeg()
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,7 +101,11 @@ class ProjectTests(unittest.TestCase):
             subprocess.run([ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
                             "color=c=blue:s=640x360:r=30:d=1", "-c:v", "libx264", str(second)], check=True)
             path = directory / "project.json"
-            path.write_text(json.dumps(FIXTURE))
+            project = copy.deepcopy(FIXTURE)
+            project["media_folder"] = "media"
+            for item in project["media"]:
+                item["path"] = item["path"].removeprefix("media/")
+            path.write_text(json.dumps(project))
             output = directory / "final.mp4"
             result = subprocess.run([sys.executable, str(ROOT / "render/render.py"), str(path),
                                      "-o", str(output), "--preset", "veryfast", "--crf", "18"],
@@ -87,7 +131,27 @@ class ProjectTests(unittest.TestCase):
                 self.assertGreater(rms, 500) if audible else self.assertLess(rms, 50)
             metadata = subprocess.run([ffmpeg, "-i", str(output)], capture_output=True, text=True).stderr
             self.assertIn("start 1.600000, end 2.400000", metadata)
-            self.assertEqual(load_project(path)[0], FIXTURE)
+            self.assertEqual(load_project(path)[0], project)
+
+    def test_output_cannot_overwrite_media_inside_the_configured_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            media = directory / "recordings"
+            media.mkdir()
+            source = media / "source.mp4"
+            original = b"source media must not be overwritten"
+            source.write_bytes(original)
+            project = copy.deepcopy(FIXTURE)
+            project["media_folder"] = "recordings"
+            project["media"] = [{"id": "blue", "path": source.name}]
+            project["clips"] = [{"id": "clip", "media_id": "blue", "start": 0, "source_in": 0, "source_out": 1}]
+            path = directory / "project.json"
+            path.write_text(json.dumps(project))
+            result = subprocess.run([sys.executable, str(ROOT / "render/render.py"), str(path), "-o", str(source)],
+                                    cwd=tmp, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("must not overwrite", result.stderr)
+            self.assertEqual(source.read_bytes(), original)
 
     def test_missing_media_reports_path_without_writing_output(self):
         with tempfile.TemporaryDirectory() as tmp:

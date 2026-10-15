@@ -12,6 +12,10 @@ vi.mock('./fileAccess.js', () => ({
 }));
 
 const sw = [{ id: 1, t: 0, ch: 1 }, { id: 2, t: 30, ch: 2 }, { id: 3, t: 60, ch: 3 }];
+const folderProject = () => ({
+  ...structuredClone(projectFixture), media_folder: 'media',
+  media: projectFixture.media.map(media => ({ ...media, path: media.path.slice('media/'.length) })),
+});
 describe('clip helpers', () => {
   it('finds the clip under the playhead', () => {
     const clips = [{ start: 0, dur: 10 }, { start: 20, dur: 10 }];
@@ -116,11 +120,22 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnDownload').trigger('click');
     expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(projectFixture);
   });
-  it('supports one directory upload when the native folder picker is unavailable', async () => {
-    const file = new File([JSON.stringify(projectFixture)], 'project.json');
+  it('opens a configured media folder by combining the base with each relative path', async () => {
+    const project = folderProject();
+    const folder = nativeFolder({ 'project.json': project });
+    await openNativeFolder(folder);
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    expect(wrapper.get('#mediaFolder').element.value).toBe('media');
+    expect(folder.directory.getDirectoryHandle.mock.calls.map(([name]) => name)).toEqual(['media', 'media']);
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(project);
+  });
+  it.each([false, true])('supports directory upload with a configured media-folder base: %s', async configured => {
+    const project = configured ? folderProject() : projectFixture;
+    const file = new File([JSON.stringify(project)], 'project.json');
     Object.defineProperties(file, {
       webkitRelativePath: { value: 'demo/project.json' },
-      text: { value: async () => JSON.stringify(projectFixture) },
+      text: { value: async () => JSON.stringify(project) },
     });
     const videos = projectFixture.media.map(media => {
       const video = new File(['video'], media.path.split('/').at(-1));
@@ -136,7 +151,7 @@ describe('videos and New in the editor', () => {
     expect(wrapper.get('#status').text()).toBe('opened project.json (use Download to save)');
     expect(rememberHandle).toHaveBeenLastCalledWith(null);
     await wrapper.get('#btnDownload').trigger('click');
-    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(projectFixture);
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(project);
   });
   it('asks which JSON to open instead of silently picking among multiple projects', async () => {
     const other = structuredClone(projectFixture);
@@ -450,6 +465,93 @@ describe('videos and New in the editor', () => {
     expect(wrapper.findAll('#content video')).toHaveLength(1);
     expect(wrapper.get('#content video').element.currentTime).toBe(7);
     expect(wrapper.findAll('#vlist .vrow')[0].get('.clip-path input').element.value).toBe('media/a.mp4');
+  });
+  it('applies the media folder to all videos and updates every reference when it changes, with undo', async () => {
+    await wrapper.get('#settings-tab').trigger('click');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('');
+    await addFiles('original.mp4');
+    await wrapper.get('#mediaFolder').setValue(' ./shared videos//takes/ ');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('shared videos/takes');
+    expect(wrapper.get('#vlist [aria-label="Media path"]').element.value).toBe('original.mp4');
+    expect(wrapper.get('#vlist .resolved-media-path').text()).toBe('Project path: shared videos/takes/original.mp4');
+    await addFiles('new clip.mp4', 'another.mp4');
+    await wrapper.get('#btnDownload').trigger('click');
+    const project = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(project.media_folder).toBe('shared videos/takes');
+    expect(project.media.map(media => media.path)).toEqual(['original.mp4', 'new clip.mp4', 'another.mp4']);
+    expect(wrapper.findAll('#vlist .resolved-media-path').map(path => path.text())).toEqual([
+      'Project path: shared videos/takes/original.mp4',
+      'Project path: shared videos/takes/new clip.mp4',
+      'Project path: shared videos/takes/another.mp4',
+    ]);
+    await wrapper.get('#mediaFolder').setValue('recordings');
+    expect(wrapper.findAll('#vlist .resolved-media-path').map(path => path.text())).toEqual([
+      'Project path: recordings/original.mp4', 'Project path: recordings/new clip.mp4', 'Project path: recordings/another.mp4',
+    ]);
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual({ ...project, media_folder: 'recordings' });
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('shared videos/takes');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('#vlist .vrow')).toHaveLength(1);
+    expect(wrapper.get('#mediaFolder').element.value).toBe('shared videos/takes');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('');
+    expect(wrapper.get('#vlist [aria-label="Media path"]').element.value).toBe('original.mp4');
+    expect(wrapper.get('#vlist .resolved-media-path').text()).toBe('Project path: original.mp4');
+  });
+  it('loads a media-folder base with its document, supports clearing it and resets it for New', async () => {
+    await importProject(folderProject());
+    expect(wrapper.get('#mediaFolder').element.value).toBe('media');
+    await addFiles('new.mp4');
+    expect(wrapper.findAll('#vlist [aria-label="Media path"]').at(-1).element.value).toBe('new.mp4');
+    expect(wrapper.findAll('#vlist .resolved-media-path').at(-1).text()).toBe('Project path: media/new.mp4');
+    await wrapper.get('#mediaFolder').setValue('');
+    expect(wrapper.findAll('#vlist .resolved-media-path').at(-1).text()).toBe('Project path: new.mp4');
+    await addFiles('beside-json.mp4');
+    expect(wrapper.findAll('#vlist [aria-label="Media path"]').at(-1).element.value).toBe('beside-json.mp4');
+    await wrapper.get('#mediaFolder').setValue('other');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await wrapper.get('#btnNew').trigger('click');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('');
+    await addFiles('fresh.mp4');
+    expect(wrapper.get('#vlist [aria-label="Media path"]').element.value).toBe('fresh.mp4');
+  });
+  it('rejects invalid media folders without replacing the previous setting', async () => {
+    await wrapper.get('#mediaFolder').setValue('media');
+    for (const folder of ['/absolute', 'C:/videos', 'https://example.com', 'media\\videos']) {
+      await wrapper.get('#mediaFolder').setValue(folder);
+      expect(wrapper.get('#toast').text()).toContain('Media folder must be a relative path');
+      expect(wrapper.get('#mediaFolder').element.value).toBe('media');
+    }
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).media_folder).toBe('media');
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('#mediaFolder').element.value).toBe('');
+  });
+  it('uses the current media-folder base consistently even if it changes while videos load', async () => {
+    const pending = Promise.withResolvers();
+    const load = vi.spyOn(await import('./videos.js'), 'loadClip')
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce({ name: 'second.mp4', dur: 40, url: 'blob:second', start: 0 });
+    await wrapper.get('#mediaFolder').setValue('media');
+    const input = wrapper.get('#videoFile');
+    Object.defineProperty(input.element, 'files', {
+      value: [new File(['x'], 'first.mp4'), new File(['x'], 'second.mp4')], configurable: true,
+    });
+    await input.trigger('change');
+    expect(load).toHaveBeenCalledTimes(1);
+    await wrapper.get('#mediaFolder').setValue('next-batch');
+    pending.resolve({ name: 'first.mp4', dur: 40, url: 'blob:first', start: 0 });
+    await flushPromises();
+    expect(load).toHaveBeenCalledTimes(2);
+    await wrapper.get('#btnDownload').trigger('click');
+    const project = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(project.media_folder).toBe('next-batch');
+    expect(project.media.map(media => media.path)).toEqual(['first.mp4', 'second.mp4']);
+    expect(wrapper.findAll('#vlist .resolved-media-path').map(path => path.text())).toEqual([
+      'Project path: next-batch/first.mp4', 'Project path: next-batch/second.mp4',
+    ]);
   });
   it('rejects overlaps, out-of-source trims and invalid paths without changing the project', async () => {
     await addFiles('a.mp4', 'b.mp4');

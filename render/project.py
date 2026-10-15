@@ -19,6 +19,26 @@ def _id(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def _relative_path(value):
+    return _id(value) and not re.match(r"[/\\]|[a-z][a-z\d+.-]*:", value, re.I) and not any(
+        char in value for char in "\\\0\r\n")
+
+
+def normalize_media_folder(folder=""):
+    if folder == "" or _relative_path(folder):
+        normalized = "/".join(part for part in folder.split("/") if part and part != ".")
+        if not normalized or _relative_path(normalized):
+            return normalized
+    raise ValueError("Media folder must be a relative path using forward slashes, or empty for the project folder")
+
+
+def resolve_media_path(path, folder=""):
+    prefix = normalize_media_folder(folder)
+    if not _relative_path(path):
+        raise ValueError("Media path must be a relative path using forward slashes")
+    return "%s/%s" % (prefix, path) if prefix else path
+
+
 def project_fps(value):
     if not isinstance(value, str) or not re.fullmatch(r"[1-9]\d*/[1-9]\d*", value):
         raise ValueError("Output FPS must be a fraction such as 25/1")
@@ -35,6 +55,7 @@ def validate_project(project):
         raise ValueError("Project needs output FPS")
     fps = float(project_fps(project["output"].get("fps")))
     theme_layout(project["output"].get("theme", "classic"))
+    normalize_media_folder(project.get("media_folder", ""))
     media, clips = project.get("media"), project.get("clips")
     if not isinstance(media, list) or not isinstance(clips, list):
         raise ValueError("Project needs media and clips arrays")
@@ -42,9 +63,7 @@ def validate_project(project):
     for item in media:
         if not isinstance(item, dict) or not _id(item.get("id")) or item["id"] in ids:
             raise ValueError("Media needs unique IDs")
-        path = item.get("path")
-        if not isinstance(path, str) or not path.strip() or re.match(r"[/\\]|[a-z][a-z\d+.-]*:", path, re.I) or any(
-                char in path for char in "\\\0\r\n"):
+        if not _relative_path(item.get("path")):
             raise ValueError("Media paths must be relative paths using forward slashes")
         ids.add(item["id"])
     clip_ids = set()

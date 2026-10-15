@@ -25,6 +25,33 @@ function mountPreview(theme, count = 12) {
 }
 
 describe('video layouts', () => {
+  it.each([1, 2, 3, 4, 5, 6, 7, 12])('centers the visible Minimal stage pills for %i chapters', count => {
+    mountPreview('minimal-stage', count);
+    const pills = preview.findAll('.pill').slice(0, 6);
+    const left = parseFloat(pills[0].element.style.left);
+    const last = pills.at(-1).element.style;
+    const right = parseFloat(last.left) + parseFloat(last.width);
+    const viewportLeft = parseFloat(preview.get('#chapterViewport').element.style.left);
+    expect(viewportLeft + (left + right) / 2).toBe(960);
+  });
+  it('recenters Minimal stage pills when chapters are added or removed', async () => {
+    const state = mountPreview('minimal-stage', 2);
+    const firstLeft = () => preview.get('.pill').element.style.left;
+    expect(firstLeft()).toBe('602px');
+    await preview.setProps({ state: { ...state, chapters: [...state.chapters, 'Chapter 3'],
+      chapter_starts: [...state.chapter_starts, { id: 'third', ch: 3, t: 4 }], preview_end: 6 } });
+    expect(firstLeft()).toBe('452px');
+    expect(preview.get('#chapterProgress').element.parentElement).toBe(preview.get('.pill.on').element);
+    await preview.setProps({ state });
+    expect(firstLeft()).toBe('602px');
+  });
+  it('embeds Minimal stage progress in the active pill instead of underneath it', async () => {
+    mountPreview('minimal-stage', 2);
+    await preview.setProps({ cur: 1 });
+    expect(preview.get('#chapterProgress').element.parentElement).toBe(preview.get('.pill.on').element);
+    expect(preview.findAll('.pill .chapter-progress')).toHaveLength(1);
+    expect(preview.get('#chapterProgress span').element.style.width).toBe('50%');
+  });
   it.each(['classic', 'dark-rail', 'minimal-stage', 'cinematic'])('keeps presentation gaps black in %s', async theme => {
     mountPreview(theme);
     await preview.setProps({ cur: 0, presentation: true,
@@ -41,14 +68,14 @@ describe('video layouts', () => {
     const content = preview.get('#content').element.style;
     expect([content.left, content.top, content.width, content.height]).toEqual(['192px', '112px', '1536px', '864px']);
     const pills = preview.findAll('.pill');
-    expect(pills.map(pill => pill.element.style.left)).toEqual(['0px', '300px']);
+    expect(pills.map(pill => pill.element.style.left)).toEqual(['602px', '902px']);
     expect(pills.map(pill => pill.element.style.top)).toEqual(['0px', '0px']);
     expect(preview.get('#chapterViewport').element.style.top).toBe('1008px');
-    expect(preview.get('#chapterProgress').element.style.left).toBe('64px');
+    expect(preview.get('#chapterProgress').element.parentElement).toBe(pills[0].element);
     await preview.setProps({ cur: 1 });
     expect(preview.get('#chapterProgress span').element.style.width).toBe('50%');
     await preview.setProps({ cur: 2 });
-    expect(preview.get('#chapterProgress').element.style.left).toBe('364px');
+    expect(preview.get('#chapterProgress').element.parentElement).toBe(pills[1].element);
     expect(preview.get('#chapterProgress span').element.style.width).toBe('0%');
     expect(preview.get('#chapterCounter').text()).toBe('Chapter 2 of 2');
   });
@@ -58,26 +85,28 @@ describe('video layouts', () => {
     expect(preview.get('#chaptersBelow').text()).toBe('>');
     await preview.setProps({ cur: 12.4 });
     expect(preview.get('.pill.on').text()).toBe('Chapter 7');
-    expect(parseFloat(preview.get('.pill.on').element.style.left)).toBeCloseTo(600);
-    expect(preview.get('#chapterProgress').element.style.left).toBe('664px');
+    expect(parseFloat(preview.get('.pill.on').element.style.left)).toBeCloseTo(602);
+    expect(preview.get('#chapterProgress').element.parentElement).toBe(preview.get('.pill.on').element);
     expect(preview.get('#chaptersAbove').text()).toBe('<');
     expect(preview.get('#chaptersAbove').attributes('title')).toBe('More chapters to the left');
     await preview.setProps({ cur: 12.2 });
-    expect(parseFloat(preview.get('.pill.on').element.style.left)).toBeCloseTo(750);
-    expect(parseFloat(preview.get('#chapterProgress').element.style.left)).toBeCloseTo(814);
+    expect(parseFloat(preview.get('.pill.on').element.style.left)).toBeCloseTo(752);
+    expect(preview.get('#chapterProgress').element.parentElement).toBe(preview.get('.pill.on').element);
     await preview.setProps({ cur: 22.4 });
     expect(preview.find('#chaptersBelow').exists()).toBe(false);
-    expect(preview.get('.pill.on').element.style.left).toBe('1500px');
+    expect(preview.get('.pill.on').element.style.left).toBe('1502px');
     await preview.setProps({ cur: 0 });
-    expect(preview.get('.pill.on').element.style.left).toBe('0px');
+    expect(preview.get('.pill.on').element.style.left).toBe('2px');
   });
-  it('clips Minimal stage progress to its footer during large chapter jumps', async () => {
+  it('keeps Minimal stage progress inside its scrolling pill during large chapter jumps', async () => {
     const state = mountPreview('minimal-stage');
     await preview.setProps({ cur: 1.3, state: { ...state,
       chapter_starts: state.chapter_starts.map((chapter, i) => ({ ...chapter, t: i ? 1 : 0 })) } });
-    const style = preview.get('#chapterProgress').element.style;
-    expect(parseFloat(style.left)).toBeCloseTo(1845.25);
-    expect(parseFloat(style.clipPath.match(/[\d.]+px/)[0])).toBeCloseTo(277.25);
+    const progress = preview.get('#chapterProgress').element;
+    expect(progress.parentElement).toBe(preview.get('.pill.on').element);
+    expect(parseFloat(progress.parentElement.style.left)).toBeCloseTo(1783.25);
+    expect(progress.parentElement.parentElement.id).toBe('chapterViewport');
+    expect(progress.style.height).toBe('4px');
   });
   it('keeps a short Dark rail agenda at the top, with chapter numbering and progress', async () => {
     mountPreview('dark-rail', 2);

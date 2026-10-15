@@ -93,9 +93,14 @@ JSON. The editor remembers both the file and folder handles, so media can be lin
 Directory selection is necessary because selecting a JSON file alone does not grant access to adjacent files.
 Files are read locally; no project or video files are uploaded to a server.
 
-The project saves media references and clip data, never video bytes or temporary browser URLs. **Media path** is relative
-to the saved project JSON, using forward slashes, for example `media/demo.mp4`. Newly added files default to their filename:
-save the project beside them, or update their paths. Opening only the JSON with **Open file…** still requires each clip's
+The project saves media references and clip data, never video bytes or temporary browser URLs. In **Videos & settings**,
+set **Media folder** relative to the saved project JSON, for example `media` or `media/recordings`.
+Every **Media path** is relative to that folder: enter `demo.mp4` or `subfolder/demo.mp4`, without repeating the media folder.
+The editor shows the combined **Project path** underneath each entry. Changing the folder automatically updates every
+video reference, including existing clips; no individual path edits are needed. The editor and renderer both apply this base.
+The setting is saved with the project and supports undo/autosave. Leave it blank to resolve paths relative to the JSON.
+Videos are not copied or moved:
+place the actual files in that folder for automatic linking and rendering. Opening only the JSON with **Open file…** still requires each clip's
 **Relink media…** button to select the local source again for preview. Relinking does not change its saved path or trims. Missing media does not prevent
 editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
 keeping the same relative media layout or updating the paths.
@@ -115,8 +120,10 @@ in the project, supports undo/autosave, and is used by both fullscreen playback 
   Contrast gradients protect the text. Unlike Dark rail, its overlays cover parts of the footage; choose it when the
   recording leaves enough space around important controls.
 - **Minimal stage**: no sidebar or footage overlays. Compact branding and a headline sit above a centered 16:9
-  video stage; a numbered, segmented chapter strip sits below. Titles wrap over two lines, and agendas longer than
-  six chapters scroll horizontally with directional hints and a chapter counter. Progress follows the active segment.
+  video stage; a numbered, segmented chapter strip is centered below, including when there are fewer than six chapters.
+  Titles wrap over two lines, and agendas longer than
+  six chapters scroll horizontally with directional hints and a chapter counter. Progress is embedded in the active
+  chapter pill's bottom edge and follows it while scrolling.
 - **Classic**: the original white sidebar, filled chapter buttons and outlined headline bar.
 
 Projects without a theme setting retain Classic. Switching themes does not change clip placement, trims,
@@ -252,8 +259,8 @@ marker per chapter (shown in the chapter menus of QuickTime, VLC and IINA).
        intro.mp4
        demo.mp4
    ```
-   The media paths in this project are `media/intro.mp4` and `media/demo.mp4`.
-   Paths resolve relative to the project file, not your shell's working directory.
+   Set `media_folder` to `media` and the media paths to `intro.mp4` and `demo.mp4`.
+   The renderer combines the folder and each path, relative to the project file, not your shell's working directory.
 2. **One-time setup** (needs Python 3.10 or newer; nothing else, the renderer brings its own ffmpeg):
    ```bash
    cd demo-booth-video-template
@@ -337,9 +344,10 @@ The examples in `timings/` are project templates without media; add recordings a
 {
   "project_version": 1,
   "output": { "fps": "25/1", "theme": "dark-rail" },
+  "media_folder": "media",
   "media": [
-    { "id": "intro", "path": "media/intro.mp4" },
-    { "id": "demo", "path": "media/demo.mp4" }
+    { "id": "intro", "path": "intro.mp4" },
+    { "id": "demo", "path": "demo.mp4" }
   ],
   "clips": [
     { "id": "clip-1", "media_id": "intro", "start": 0, "source_in": 0, "source_out": 10 },
@@ -359,6 +367,15 @@ The examples in `timings/` are project templates without media; add recordings a
   }
 }
 ```
+
+`media_folder` is an optional base folder relative to the project JSON, using forward slashes.
+Every `media[].path` is relative to that base, including subfolders. The editor and renderer resolve
+`<JSON directory>/<media_folder>/<media[].path>` automatically; do not repeat the folder in each path.
+Changing the base affects all references without rewriting individual paths. Newly added videos store only their filenames.
+Redundant slashes and `.` components in the folder are removed when setting it.
+Omitting it, an empty string, or `.` uses the project JSON's folder. Nested folders, spaces and parent-relative paths
+such as `../shared` are supported; paths outside the selected project folder still require manual browser relinking.
+Changing references does not move files.
 
 `media` IDs and clip IDs are unique strings. A source can be referenced by several clips.
 Clip duration is `source_out - source_in`; `start` is absolute project time and is authoritative,
@@ -397,7 +414,7 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 |---|---|
 | Editor says "sample project" | Click **Open file…** and choose your project JSON, or **New** to start a blank one. |
 | Preview says "Missing media" | Use **Relink media…** in Videos & settings. Saved placements and trims are retained. |
-| Renderer reports missing media | Correct the saved media path relative to the project JSON, or move the source into that location. |
+| Renderer reports missing media | Check the shared Media folder (relative to the JSON) and the video path (relative to that folder), or move the source into that location. |
 | Clips overlap | Move a clip later or shorten its source range. Crossfades are not supported yet. |
 | Editor won't save to the file | Use Chrome or Edge. In other browsers use **Download** and replace the file in `timings/`. |
 | `start_editor.command` says port 8765 is in use | Close the earlier editor window, or run `kill $(lsof -ti tcp:8765)` and start it again. |
