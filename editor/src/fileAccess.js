@@ -7,6 +7,7 @@ function openDatabase() {
   });
 }
 
+// Folder projects store { file, directory }; file-only projects store their file handle.
 export async function rememberedHandle() {
   const db = await openDatabase();
   try {

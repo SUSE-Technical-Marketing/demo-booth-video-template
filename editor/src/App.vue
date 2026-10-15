@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } fr
 import ChapterEditor from './components/ChapterEditor.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
 import PreviewPlayer from './components/PreviewPlayer.vue';
+import ProjectFilePicker from './components/ProjectFilePicker.vue';
 import ShortcutHelp from './components/ShortcutHelp.vue';
 import ProjectSettings from './components/ProjectSettings.vue';
 import TabGroup from './components/TabGroup.vue';
@@ -11,12 +12,15 @@ import VideoList from './components/VideoList.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
 import { createProject, fromProject, mediaPathValid, projectFPS, toProjectJSON, validateProject } from './project.js';
+import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
   headlineOutside, headlineTime, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE } from './timing.js';
 
 const state = ref(createProject(DEFAULT));
 const handle = shallowRef(null), reconnectHandle = shallowRef(null);
+const openedName = ref(null);
+const projectFolder = shallowRef(null), reconnectFolder = shallowRef(null), openingFolder = ref(false);
 const dirty = ref(false), saving = ref(false), autosave = ref(true);
 const cur = ref(0), selectedId = ref(null), playing = ref(false);
 const presenting = ref(false), buffering = ref(false);
@@ -40,6 +44,7 @@ watch([followPlayhead, playingChapter], ([follow, chapter]) => {
 const offset = ref(3600), offsetText = ref('01:00:00'), rippleBy = ref(-5);
 const message = ref(''), fontsVersion = ref(0);
 const fileInput = ref(null), chapterEditor = ref(null), previewPlayer = ref(null);
+const folderInput = ref(null), projectPicker = ref(null);
 const shortcutHelp = ref(null);
 const mediaFiles = shallowRef(new Map());
 const clips = computed(() => state.value.clips.map(clip => {
@@ -57,7 +62,8 @@ watch(totalDuration, end => {
 const previewState = computed(() => ({ ...state.value, preview_end: totalDuration.value }));
 const status = computed(() => dirty.value
   ? (handle.value ? 'unsaved changes…' : 'unsaved (not linked to a file)')
-  : (handle.value ? `saved to ${handle.value.name}` : 'sample project: open a project JSON or add videos'));
+  : (handle.value ? `saved to ${handle.value.name}` : openedName.value
+    ? `opened ${openedName.value} (use Download to save)` : 'sample project: open a project JSON or add videos'));
 function measure(text, px) {
   fontsVersion.value;
   context.font = `500 ${px}px SUSE, system-ui, sans-serif`;
@@ -448,11 +454,11 @@ function ripple() {
   markDirty();
   toast(`Shifted everything from ${fmt(cur.value)} by ${by > 0 ? '+' : ''}${by} s`);
 }
-async function remember(fileHandle) {
-  try { await rememberHandle(fileHandle); }
-  catch (error) { report('File linked, but could not remember it for next visit', error); }
+async function remember(fileHandle, folder = null) {
+  try { await rememberHandle(folder?.directory ? { file: fileHandle, directory: folder.directory } : fileHandle); }
+  catch (error) { report('Could not remember project access', error); }
 }
-function loadState(next, fileHandle, notice = '') {
+function loadState(next, fileHandle, notice = '', folder = null, name = fileHandle?.name ?? null) {
   clearTimeout(saveTimer);
   stop();
   pushHistory();
@@ -460,7 +466,10 @@ function loadState(next, fileHandle, notice = '') {
   clearClips();
   state.value = next;
   handle.value = fileHandle;
+  openedName.value = name;
+  projectFolder.value = folder;
   reconnectHandle.value = null;
+  reconnectFolder.value = null;
   dirty.value = Boolean(notice);
   selectedId.value = null;
   selectedChapterId.value = next.chapter_starts[0].id;
@@ -471,17 +480,85 @@ function readTiming(text) {
   const source = JSON.parse(text);
   return { next: fromProject(source), notice: '' };
 }
-async function loadFromHandle(fileHandle) {
+function documentGuard() {
+  const generation = documentGeneration, initialRevision = revision;
+  return () => mounted && generation === documentGeneration && initialRevision === revision;
+}
+async function installProject(next, fileHandle, notice, folder, isCurrent, name = fileHandle?.name ?? null) {
+  let files = new Map();
+  const issues = [], used = new Set(next.clips.map(clip => clip.media_id));
+  try {
+    if (folder) {
+      for (const media of next.media.filter(media => used.has(media.id))) {
+        if (!isCurrent()) throw new Error('Project changed while opening; open the folder again');
+        let loaded;
+        try {
+          loaded = await loadClip(await folder.media(media.path), 0);
+          if (next.clips.some(clip => clip.media_id === media.id && clip.source_out > loaded.dur + 1e-6)) {
+            throw new Error('Video is shorter than the saved source out point');
+          }
+          files.set(media.id, loaded);
+        } catch (error) {
+          if (loaded) releaseClip(loaded);
+          console.warn('Could not link media', media.path, error);
+          issues.push(`${media.path}: ${error.message}`);
+        }
+      }
+    }
+    if (!isCurrent()) throw new Error('Project changed while opening; try again');
+    loadState(next, fileHandle, notice, folder, name);
+    mediaFiles.value = files;
+    files = null;
+    return [notice, ...issues].filter(Boolean).join('; ');
+  } finally {
+    files?.forEach(releaseClip);
+  }
+}
+async function loadFromHandle(fileHandle, folder = null, isCurrent = documentGuard()) {
   const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
-  loadState(next, fileHandle, notice);
-  return notice;
+  return installProject(next, fileHandle, notice, folder, isCurrent);
+}
+async function openFolderSource(source, isCurrent) {
+  const choices = await source.projects();
+  if (!isCurrent()) throw new Error('Project changed while choosing a folder; try again');
+  if (!choices.length) throw new Error('No project JSON found directly in this folder; select the folder containing your project JSON');
+  const project = choices.length === 1 ? choices[0] : await projectPicker.value.choose(choices);
+  if (!project) return;
+  const { next, notice } = readTiming(await (await project.getFile()).text());
+  const issues = await installProject(next, project.handle, notice, source, isCurrent, project.name);
+  toast(`Opened ${project.name}; linked ${mediaFiles.value.size} video source(s)${project.handle ? '' : '; use Download to save'}`, issues);
+  await remember(project.handle, source);
+}
+async function openProjectFolder() {
+  if (saving.value) return toast('Wait for the current save to finish');
+  if (!window.showDirectoryPicker) return folderInput.value.click();
+  const isCurrent = documentGuard();
+  openingFolder.value = true;
+  try {
+    const directory = await window.showDirectoryPicker({ id: 'video-project', mode: 'readwrite' });
+    await openFolderSource(directoryProjectSource(directory), isCurrent);
+  } catch (error) { report('Open folder failed', error); }
+  finally { openingFolder.value = false; }
+}
+async function importProjectFolder(event) {
+  const files = [...event.target.files];
+  if (!files.length) return;
+  const isCurrent = documentGuard();
+  openingFolder.value = true;
+  try { await openFolderSource(uploadedProjectSource(files), isCurrent); }
+  catch (error) { report('Open folder failed', error); }
+  finally {
+    event.target.value = '';
+    openingFolder.value = false;
+  }
 }
 async function openFile() {
   if (saving.value) return toast('Wait for the current save to finish');
   if (!window.showOpenFilePicker) return fileInput.value.click();
+  const isCurrent = documentGuard();
   try {
     const [fileHandle] = await window.showOpenFilePicker(pickerOptions);
-    const notice = await loadFromHandle(fileHandle);
+    const notice = await loadFromHandle(fileHandle, null, isCurrent);
     toast('Opened ' + fileHandle.name, notice);
     await remember(fileHandle);
   } catch (error) { report('Open failed', error); }
@@ -491,7 +568,7 @@ async function importFile(event) {
   if (!file) return;
   try {
     const { next, notice } = readTiming(await file.text());
-    loadState(next, null, notice);
+    loadState(next, null, notice, null, file.name);
     toast(`Opened ${file.name}; use Download to save changes in this browser`, notice);
   } catch (error) { report('Open failed', error); }
   finally { event.target.value = ''; }
@@ -518,13 +595,17 @@ async function save(saveAs = false) {
       if (!window.showSaveFilePicker) return download();
       target = await window.showSaveFilePicker({ ...pickerOptions, suggestedName: handle.value?.name ?? 'project.json' });
     }
+    const folder = target === handle.value || (projectFolder.value?.directory &&
+      (await projectFolder.value.directory.resolve(target))?.length === 1) ? projectFolder.value : null;
     const writable = await target.createWritable();
     await writable.write(text);
     await writable.close();
     if (target !== handle.value) {
       handle.value = target;
+      projectFolder.value = folder;
       reconnectHandle.value = null;
-      await remember(target);
+      reconnectFolder.value = null;
+      await remember(target, folder);
     }
     if (revision === savedRevision) dirty.value = false;
     else scheduleSave();
@@ -533,39 +614,52 @@ async function save(saveAs = false) {
   finally { saving.value = false; }
 }
 async function reconnect() {
+  const isCurrent = documentGuard();
   try {
-    const fileHandle = reconnectHandle.value;
+    const fileHandle = reconnectHandle.value, folder = reconnectFolder.value;
+    if (folder && await folder.directory.requestPermission({ mode: 'readwrite' }) !== 'granted') {
+      return toast('Project folder access was not granted');
+    }
     if (await fileHandle.requestPermission({ mode: 'readwrite' }) !== 'granted') {
       return toast('File access was not granted');
     }
-    const notice = await loadFromHandle(fileHandle);
+    const notice = await loadFromHandle(fileHandle, folder, isCurrent);
     toast('Loaded ' + fileHandle.name, notice);
   } catch (error) { report('Reconnect failed', error); }
 }
 async function connectRemembered() {
   const initialRevision = revision;
+  const isCurrent = documentGuard();
   try {
-    const fileHandle = await rememberedHandle();
+    const remembered = await rememberedHandle(), fileHandle = remembered?.file ?? remembered;
+    const folder = remembered?.directory ? directoryProjectSource(remembered.directory) : null;
     if (!fileHandle || !fileHandle.queryPermission || !mounted || revision !== initialRevision) return;
-    if (await fileHandle.queryPermission({ mode: 'readwrite' }) === 'granted') {
+    const fileGranted = await fileHandle.queryPermission({ mode: 'readwrite' }) === 'granted';
+    const folderGranted = !folder || await folder.directory.queryPermission({ mode: 'read' }) === 'granted';
+    if (fileGranted && folderGranted) {
       const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
-      if (mounted && revision === initialRevision) {
-        loadState(next, fileHandle, notice);
-        toast('Loaded ' + fileHandle.name, notice);
+      if (isCurrent()) {
+        const issues = await installProject(next, fileHandle, notice, folder, isCurrent);
+        toast('Loaded ' + fileHandle.name, issues);
       }
-    } else if (mounted && revision === initialRevision) reconnectHandle.value = fileHandle;
+    } else if (isCurrent()) {
+      reconnectHandle.value = fileHandle;
+      reconnectFolder.value = folder;
+    }
   } catch (error) { report('Could not reconnect the remembered file', error); }
 }
 async function refreshFile() {
   const fileHandle = handle.value, initialRevision = revision;
+  const isCurrent = documentGuard(), folder = projectFolder.value;
   if (!fileHandle || dirty.value || saving.value || presenting.value) return;
   try {
     if (await fileHandle.queryPermission({ mode: 'read' }) !== 'granted') return;
     const { next, notice } = readTiming(await (await fileHandle.getFile()).text());
     if (mounted && !presenting.value && !dirty.value && revision === initialRevision && handle.value === fileHandle &&
         (notice || toProjectJSON(next) !== toProjectJSON(state.value))) {
-      loadState(next, fileHandle, notice);
-      toast('Updated from file', notice);
+      const issues = await installProject(next, fileHandle, notice, folder,
+        () => isCurrent() && !presenting.value && !dirty.value && handle.value === fileHandle);
+      toast('Updated from file', issues);
     }
   } catch (error) { report('Could not refresh the linked file', error); }
 }
@@ -578,7 +672,7 @@ function keydown(event) {
     if (!event.repeat) shortcutHelp.value.toggle();
     return;
   }
-  if (shortcutHelp.value?.isOpen) return;
+  if (shortcutHelp.value?.isOpen || projectPicker.value?.isOpen) return;
   if (presenting.value) {
     if (event.code === 'Space' && !target.closest('button')) {
       event.preventDefault();
@@ -635,7 +729,10 @@ onUnmounted(() => {
     <h1>Timing editor</h1>
     <button id="btnNew" title="Start a blank timing file and clear the loaded videos" @click="newVideo">New</button>
     <button id="btnOpen" title="Open a project JSON file" @click="openFile">Open file…</button>
+    <button id="btnOpenFolder" :disabled="openingFolder" title="Open a folder containing project JSON and media, linking videos automatically"
+      @click="openProjectFolder">{{ openingFolder ? 'Opening folder…' : 'Open project folder…' }}</button>
     <input ref="fileInput" type="file" accept=".json,application/json" hidden @change="importFile">
+    <input ref="folderInput" id="projectFolderInput" type="file" webkitdirectory multiple hidden @change="importProjectFolder">
     <button v-if="reconnectHandle" id="btnReconnect" class="primary" @click="reconnect">Reconnect {{ reconnectHandle.name }}</button>
     <button id="btnSave" class="primary" title="Cmd/Ctrl+S" :disabled="saving" @click="save()">{{ saving ? 'Saving…' : 'Save' }}</button>
     <button id="btnSaveAs" title="Save a copy under a new name and keep working in it (Cmd/Ctrl+Shift+S)" :disabled="saving" @click="save(true)">Save as…</button>
@@ -709,4 +806,5 @@ onUnmounted(() => {
     @trim-clip="trimClip" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
   <ShortcutHelp ref="shortcutHelp" @error="toast" />
+  <ProjectFilePicker ref="projectPicker" />
 </template>

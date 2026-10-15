@@ -79,6 +79,6 @@ function snap(clip, event) {
     <p class="hint">Add one video per chapter, or one that covers several. Each plays from the time you set; <b>snap</b> moves it
       to the start of a chapter. Placements, source trims and relative media paths are saved in the project.
       Hard cuts only: overlapping clips are rejected. Gaps render black with silence.
-      Reopening a project requires relinking its local videos for preview.</p>
+      Use <b>Open project folder…</b> to link videos automatically, or <b>Relink media…</b> when opening only the JSON.</p>
   </section>
 </template>

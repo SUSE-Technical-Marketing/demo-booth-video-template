@@ -317,10 +317,14 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .playback-error { position: absolute; bottom: 90px; left: 12px; right: 12px; z-index: 11;
   padding: 12px; border: 1px solid var(--orange); border-radius: 8px; background: var(--surface); color: var(--text); }
 
-.shortcut-help { width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px;
+.shortcut-help, .project-picker { width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 20px;
   overflow: auto; border: 1px solid var(--green); border-radius: 12px; background: var(--surface); color: var(--text);
   box-shadow: 0 16px 60px #0008; }
-.shortcut-help::backdrop { background: #0009; }
+.shortcut-help::backdrop, .project-picker::backdrop { background: #0009; }
+.project-picker { width: min(440px, calc(100% - 32px)); }
+.project-picker h2 { font-size: 18px; margin: 0; }
+.project-picker label { display: flex; flex-direction: column; gap: 6px; }
+.project-picker-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .shortcut-help-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .shortcut-help h2 { font-size: 18px; margin: 0; }
 .shortcut-help h3 { font-size: 13px; color: var(--muted); margin: 18px 0 8px; }

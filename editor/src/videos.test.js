@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
 import Preview from './components/Preview.vue';
 import { chaptersCovered, clipAt } from './videos.js';
-import { downloadJSON, rememberHandle } from './fileAccess.js';
+import { downloadJSON, rememberHandle, rememberedHandle } from './fileAccess.js';
+import projectFixture from '../../tests/fixtures/project.json';
 
 vi.mock('./fileAccess.js', () => ({
   downloadJSON: vi.fn(), rememberHandle: vi.fn().mockResolvedValue(),
@@ -30,6 +31,8 @@ describe('videos and New in the editor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('showDirectoryPicker', undefined);
+    rememberedHandle.mockResolvedValue(null);
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ measureText: t => ({ width: t.length * 14 }) });
     Element.prototype.scrollIntoView = vi.fn();
     URL.createObjectURL = vi.fn(() => 'blob:x'); URL.revokeObjectURL = vi.fn();
@@ -62,6 +65,218 @@ describe('videos and New in the editor', () => {
     handle.element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, clientX }));
     await wrapper.vm.$nextTick();
   }
+  function nativeFolder(projects = { 'project.json': structuredClone(projectFixture) }) {
+    const sources = new Map(projectFixture.media.map(media => [media.path.slice('media/'.length), new File(['video'], media.path.split('/').at(-1))]));
+    const manifests = new Map(Object.entries(projects).map(([name, project]) => [name, {
+      kind: 'file', name,
+      getFile: vi.fn(async () => ({ name, text: async () => JSON.stringify(project) })),
+      queryPermission: vi.fn().mockResolvedValue('granted'),
+      requestPermission: vi.fn().mockResolvedValue('granted'),
+    }]));
+    const media = {
+      kind: 'directory', name: 'media',
+      getFileHandle: vi.fn(async name => {
+        if (!sources.has(name)) throw new DOMException('File not found', 'NotFoundError');
+        return { getFile: async () => sources.get(name) };
+      }),
+    };
+    const directory = {
+      kind: 'directory', name: 'demo',
+      async *values() { yield* manifests.values(); yield media; },
+      getDirectoryHandle: vi.fn(async name => {
+        if (name !== 'media') throw new DOMException('Directory not found', 'NotFoundError');
+        return media;
+      }),
+      queryPermission: vi.fn().mockResolvedValue('granted'),
+      requestPermission: vi.fn().mockResolvedValue('granted'),
+      resolve: vi.fn(async file => manifests.has(file.name) ? [file.name] : null),
+    };
+    return { directory, manifests, sources, media };
+  }
+  async function settleFolder() {
+    await flushPromises();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    await flushPromises();
+  }
+  async function openNativeFolder(folder) {
+    vi.stubGlobal('showDirectoryPicker', vi.fn().mockResolvedValue(folder.directory));
+    await wrapper.get('#btnOpenFolder').trigger('click');
+    await settleFolder();
+  }
+  it('opens a project folder and automatically links its relative media without changing the project', async () => {
+    const folder = nativeFolder();
+    await openNativeFolder(folder);
+    expect(window.showDirectoryPicker).toHaveBeenCalledWith({ id: 'video-project', mode: 'readwrite' });
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    expect(wrapper.get('#toast').text()).toContain('linked 2 video source(s)');
+    expect(wrapper.get('#status').text()).toBe('saved to project.json');
+    expect(rememberHandle).toHaveBeenLastCalledWith({ file: folder.manifests.get('project.json'), directory: folder.directory });
+    await wrapper.get('#scrub').setValue('0.6');
+    expect(wrapper.findAll('#content video')[0].element.currentTime).toBeCloseTo(0.8);
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(projectFixture);
+  });
+  it('supports one directory upload when the native folder picker is unavailable', async () => {
+    const file = new File([JSON.stringify(projectFixture)], 'project.json');
+    Object.defineProperties(file, {
+      webkitRelativePath: { value: 'demo/project.json' },
+      text: { value: async () => JSON.stringify(projectFixture) },
+    });
+    const videos = projectFixture.media.map(media => {
+      const video = new File(['video'], media.path.split('/').at(-1));
+      Object.defineProperty(video, 'webkitRelativePath', { value: `demo/${media.path}` });
+      return video;
+    });
+    const input = wrapper.get('#projectFolderInput');
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file, ...videos] });
+    await input.trigger('change');
+    await settleFolder();
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    expect(wrapper.get('#toast').text()).toContain('use Download to save');
+    expect(wrapper.get('#status').text()).toBe('opened project.json (use Download to save)');
+    expect(rememberHandle).toHaveBeenLastCalledWith(null);
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0])).toEqual(projectFixture);
+  });
+  it('asks which JSON to open instead of silently picking among multiple projects', async () => {
+    const other = structuredClone(projectFixture);
+    other.timing.title = 'Selected second project';
+    const folder = nativeFolder({ 'a.json': projectFixture, 'b.json': other });
+    const dialog = wrapper.get('.project-picker').element;
+    dialog.showModal = vi.fn(() => { dialog.open = true; });
+    dialog.close = vi.fn(() => { dialog.open = false; });
+    await openNativeFolder(folder);
+    expect(dialog.open).toBe(true);
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+    await wrapper.get('.project-picker select').setValue('1');
+    await wrapper.get('.project-picker form').trigger('submit');
+    await settleFolder();
+    expect(wrapper.get('#titleIn').element.value).toBe('Selected second project');
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    expect(dialog.open).toBe(false);
+  });
+  it('reports missing media explicitly while still opening and linking the remaining clips', async () => {
+    const folder = nativeFolder();
+    folder.sources.delete('two with spaces.mp4');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await openNativeFolder(folder);
+    expect(wrapper.findAll('#content video')).toHaveLength(1);
+    expect(wrapper.get('#toast').text()).toContain('media/two with spaces.mp4');
+    expect(wrapper.findAll('#vlist .vrow')[1].text()).toContain('missing media');
+    await wrapper.get('#scrub').setValue('1.8');
+    expect(wrapper.get('#content').text()).toContain('Missing media');
+  });
+  it('restores a remembered folder and its videos, and relinks again after an external JSON update', async () => {
+    const project = structuredClone(projectFixture), folder = nativeFolder({ 'project.json': project });
+    wrapper.unmount();
+    rememberedHandle.mockResolvedValue({ file: folder.manifests.get('project.json'), directory: folder.directory });
+    wrapper = mount(App, { attachTo: document.body });
+    await settleFolder();
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+    project.timing.title = 'Updated externally';
+    window.dispatchEvent(new Event('focus'));
+    await settleFolder();
+    expect(wrapper.get('#titleIn').element.value).toBe('Updated externally');
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+  });
+  it('reconnects both folder and project permissions before restoring video links', async () => {
+    const folder = nativeFolder();
+    folder.directory.queryPermission.mockResolvedValue('prompt');
+    wrapper.unmount();
+    rememberedHandle.mockResolvedValue({ file: folder.manifests.get('project.json'), directory: folder.directory });
+    wrapper = mount(App, { attachTo: document.body });
+    await flushPromises();
+    expect(wrapper.get('#btnReconnect').text()).toContain('project.json');
+    await wrapper.get('#btnReconnect').trigger('click');
+    await settleFolder();
+    expect(folder.directory.requestPermission).toHaveBeenCalledWith({ mode: 'readwrite' });
+    expect(wrapper.findAll('#content video')).toHaveLength(2);
+  });
+  it('does not overwrite another project when an asynchronous folder load finishes late', async () => {
+    const folder = nativeFolder();
+    let complete;
+    folder.manifests.get('project.json').getFile.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openNativeFolder(folder);
+    await wrapper.get('#btnNew').trigger('click');
+    complete({ text: async () => JSON.stringify(projectFixture) });
+    await settleFolder();
+    expect(wrapper.get('#titleIn').element.value).toBe('New video');
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+    expect(wrapper.get('#toast').text()).toContain('Project changed while opening');
+  });
+  it('cancels folder selection without changing the current project', async () => {
+    vi.stubGlobal('showDirectoryPicker', vi.fn().mockRejectedValue(new DOMException('Cancelled', 'AbortError')));
+    await wrapper.get('#btnOpenFolder').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
+    expect(rememberHandle).not.toHaveBeenCalled();
+    expect(wrapper.get('#btnOpenFolder').attributes('disabled')).toBeUndefined();
+  });
+  it('leaves the current project alone when the folder contains no JSON or choosing among projects is cancelled', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openNativeFolder(nativeFolder({}));
+    expect(wrapper.get('#toast').text()).toContain('No project JSON found');
+    expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
+    const dialog = wrapper.get('.project-picker').element;
+    dialog.showModal = vi.fn(() => { dialog.open = true; });
+    dialog.close = vi.fn(() => { dialog.open = false; });
+    await openNativeFolder(nativeFolder({ 'a.json': projectFixture, 'b.json': projectFixture }));
+    await wrapper.get('.project-picker').trigger('cancel');
+    await settleFolder();
+    expect(wrapper.findAll('#stage .pill')).toHaveLength(6);
+    expect(rememberHandle).not.toHaveBeenCalled();
+  });
+  it('rejects too-short sources, releases their URLs and leaves them visibly unlinked', async () => {
+    const project = structuredClone(projectFixture);
+    project.clips = [{ ...project.clips[0], start: 0, source_out: 50 }];
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await openNativeFolder(nativeFolder({ 'project.json': project }));
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+    expect(wrapper.get('#vlist .vrow').text()).toContain('missing media');
+    expect(wrapper.get('#toast').text()).toContain('shorter than the saved source out point');
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+  });
+  it('reports out-of-folder references without accessing parent directories', async () => {
+    const project = structuredClone(projectFixture);
+    project.clips = [project.clips[0]];
+    project.media[0].path = '../shared/video.mp4';
+    const folder = nativeFolder({ 'project.json': project });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await openNativeFolder(folder);
+    expect(wrapper.get('#toast').text()).toContain('outside the selected project folder');
+    expect(folder.directory.getDirectoryHandle).not.toHaveBeenCalled();
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+  });
+  it('releases staged videos if the project changes while media files are being opened', async () => {
+    const folder = nativeFolder();
+    let complete;
+    folder.media.getFileHandle.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openNativeFolder(folder);
+    await wrapper.get('#btnNew').trigger('click');
+    complete({ getFile: async () => new File(['video'], 'one.mp4') });
+    await settleFolder();
+    expect(wrapper.get('#titleIn').element.value).toBe('New video');
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+  });
+  it('keeps folder access when saving a copy beside the project and forgets it when saving elsewhere', async () => {
+    const folder = nativeFolder();
+    await openNativeFolder(folder);
+    const writable = { write: vi.fn().mockResolvedValue(), close: vi.fn().mockResolvedValue() };
+    const beside = { name: 'copy.json', createWritable: vi.fn().mockResolvedValue(writable) };
+    folder.manifests.set('copy.json', beside);
+    vi.stubGlobal('showSaveFilePicker', vi.fn().mockResolvedValue(beside));
+    await wrapper.get('#btnSaveAs').trigger('click');
+    await flushPromises();
+    expect(rememberHandle).toHaveBeenLastCalledWith({ file: beside, directory: folder.directory });
+    const elsewhere = { name: 'elsewhere.json', createWritable: vi.fn().mockResolvedValue(writable) };
+    window.showSaveFilePicker.mockResolvedValue(elsewhere);
+    await wrapper.get('#btnSaveAs').trigger('click');
+    await flushPromises();
+    expect(rememberHandle).toHaveBeenLastCalledWith(elsewhere);
+  });
   async function startPresentation() {
     let fullscreenElement = null, frame, now = 0;
     Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fullscreenElement });

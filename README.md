@@ -81,10 +81,22 @@ Change a clip's timeline start or **snap** it to a chapter, and set source **In/
 Clips cannot overlap; hard cuts are supported, and gaps render black with silence. Chapters and clips are independent:
 one chapter can span several clips, and one clip can span several chapters.
 
+**Open project folder…** opens a project and links its videos in one step: select the folder containing the JSON and its
+`media/` directory. A single JSON at the folder root opens automatically; if several JSON files exist, choose the
+project to open. Files are matched by their saved relative paths, including nested directories and spaces, not just
+their filenames. Missing, unreadable or too-short sources are reported and left unlinked so you can fix them or use
+**Relink media…**. References outside the selected folder (such as `../shared/demo.mp4`) require manual relinking.
+
+On browsers with native directory access (such as Chrome/Edge), allow folder access to enable saving/autosaving the
+JSON. The editor remembers both the file and folder handles, so media can be linked again after reopening; use
+**Reconnect** if the browser requires permission again. Other browsers use a folder upload and **Download** for saving.
+Directory selection is necessary because selecting a JSON file alone does not grant access to adjacent files.
+Files are read locally; no project or video files are uploaded to a server.
+
 The project saves media references and clip data, never video bytes or temporary browser URLs. **Media path** is relative
 to the saved project JSON, using forward slashes, for example `media/demo.mp4`. Newly added files default to their filename:
-save the project beside them, or update their paths. After reopening, use each clip's **Relink media…** button to select
-the local source again for preview. Relinking does not change its saved path or trims. Missing media does not prevent
+save the project beside them, or update their paths. Opening only the JSON with **Open file…** still requires each clip's
+**Relink media…** button to select the local source again for preview. Relinking does not change its saved path or trims. Missing media does not prevent
 editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
 keeping the same relative media layout or updating the paths.
 
