@@ -271,7 +271,7 @@ class Layout:
         total = sum(widths) + space * (len(words) - 1)
         img = Image.new("RGBA", (D.BAR["w"], D.BAR["h"]), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        x = D.BAR["w"] / 2 - total / 2 if self.theme == "classic" else 0
+        x = D.BAR["w"] / 2 - total / 2                       # centred in the bar, in every theme
         left = x
         for (w, accent), wd in zip(words, widths):
             d.text((x, D.BAR["h"] / 2), w, font=f, anchor="lm",

@@ -25,6 +25,12 @@ function mountPreview(theme, count = 12) {
 }
 
 describe('video layouts', () => {
+  it.each(['classic', 'dark-rail', 'minimal-stage', 'cinematic'])('centers the headline in the bar for %s', theme => {
+    mountPreview(theme);
+    const bar = preview.get('#bar');
+    expect(bar.element.style.justifyContent).toBe('center');
+    expect(preview.get('#hl').text()).toContain('A modern headline');
+  });
   it.each([1, 2, 3, 4, 5, 6, 7, 12])('centers the visible Minimal stage pills for %i chapters', count => {
     mountPreview('minimal-stage', count);
     const pills = preview.findAll('.pill').slice(0, 6);

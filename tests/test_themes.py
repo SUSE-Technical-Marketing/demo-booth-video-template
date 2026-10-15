@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from PIL import Image
+from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "render"))
@@ -24,6 +24,23 @@ def timing(count=12):
 
 
 class ThemeTests(unittest.TestCase):
+    def test_the_headline_is_centred_in_the_bar_in_every_theme(self):
+        for theme in L.THEMES:
+            with self.subTest(theme=theme):
+                layout = Layout(timing(1), theme)
+                design = layout.design
+                image, left, total = layout.headline_layer(0)
+                self.assertAlmostEqual(left + total / 2, design.BAR["w"] / 2, delta=1, msg="layer position")
+                # and in the finished frame: the pixels the headline adds sit centred on the bar
+                with_text = layout.with_headline(1, 0).convert("RGB")
+                without = layout.chapter_base(1).convert("RGB")
+                box = (layout.bar_x, layout.bar_y, layout.bar_x + design.BAR["w"], layout.bar_y + design.BAR["h"])
+                ink = ImageChops.difference(with_text.crop(box), without.crop(box)).convert("L").point(
+                    lambda value: 255 if value > 40 else 0).getbbox()
+                self.assertIsNotNone(ink, "the headline drew nothing")
+                width, middle = design.BAR["w"], (ink[0] + ink[2] - 1) / 2
+                self.assertAlmostEqual(middle, width / 2, delta=6, msg="%s: ink spans %d-%d of %d" % (theme, ink[0], ink[2], width))
+
     def test_project_theme_contract_and_missing_theme_default(self):
         project = json.loads((ROOT / "tests/fixtures/project.json").read_text())
         for theme in L.THEMES:

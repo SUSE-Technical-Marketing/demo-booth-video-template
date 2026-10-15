@@ -156,7 +156,7 @@ Choose **Video theme → Layout** in **Videos & settings**. The selection update
 in the project, supports undo/autosave, and is used by both fullscreen playback and the Python renderer.
 
 - **Dark rail** (default for new projects): dark green branding rail, numbered chapter agenda, orange active marker,
-  a clean left-aligned headline and a larger, unobscured 16:9 demo stage. Chapter titles can wrap over two lines.
+  a clean centred headline and a larger, unobscured 16:9 demo stage. Chapter titles can wrap over two lines.
   Long agendas scroll automatically, with arrows, a chapter counter and current-chapter progress.
 - **Cinematic**: full-frame footage, compact branding, current-chapter label, floating headline and chapter progress.
   Contrast gradients protect the text. Unlike Dark rail, its overlays cover parts of the footage; choose it when the
