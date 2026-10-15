@@ -494,6 +494,33 @@ describe('videos and New in the editor', () => {
     expect(wrapper.get('#toast').text()).toContain('shorter than where the clip starts');
     expect((await clips())[0]).toMatchObject({ source_in: 5, source_out: 20 });
   });
+  it('the Export button opens the export dialog with the linked videos and the project resolution', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#exportNoVideo').text()).toContain('Add a video first');
+    await wrapper.get('.export-dialog .ghost').trigger('click');
+    await addFiles('a.mp4', 'b.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('#outputResolution').setValue('1280x720');
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('#exportNoVideo').exists()).toBe(false);
+    expect(wrapper.find('#exportMissing').exists()).toBe(false);
+    expect(wrapper.get('#exportResolution').element.value).toBe('1280x720');
+    expect(wrapper.get('.export-chips').text()).toContain('2 videos');
+    expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();
+    await wrapper.get('.export-x').trigger('click');
+    expect(wrapper.find('.export-dialog').exists()).toBe(false);
+  });
+  it('the export dialog asks to relink videos that were opened without their files', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true, encoders: {} }) })));
+    await importProject(structuredClone(projectFixture));
+    await wrapper.get('#btnExport').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#exportMissing').text()).toContain('not linked');
+    expect(wrapper.get('#exportStart').attributes('disabled')).toBeDefined();
+  });
   it('applies the media folder to all videos and updates every reference when it changes, with undo', async () => {
     await wrapper.get('#settings-tab').trigger('click');
     expect(wrapper.get('#mediaFolder').element.value).toBe('');

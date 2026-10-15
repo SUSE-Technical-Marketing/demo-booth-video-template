@@ -345,3 +345,65 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
   .shortcut-help dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .shortcut-help dd { margin-bottom: 8px; }
 }
+
+
+/* ---- Export ---- */
+.export-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--orange); color: #2b1204; border-color: var(--orange);
+  font-weight: 650; box-shadow: 0 0 0 0 #fe7c3f55; transition: box-shadow .2s, transform .1s; }
+.export-btn:hover { border-color: #ffb08a; box-shadow: 0 0 0 4px #fe7c3f33; }
+.export-btn:active { transform: translateY(1px); }
+.export-overlay { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, #031411 78%, transparent); backdrop-filter: blur(5px); animation: export-fade .15s ease-out; }
+.export-dialog { width: min(560px, 100%); max-height: calc(100dvh - 32px); overflow: auto; border: 1px solid var(--line); border-radius: 16px;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--jungle) 100%); box-shadow: 0 24px 80px #000a, 0 0 0 1px #30ba7814;
+  animation: export-pop .18s ease-out; }
+.export-head { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line); background: linear-gradient(90deg, #30ba7822, transparent 70%); }
+.export-glyph { color: var(--green); padding: 8px; box-sizing: content-box; border-radius: 12px; background: #30ba7822; }
+.export-head h2 { margin: 0; font-size: 17px; letter-spacing: .2px; }
+.export-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+.export-body { display: grid; gap: 14px; padding: 16px 18px 18px; }
+.export-field { display: grid; gap: 6px; }
+.export-field > span:first-child { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase; }
+.export-field small { color: var(--muted); }
+.export-name { display: flex; align-items: center; background: var(--jungle); border: 1px solid var(--line); border-radius: 8px; padding-right: 10px; }
+.export-name:focus-within { outline: 2px solid var(--green); border-color: transparent; }
+.export-name input { flex: 1; border: 0; background: transparent; outline: none; padding: 8px 10px; font-size: 14px; }
+.export-name em { color: var(--muted); font-style: normal; }
+.export-select { position: relative; }
+.export-select select { width: 100%; appearance: none; -webkit-appearance: none; padding: 9px 36px 9px 12px; font-size: 14px; border-radius: 8px;
+  cursor: pointer; background: var(--jungle); }
+.export-select::after { content: ''; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px; margin-top: -6px;
+  border-right: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(45deg); pointer-events: none; }
+.export-select select option { background: var(--jungle); color: var(--text); }
+.export-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 4px; border-radius: 10px; background: var(--jungle); border: 1px solid var(--line); }
+.export-seg button { display: grid; gap: 1px; justify-items: center; padding: 7px 6px; border: 1px solid transparent; background: transparent;
+  border-radius: 7px; font-weight: 600; }
+.export-seg button small { color: var(--muted); font-weight: 400; font-size: 11px; }
+.export-seg button.on { background: #30ba7826; border-color: var(--green); }
+.export-seg button.on small { color: var(--text); }
+.export-check { display: flex; gap: 8px; align-items: flex-start; color: var(--text); font-size: 13px; }
+.export-check small { color: var(--muted); }
+.export-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.export-note { margin: 0; color: var(--muted); font-size: 12px; }
+.export-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.export-foot .primary { min-width: 120px; padding: 8px 16px; }
+.export-callout { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 10px; background: #0003; }
+.export-callout p { margin: 0; color: var(--muted); font-size: 13px; }
+.export-callout code { background: var(--jungle); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; color: var(--text); font-size: 12px; }
+.export-callout pre { margin: 0; white-space: pre-wrap; font-size: 12px; color: var(--text); max-height: 180px; overflow: auto; }
+.export-callout.warn { border-left-color: var(--orange); }
+.export-callout.bad { border-left-color: var(--danger); }
+.export-callout.ok strong { color: var(--green); font-size: 16px; }
+.export-saved { color: var(--green) !important; }
+.export-phase { margin: 0; font-size: 15px; font-weight: 650; }
+.export-bar { height: 12px; border-radius: 999px; overflow: hidden; background: var(--jungle); border: 1px solid var(--line); }
+.export-bar i { display: block; height: 100%; border-radius: 999px; transition: width .4s ease;
+  background: repeating-linear-gradient(135deg, #ffffff22 0 8px, transparent 8px 16px), linear-gradient(90deg, var(--green), #7fd9a8);
+  background-size: 32px 32px, 100% 100%; animation: export-stripes 1s linear infinite; }
+.export-detail { display: flex; justify-content: space-between; margin: 0; color: var(--muted); font-size: 12px; }
+.export-detail b { color: var(--text); font-size: 15px; }
+@keyframes export-fade { from { opacity: 0; } }
+@keyframes export-pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
+@keyframes export-stripes { to { background-position: 32px 0, 0 0; } }
+@media (prefers-reduced-motion: reduce) { .export-overlay, .export-dialog, .export-bar i { animation: none; } }

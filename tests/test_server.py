@@ -110,7 +110,8 @@ class ServerTests(unittest.TestCase):
 
     def test_cannot_start_until_every_video_is_uploaded(self):
         data = self.create(upload=("a",))
-        self.assertEqual(data["media"], ["a.mp4", "b.mp4"])      # the unused media is not asked for
+        self.assertEqual(data["media"], ["ma", "mb"])             # the unused media is not asked for
+        self.assertEqual(data["names"], ["a.mp4", "b.mp4"])
         status, body = self.json("POST", "/api/jobs/%s/start" % data["id"])
         self.assertEqual(status, 409)
         self.assertIn("b.mp4", body["error"])

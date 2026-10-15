@@ -20,7 +20,8 @@ For planned technical and functional work, see the [improvement roadmap](IMPROVE
   there, and ripple everything after a cut.
 - **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
 - **Save complete projects**: source media paths, clip placements and trims, output frame rate, chapters and headlines.
-- **Render the final MP4** with one command (or a container): multiple clips, gaps, branded layout, your audio, and an MP4 chapter marker
+- **Export the final MP4 from the editor** with the **Export** button (needs the local export service, below), or
+  render with one command (or a container): multiple clips, gaps, branded layout, your audio, and an MP4 chapter marker
   per chapter. Choose the frame rate and resolution in the editor, or override them per render.
 
 ## How the pieces fit
@@ -64,7 +65,8 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
 
 Use **Chrome or Edge** so the page can save straight to your file. Other browsers can open a JSON file and use
 **Download** to save `project.json`, but cannot link it for autosave or reconnect. Your project and videos stay in
-your browser and on your own disk: there is no backend and nothing is uploaded.
+your browser and on your own disk: there is no backend and nothing is uploaded. The one exception is the **Export**
+button, which hands your videos to a service running on your own computer (see [Export from the editor](#export-from-the-editor)).
 
 ## Write the headlines
 
@@ -246,6 +248,27 @@ and a **Chapter 7 of 12** counter shows progress. This follows video time in the
 when scrubbing or jumping backwards during editing. Six or fewer chapters keep the existing static layout.
 
 After saving, run the render command (see [Render the finished video](#render-the-finished-video)).
+
+## Export from the editor
+
+The **Export** button (top right, orange) renders the finished video without leaving the page. Pick a file name, a
+**resolution** from the dropdown (it starts at the project's own setting, 4K UHD down to 640 × 360) and a **quality**
+(Draft, Standard or High). On a Mac you can also tick the hardware encoder, which is much faster with slightly larger
+files. The dialog shows an estimate of how much slower than 1080p Standard your choice will be, then a progress bar with
+frames per second and time left. **Cancel** stops it; when it is done, **Save video…** lets you choose where the MP4 goes.
+
+A browser page cannot run ffmpeg, so Export talks to a small service on your own computer (`render/server.py`,
+listening only on `127.0.0.1:8766`):
+
+- `start_editor.command` and `mise run run` start it for you, next to the editor. Run it alone with `mise run serve` or
+  `python3 render/server.py`. The hosted GitHub Pages copy cannot export, and the dialog says so.
+- The editor sends the project JSON, then uploads each linked video once (the dialog tells you if any video is not
+  linked yet: use **Relink media…** or **Open project folder…** first). The service renders it with exactly the same code
+  as the command line, in a temporary folder it deletes afterwards.
+- It never reads paths from the page: it only accepts uploads, requires the editor's `X-Booth-Export` header, rejects
+  non-localhost `Host` headers (DNS rebinding) and protects the finished file with a one-time token.
+- The resolution chosen here applies to this export only; the project's own setting is not changed. Sizes above
+  1920 × 1080 are upscaled from the layout (see [Output resolution](#output-resolution)).
 
 ## Render the finished video
 
@@ -445,6 +468,8 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Renderer reports missing media | Check the shared Media folder (relative to the JSON) and the video path (relative to that folder), or move the source into that location. |
 | Clips overlap | Move a clip later or shorten its source range. Crossfades are not supported yet. |
 | Editor won't save to the file | Use Chrome or Edge. In other browsers use **Download** and replace the file in `timings/`. |
+| Export says "The export service isn't running" | Start the editor with `start_editor.command` or `mise run run`, or run `python3 render/server.py` (needs `pip install -r render/requirements.txt`). The hosted copy can't export. |
+| Export says a video is not linked | Link it in **Videos & settings** (**Relink media…**), or use **Open project folder…**. |
 | `start_editor.command` says port 8765 is in use | Close the earlier editor window, or run `kill $(lsof -ti tcp:8765)` and start it again. |
 | A video won't load in the preview | The browser can't play that format. Export an H.264 `.mp4`. |
 | A headline is marked **outside chapter** | Move its relative time inside the chapter or extend the chapter. The editor keeps its text but the renderer omits it until corrected. |

@@ -110,7 +110,7 @@ class Service:
         fast = bool(body.get("fast")) and self.encoders()["h264_videotoolbox"]
         title = (project["timing"].get("title") or "").strip()
         options = {"project": project, "size": "%dx%d" % (width, height), "height": height, "quality": quality,
-                   "fast": fast, "names": names,
+                   "fast": fast, "names": names, "ids": [m["id"] for m in used],
                    "filename": safe_name(body.get("filename") or title or "booth-video") + ".mp4"}
         job = Job(options)
         with self.lock:
@@ -245,7 +245,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if parts == ["api", "jobs"]:
                 job = self.service.create(self.read_json())
-                return self.send_json({"id": job.id, "token": job.token, "media": job.options["names"],
+                return self.send_json({"id": job.id, "token": job.token, "media": job.options["ids"],
+                                       "names": job.options["names"],
                                        "filename": job.options["filename"]}, 201)
             if len(parts) == 4 and parts[:2] == ["api", "jobs"]:
                 job = self.service.get(parts[2])

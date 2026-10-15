@@ -13,9 +13,14 @@ depends = ["install"]
 run = "python render/render.py"
 
 [tasks.run]
-description = "Run the Vue timing editor at http://127.0.0.1:8765"
-depends = ["editor:install"]
-run = "bun run dev"
+description = "Run the Vue timing editor at http://127.0.0.1:8765, with the export service it uses"
+depends = ["editor:install", "install"]
+run = "python render/server.py & trap 'kill $!' EXIT; bun run dev"
+
+[tasks.serve]
+description = "Run only the local export service (http://127.0.0.1:8766)"
+depends = ["install"]
+run = "python render/server.py"
 
 [tasks."editor:install"]
 description = "Install the Vue editor dependencies from bun.lock"
