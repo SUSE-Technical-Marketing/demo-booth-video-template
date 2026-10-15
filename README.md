@@ -128,6 +128,9 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    The preview's size summary also identifies it. Shortening it makes all of
    them bigger.
 
+**Zoom** the timeline with the **− / + / Fit** buttons above it (or Ctrl/Cmd + scroll, or a trackpad pinch) to place handles
+precisely: each step doubles the zoom, the ruler adds finer ticks, and the view scrolls to keep the playhead visible.
+
 Other controls: **Save as…** (`Cmd+Shift+S`) writes the current timing to a new file and keeps working in it, leaving the
 previous file untouched; **Undo** (`Cmd+Z`), **Download** (if your browser can't link files), **headlines end at** (optional global cutoff),
 **wipe** (how long the left-to-right build-in takes), and **Video title and product** (document metadata).

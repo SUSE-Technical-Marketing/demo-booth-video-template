@@ -71,7 +71,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .preview-canvas { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; container-type: size; }
 .preview-canvas #view { width: min(100cqw, calc(100cqh * 16 / 9)); flex: none; }
 .timeline-dock { display: grid; gap: 8px; padding: 10px 14px; background: var(--surface); border-top: 1px solid var(--line); }
-.timeline-toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 20px; }
+.timeline-toolbar { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 20px; }
 .timeline-toolbar h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted);
   font-size: 13px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase; }
 .timeline-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 11px; }
@@ -82,7 +82,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .invalid-key { background: var(--danger); }
 .timeline-help { margin-left: auto; }
 
-#tl { position: relative; height: 106px; background: var(--jungle); border-radius: 8px; overflow: hidden; cursor: col-resize;
+#tl { position: relative; min-width: 100%; height: 106px; background: var(--jungle); border-radius: 8px; overflow: hidden; cursor: col-resize;
   user-select: none; touch-action: none; }
 .band { position: absolute; top: 0; height: 34px; padding: 4px 6px; font-size: 11px; font-weight: 600; color: #05211b;
   text-align: left; border: 0; border-radius: 3px; cursor: pointer; opacity: .8;
@@ -241,6 +241,7 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
   .card, .preview-pane { padding: 10px; }
   .timeline-dock { padding: 8px 10px; }
   .timeline-toolbar { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .zoom { justify-self: start; }
   .transport { gap: 6px; }
   .timelabel { min-width: 0; font-size: 12px; }
   .timelabel small { display: block; font-size: 10px; margin-left: 0; }
@@ -261,3 +262,8 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .headline-handle:hover::after, .headline-handle:focus-visible::after { background: var(--orange); opacity: 1; }
 .headline-handle:focus-visible { outline: 2px solid var(--text); border-radius: 4px; }
 @media (max-height: 600px) { .headline-handle { top: 34px; height: 26px; } }
+
+.tl-scroll { overflow-x: auto; overflow-y: hidden; border-radius: 8px; }
+.zoom { display: inline-flex; align-items: center; gap: 4px; }
+.zoom-label { min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.zoom button:disabled { opacity: .4; cursor: default; }

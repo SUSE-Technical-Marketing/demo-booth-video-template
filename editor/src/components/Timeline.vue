@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { activeChapter, chapterEnd, CH_COLORS, fmt, headlineChapter, headlineEnd, headlineOutside, headlineTime, plain } from '../timing.js';
 
 const props = defineProps({
@@ -9,9 +9,10 @@ const props = defineProps({
   selectedId: { type: Number, default: null },
   selectedChapterId: { type: Number, default: null },
   clips: { type: Array, default: () => [] },
+  zoom: { type: Number, default: 1 },
 });
-const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end']);
-const timeline = ref(null);
+const emit = defineEmits(['seek', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline', 'move-headline-end', 'zoom']);
+const timeline = ref(null), scroller = ref(null);
 let dragging = false;
 const pct = t => `${t / props.duration * 100}%`;
 const clamp = t => Math.max(0, Math.min(props.duration, t));
@@ -24,7 +25,9 @@ function headlineTitle(band) {
   return `${fmt(band.start)} – ${fmt(band.end)}  ${plain(band.headline.text)}${band.outside ? ' (outside chapter)' : ''}`;
 }
 const ruler = computed(() => {
-  const step = props.duration > 600 ? 60 : 30, ticks = [];
+  // aim for roughly a dozen labels across what is visible, so zooming in adds finer ticks
+  const visible = props.duration / props.zoom;
+  const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(s => visible / s <= 12) ?? 600, ticks = [];
   for (let t = 0; t <= props.duration; t += step) ticks.push({ t, label: t <= props.duration - step / 2 });
   return ticks;
 });
@@ -71,6 +74,31 @@ function handleKey(event, handle) {
   emit('begin-edit');
   moveTo(handle, handle.value + dir * (event.shiftKey ? 1 : STEP));
 }
+// Zooming keeps whatever is at the same spot on screen (the playhead if it is visible, else the middle) in place.
+watch(() => props.zoom, async (zoom, before) => {
+  const view = scroller.value;
+  if (!view || !view.clientWidth) return;
+  const width = view.clientWidth, playheadX = props.cur / props.duration * width * before;
+  const onScreen = playheadX >= view.scrollLeft && playheadX <= view.scrollLeft + width;
+  const anchorX = onScreen ? playheadX : view.scrollLeft + width / 2, offset = anchorX - view.scrollLeft;
+  const fraction = anchorX / (width * before);
+  await nextTick();
+  view.scrollLeft = fraction * width * zoom - offset;
+});
+// When zoomed in, scroll to keep the playhead in view (playing, or jumping to a chapter or headline).
+watch(() => props.cur, time => {
+  const view = scroller.value;
+  if (!view || props.zoom <= 1 || !view.clientWidth || dragging) return;
+  const x = time / props.duration * view.clientWidth * props.zoom, margin = view.clientWidth * 0.1;
+  if (x < view.scrollLeft + margin || x > view.scrollLeft + view.clientWidth - margin) {
+    view.scrollLeft = Math.max(0, x - view.clientWidth * 0.25);
+  }
+});
+function wheel(event) {              // Ctrl/Cmd + scroll, or a trackpad pinch, zooms
+  if (!event.ctrlKey && !event.metaKey) return;
+  event.preventDefault();
+  emit('zoom', event.deltaY < 0 ? 1 : -1);
+}
 function seek(event) {
   const rect = timeline.value.getBoundingClientRect();
   emit('seek', Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * props.duration);
@@ -93,7 +121,8 @@ function keyboardSelect(event, kind, row, start) {
 </script>
 
 <template>
-  <div id="tl" ref="timeline" @pointerdown="pointerdown" @pointermove="dragging && seek($event)"
+  <div ref="scroller" class="tl-scroll" @wheel="wheel">
+  <div id="tl" ref="timeline" :style="{ width: `${zoom * 100}%` }" @pointerdown="pointerdown" @pointermove="dragging && seek($event)"
     @pointerup="dragging = false" @pointercancel="dragging = false" @lostpointercapture="dragging = false">
     <button v-for="chapter in state.chapter_starts" :key="chapter.id" class="band" :data-chapter-id="chapter.id"
       :class="{ sel: selectedChapterId === chapter.id, playing: activeChapter(state, cur) === chapter.ch }"
@@ -129,5 +158,6 @@ function keyboardSelect(event, kind, row, start) {
       </template>
     </div>
     <div id="playhead" :style="{ left: pct(cur) }"></div>
+  </div>
   </div>
 </template>

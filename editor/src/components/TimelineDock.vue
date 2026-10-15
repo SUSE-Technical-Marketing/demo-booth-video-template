@@ -1,8 +1,9 @@
 <script setup>
+import { computed, ref } from 'vue';
 import Timeline from './Timeline.vue';
 import { fmt, tc } from '../timing.js';
 
-defineProps({
+const props = defineProps({
   state: { type: Object, required: true },
   duration: { type: Number, required: true },
   cur: { type: Number, required: true },
@@ -12,6 +13,12 @@ defineProps({
   offset: { type: Number, required: true },
   clips: { type: Array, default: () => [] },
 });
+// Zoom is a view setting only: 1 fits the whole video, each step doubles it (up to about 10 s across).
+const zoom = ref(1);
+const maxZoom = computed(() => Math.max(1, Math.min(64, 2 ** Math.floor(Math.log2(props.duration / 10)))));
+const zoomIn = () => { zoom.value = Math.min(maxZoom.value, zoom.value * 2); };
+const zoomOut = () => { zoom.value = Math.max(1, zoom.value / 2); };
+function zoomBy(direction) { if (direction > 0) zoomIn(); else zoomOut(); }
 const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headline', 'begin-edit', 'move-headline',
   'move-headline-end']);
 </script>
@@ -20,6 +27,12 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
   <section class="timeline-dock" aria-label="Timeline and playback">
     <div class="timeline-toolbar">
       <h2>Timeline <span id="durChip" class="chip">to {{ fmt(duration) }}</span></h2>
+      <div class="zoom" role="group" aria-label="Timeline zoom">
+        <button id="zoomOut" class="icon ghost" title="Zoom out (Ctrl/Cmd + scroll)" aria-label="Zoom out" :disabled="zoom <= 1" @click="zoomOut">−</button>
+        <span id="zoomLabel" class="zoom-label" aria-live="polite">{{ zoom === 1 ? 'Fit' : `×${zoom}` }}</span>
+        <button id="zoomIn" class="icon ghost" title="Zoom in (Ctrl/Cmd + scroll)" aria-label="Zoom in" :disabled="zoom >= maxZoom" @click="zoomIn">+</button>
+        <button id="zoomFit" class="ghost" title="Show the whole video" :disabled="zoom === 1" @click="zoom = 1">Fit</button>
+      </div>
       <div class="transport">
         <button id="btnPlay" class="primary" @click="emit('toggle-play')">{{ playing ? 'Pause' : 'Play' }}</button>
         <input id="scrub" type="range" min="0" :max="duration" step="0.1" :value="cur" aria-label="Preview time"
@@ -28,7 +41,7 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
       </div>
     </div>
     <Timeline :state="state" :duration="duration" :cur="cur" :selected-id="selectedId" :clips="clips"
-      :selected-chapter-id="selectedChapterId" @seek="emit('seek', $event)"
+      :selected-chapter-id="selectedChapterId" :zoom="zoom" @zoom="zoomBy" @seek="emit('seek', $event)"
       @select-chapter="emit('select-chapter', $event)" @select-headline="emit('select-headline', $event)"
       @begin-edit="emit('begin-edit')" @move-headline="(h, time) => emit('move-headline', h, time)"
       @move-headline-end="(h, time) => emit('move-headline-end', h, time)" />

@@ -41,6 +41,44 @@ describe('timeline dock', () => {
     expect(dock.get('#timelabel').text()).toBe('0:3001:00:30');
     dock.unmount();
   });
+  it('zooms the timeline in steps and back to fit, without changing the document or seeking', async () => {
+    const dock = mountDock();
+    expect(dock.get('#zoomLabel').text()).toBe('Fit');
+    expect(dock.get('#zoomOut').attributes('disabled')).toBeDefined();
+    await dock.get('#zoomIn').trigger('click');
+    expect(dock.get('#tl').element.style.width).toBe('200%');
+    expect(dock.get('#zoomLabel').text()).toBe('×2');
+    await dock.get('#zoomIn').trigger('click');
+    expect(dock.get('#tl').element.style.width).toBe('400%');
+    await dock.get('#zoomOut').trigger('click');
+    expect(dock.get('#zoomLabel').text()).toBe('×2');
+    await dock.get('#zoomFit').trigger('click');
+    expect(dock.get('#tl').element.style.width).toBe('100%');
+    for (let i = 0; i < 10; i++) await dock.get('#zoomIn').trigger('click');
+    expect(dock.get('#zoomLabel').text()).toBe('×16');               // 195 s: stops at about 10 s across
+    expect(dock.get('#zoomIn').attributes('disabled')).toBeDefined();
+    expect(dock.emitted('seek')).toBeUndefined();
+    dock.unmount();
+  });
+  it('zooms with Ctrl/Cmd + scroll and adds finer ruler ticks when zoomed', async () => {
+    const dock = mountDock();
+    const labels = () => dock.findAll('.ruler span').map(s => s.text());
+    expect(labels()).toContain('0:30');
+    expect(labels()).not.toContain('0:02');
+    const wheel = async init => {
+      dock.get('.tl-scroll').element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init }));
+      await dock.vm.$nextTick();
+    };
+    await wheel({ deltaY: -100, ctrlKey: true });
+    expect(dock.get('#zoomLabel').text()).toBe('×2');
+    await wheel({ deltaY: 100, metaKey: true });
+    expect(dock.get('#zoomLabel').text()).toBe('Fit');
+    await wheel({ deltaY: -100 });               // a plain scroll does not zoom
+    expect(dock.get('#zoomLabel').text()).toBe('Fit');
+    for (let i = 0; i < 4; i++) await dock.get('#zoomIn').trigger('click');
+    expect(labels()).toContain('0:02');
+    dock.unmount();
+  });
   it('forwards pointer seeking from the full timeline', async () => {
     const dock = mountDock(), timeline = dock.get('#tl');
     timeline.element.setPointerCapture = vi.fn();
