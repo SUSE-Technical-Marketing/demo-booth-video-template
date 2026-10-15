@@ -21,7 +21,7 @@ For planned technical and functional work, see the [improvement roadmap](IMPROVE
 - **Keep your work safe**: autosave to a linked file, **Save as…** for copies, **New** for a blank start, and Undo.
 - **Save complete projects**: source media paths, clip placements and trims, output frame rate, chapters and headlines.
 - **Render the final MP4** with one command (or a container): multiple clips, gaps, branded layout, your audio, and an MP4 chapter marker
-  per chapter.
+  per chapter. Choose the frame rate and resolution in the editor, or override them per render.
 
 ## How the pieces fit
 
@@ -105,8 +105,10 @@ place the actual files in that folder for automatic linking and rendering. Openi
 editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
 keeping the same relative media layout or updating the paths.
 
-Choose the render frame rate in **Videos & settings**. The renderer normalizes source sizes/frame rates and audio;
-the final output is 1920 × 1080 with stereo 48 kHz audio. Source clips without audio and timeline gaps produce silence.
+Choose the render frame rate and **resolution** in **Videos & settings**. The renderer normalizes source
+sizes/frame rates and audio; the output has stereo 48 kHz audio and defaults to 1920 × 1080. Other resolutions (4K UHD
+down to 640 × 360) scale the 1920 × 1080 composition, so the preview does not change. Source clips without audio and
+timeline gaps produce silence. Command-line options override the saved settings for one render.
 
 ### Video themes
 
@@ -276,15 +278,38 @@ marker per chapter (shown in the chapter menus of QuickTime, VLC and IINA).
    ```bash
    .venv/bin/python render/render.py /path/to/my-demo/project.json -o my-video-final.mp4
    ```
-   Progress prints as it goes. It keeps clip audio (re-encoded to AAC), uses the project's frame rate, and outputs 1920 × 1080
-   H.264. On Apple-silicon Macs add `--fast` to use the hardware encoder.
+   Progress prints as it goes. It keeps clip audio (re-encoded to AAC), uses the project's frame rate and
+   resolution (25 fps and 1920 × 1080 unless changed in **Videos & settings**), and outputs H.264. On
+   Apple-silicon Macs add `--fast` to use the hardware encoder.
 5. **Changing something later:** edit the project in the editor, save, and re-run step 4. Nothing is stored in
    the video, so there is nothing to clean up. If you re-cut the video, re-export it and use the editor's
    **Ripple** tool to slide the times.
 
 Other options: `--start 30 --duration 60` renders just that part (chapter/headline times still count from the start of the
-project), `--crf 18` (quality; lower is better) and `--preset medium`. `--selftest` renders a generated
-clip to prove the install works.
+project), `--fps` and `--size` override the project's settings for this render (see below), `--crf 18`
+(quality; lower is better) and `--preset medium`. `--selftest` renders a generated clip to prove the install works.
+
+### Render settings: command line, then project, then defaults
+
+The frame rate and resolution are each resolved in the same order: a command-line option wins, otherwise the
+value saved in the project's `output` section applies, otherwise the default.
+
+| Setting | Command line | Project (`output`) | Default |
+|---|---|---|---|
+| Frame rate | `--fps 25`, `--fps 30000/1001` | `fps` | `25/1` |
+| Resolution | `--size 1280x720` | `resolution` | `1920x1080` |
+
+Without `-o`, the output is `<project>-branded.mp4` next to the project.
+
+### Output resolution
+
+The layout is designed at 1920 × 1080. The renderer composes every frame at that size and scales it to the output
+resolution with a Lanczos filter, so text and buttons keep their proportions at every size. Pick a preset in
+**Videos & settings → Render output** (4K UHD, QHD, Full HD, HD, 960 × 540 or 640 × 360); the choice is saved as
+`output.resolution` and used by every render of that project. Sizes larger than Full HD are upscaled from the
+1920 × 1080 composition, which is softer than native 4K but keeps the branding exact. `--size WxH` on the command line
+overrides the saved value and accepts any even size between 16 × 16 and 7680 × 4320; sizes that are not 16:9 are
+letterboxed with black bars. `--frame` previews are written at the same size, so check one before a long render.
 
 ### Using mise
 
@@ -381,9 +406,12 @@ Changing references does not move files.
 Clip duration is `source_out - source_in`; `start` is absolute project time and is authoritative,
 regardless of array order. In this example there is a black/silent gap from 10 to 12 seconds and the project ends at 32 seconds.
 Source out is exclusive. Overlaps, transitions, invalid references and out-of-source trims fail explicitly.
-Output FPS is a positive rational string between 1 and 120 fps, including `30000/1001`.
+Output FPS is a positive rational string between 1 and 120 fps, including `30000/1001`. Command-line options override
+every `output` setting for one render (see [Render settings](#render-settings-command-line-then-project-then-defaults)).
 `output.theme` is `classic`, `dark-rail`, `minimal-stage` or `cinematic`; omitting it selects Classic. Unknown theme IDs are rejected
-by both the editor and renderer.
+by both the editor and renderer. `output.resolution` is `WIDTHxHEIGHT` with even sizes between `16x16` and `7680x4320`,
+such as `1280x720`; omitting it selects `1920x1080`. The editor offers 16:9 presets, and the renderer letterboxes other ratios.
+Omitting `fps` selects `25/1` (the editor always writes it).
 At render time, clip boundaries use the first output frame at or after their specified time.
 Clips that contain no output frames are rejected. Frame-rate quantization can extend the final duration by less than one frame.
 
@@ -428,6 +456,7 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Logo is replaced by the word "SUSE" | In the editor, Classic's remote logo or a modern theme's bundled logo could not load. Check network access or the static deployment. |
 | Headline words touch or have big gaps | Nudge `text_scale` (default `1.11`) in `assets/themes.json`, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
 | Video doesn't fill the slot | The renderer fits other sizes into the slot with black bars; export 1920 × 1080 for a perfect fit. |
+| Output has black bars top and bottom or left and right | The requested resolution is not 16:9; choose a 16:9 preset in **Videos & settings** or a 16:9 `--size`. |
 
 ## Customising
 

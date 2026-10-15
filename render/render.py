@@ -5,6 +5,7 @@
 
 Assembles the project's source clips with hard cuts, then draws the chapter panel and timed headlines.
 
+    python render/render.py project.json -o my-video.mp4 --size 1280x720 --fps 30/1       # override the project
     python render/render.py project.json --frame 75 --png check.png
     python render/render.py --selftest                                                      # quick end-to-end test
 
@@ -30,7 +31,7 @@ from PIL import Image  # noqa: E402
 import layout as L  # noqa: E402
 import layers  # noqa: E402
 from timing import normalize_chapters  # noqa: E402
-from project import load_project, project_fps, resolve_media_path  # noqa: E402
+from project import load_project, project_fps, project_resolution, resolve_media_path, validate_project  # noqa: E402
 from assemble import assemble_project  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -113,6 +114,46 @@ def grab_frame(ffmpeg, video, t, fps, matrix="auto", content=None):
     return Image.frombytes("RGB", (cw, ch), data)
 
 
+DEFAULTS = {"fps": "25/1", "resolution": "1920x1080"}
+
+
+def output_settings(args, project):
+    """(fps string, (width, height)) for one render. Each setting is taken from the command line first (--fps,
+    --size), else from the project's output section (fps, resolution), else from DEFAULTS."""
+    out = project["output"]
+    fps = getattr(args, "fps", None) or out.get("fps") or DEFAULTS["fps"]
+    project_fps(fps)
+    size = getattr(args, "size", None) or out.get("resolution") or DEFAULTS["resolution"]
+    return fps, project_resolution(size)
+
+
+def fps_argument(value):
+    """--fps accepts 25, 25/1 or 30000/1001."""
+    return value + "/1" if re.fullmatch(r"[1-9]\d*", value) else value
+
+
+def resize_filter(size):
+    """ffmpeg filters (with trailing comma) that fit the 1920x1080 composition into size, letterboxed with black
+    when the aspect ratio differs. Empty at the design size, so the default output is untouched."""
+    w, h = size
+    if (w, h) == (L.W, L.H):
+        return ""
+    return ("scale=%d:%d:flags=lanczos:force_original_aspect_ratio=decrease,"
+            "pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black," % (w, h, w, h))
+
+
+def fit_image(img, size):
+    """The Pillow equivalent of resize_filter, for --frame PNGs."""
+    w, h = size
+    if img.size == (w, h):
+        return img
+    scale = min(w / img.width, h / img.height)
+    inner = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    canvas = Image.new("RGB", (w, h), (0, 0, 0))
+    canvas.paste(inner, ((w - inner.width) // 2, (h - inner.height) // 2))
+    return canvas
+
+
 def chapter_metadata(lay, start, dur):
     """ffmetadata text with one MP4 chapter per chapter switch, in output time (0 = first frame written)."""
     esc = lambda x: re.sub(r"([=;#\\\n])", r"\\\1", str(x))
@@ -139,7 +180,8 @@ def chapter_metadata(lay, start, dur):
 def render_video(args, ffmpeg, lay):
     w, h, src_fps, src_dur, tagged = probe(ffmpeg, args.input)
     matrix = source_matrix(w, h, tagged)
-    fps = args.fps or src_fps
+    size = getattr(args, "size_px", (L.W, L.H))
+    fps = getattr(args, "out_fps", None) or src_fps
     rate = getattr(args, "rate", str(fps))
     start = args.start or 0.0
     dur = args.duration if args.duration else (src_dur - start if src_dur else None)
@@ -148,7 +190,7 @@ def render_video(args, ffmpeg, lay):
     total_frames = math.ceil(dur * fps - 1e-7) if dur else None
     print("Input %dx%d @ %.3g fps, %s (colour: %s)  ->  %dx%d @ %.3g fps" % (w, h, src_fps,
           ("%.1fs" % dur) if dur else "unknown length", matrix if matrix != "auto" else "as tagged",
-          L.W, L.H, fps))
+          size[0], size[1], fps))
 
     meta = chapter_metadata(lay, start, dur) if dur else None
     meta_args = []
@@ -166,12 +208,13 @@ def render_video(args, ffmpeg, lay):
     vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", args.preset]
     if args.fast:
         vcodec = ["-c:v", "h264_videotoolbox", "-b:v", "12M"]
+    resize = resize_filter(size)
     enc = subprocess.Popen([ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                             "-s", "%dx%d" % (L.W, L.H), "-r", rate, "-i", "-"] + seek + lim +
                            ["-i", str(args.input)] + meta_args + ["-map", "0:v", "-map", "1:a?"] + vcodec +
                            # RGB -> video colours with the HD matrix, and say so in the file, so players show the
                            # exact brand colours (ffmpeg's default would be BT.601 and shift SUSE green)
-                           ["-vf", "scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,"
+                           ["-vf", resize + "scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,"
                                    "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
                             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
                             "-color_range", "tv",
@@ -246,7 +289,7 @@ def selftest(args, ffmpeg):
                                 [("Intro", 0, "First *headline*"), ("Details", 2, "Second one with *two words*"),
                                  ("Wrap up", 4, "Last *one*")]], "wipe_seconds": 0.5}}))
     ns = argparse.Namespace(project=str(timing), output=str(out), frame=None, png=None, start=None, duration=None,
-                            crf=23, preset="veryfast", fast=False)
+                            crf=23, preset="veryfast", fast=False, size=None, fps=None)
     render_project(ns, ffmpeg)
     project, _ = load_project(timing)
     lay = layers.Layout(project["timing"])
@@ -285,24 +328,29 @@ def render_project(args, ffmpeg):
         value = getattr(args, key, None)
         if value is not None and (not math.isfinite(value) or value < 0 or (key == "duration" and value == 0)):
             raise ValueError("%s must be a finite %s time" % (key, "positive" if key == "duration" else "non-negative"))
+    fps, size = output_settings(args, project)
     output = Path(args.png or "frame.png") if args.frame is not None else Path(args.output or path.with_name(path.stem + "-branded.mp4"))
     if output.resolve() == path or any(
             output.resolve() == (path.parent / resolve_media_path(m["path"], project.get("media_folder", ""))).resolve()
             for m in project["media"]):
         raise ValueError("Output must not overwrite the project or source media")
+    if fps != project["output"].get("fps"):       # assemble and plan frames at the effective rate
+        project["output"]["fps"] = fps
+        validate_project(project)
     if args.frame is not None and not project["clips"]:
-        layers.Layout(timing, theme).frame(args.frame).save(output)
+        fit_image(layers.Layout(timing, theme).frame(args.frame), size).save(output)
         return
     with tempfile.TemporaryDirectory(prefix="booth-assembly-") as directory:
         master, duration = assemble_project(project, path, directory, ffmpeg, probe, slot_filter, source_matrix)
         lay = layers.Layout(timing, theme, duration)
         args.input = master
-        args.fps = float(project_fps(project["output"]["fps"]))
-        args.rate = project["output"]["fps"]
+        args.out_fps = float(project_fps(fps))
+        args.rate = fps
         if args.frame is not None:
             if args.frame >= duration:
                 raise ValueError("Preview frame is past the project end")
-            lay.frame(args.frame, grab_frame(ffmpeg, master, args.frame, args.fps, content=lay.design.CONTENT)).save(output)
+            fit_image(lay.frame(args.frame, grab_frame(ffmpeg, master, args.frame, args.out_fps, content=lay.design.CONTENT)),
+                      size).save(output)
             print("Wrote", output)
             return
         start = args.start or 0
@@ -310,6 +358,7 @@ def render_project(args, ffmpeg):
             raise ValueError("Requested render range is outside the project")
         args.duration = args.duration if args.duration is not None else duration - start
         args.output = str(output)
+        args.size_px = size
         render_video(args, ffmpeg, lay)
 
 
@@ -317,6 +366,10 @@ def main():
     ap = argparse.ArgumentParser(description="Render a video project with hard cuts, audio, chapters and headlines.")
     ap.add_argument("project", nargs="?", help="project JSON; media paths are relative to its media_folder (default: JSON's folder)")
     ap.add_argument("-o", "--output", help="output .mp4 (default: <project>-branded.mp4)")
+    ap.add_argument("--fps", type=fps_argument, metavar="RATE", help="output frame rate such as 25 or 30000/1001 "
+                    "(overrides the project; default 25)")
+    ap.add_argument("--size", metavar="WxH", help="output frame size such as 1280x720 "
+                    "(overrides the project; default 1920x1080)")
     ap.add_argument("--frame", type=float, metavar="SECONDS", help="render just this moment")
     ap.add_argument("--png", help="where to write the --frame image (default: frame.png)")
     ap.add_argument("--start", type=float, help="start this many seconds into the input")

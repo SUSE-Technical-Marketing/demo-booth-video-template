@@ -35,10 +35,33 @@ export function projectFPS(value) {
   return fps;
 }
 
+export const DEFAULT_FPS = '25/1';
+export const DEFAULT_RESOLUTION = '1920x1080';
+export const MAX_RESOLUTION = [7680, 4320];
+export const RESOLUTIONS = [
+  ['3840x2160', '3840 × 2160 (4K UHD)'], ['2560x1440', '2560 × 1440 (QHD)'], ['1920x1080', '1920 × 1080 (Full HD)'],
+  ['1280x720', '1280 × 720 (HD)'], ['960x540', '960 × 540'], ['640x360', '640 × 360'],
+];
+
+/** Output frame size as [width, height]; undefined or null keeps the 1920 × 1080 design size. */
+export function projectResolution(value) {
+  if (value == null) return DEFAULT_RESOLUTION.split('x').map(Number);
+  if (typeof value !== 'string' || !/^[1-9]\d*x[1-9]\d*$/.test(value)) {
+    throw new Error('Output resolution must be WIDTHxHEIGHT such as 1280x720');
+  }
+  const [width, height] = value.split('x').map(Number);
+  if (width % 2 || height % 2 || width < 16 || height < 16 || width > MAX_RESOLUTION[0] || height > MAX_RESOLUTION[1]) {
+    throw new Error(`Output resolution must use even sizes between 16x16 and ${MAX_RESOLUTION.join('x')}`);
+  }
+  return [width, height];
+}
+
 export function validateProject(project) {
   if (!project || project.project_version !== 1) throw new Error('Expected a version 1 project JSON');
-  const fps = projectFPS(project.output?.fps);
+  if (!project.output || typeof project.output !== 'object') throw new Error('Project needs output settings');
+  const fps = projectFPS(project.output.fps ?? DEFAULT_FPS);
   themeLayout(project.output.theme);
+  projectResolution(project.output.resolution);
   normalizeMediaFolder(project.media_folder);
   if (!Array.isArray(project.media) || !Array.isArray(project.clips)) throw new Error('Project needs media and clips arrays');
   const media = new Set(), clips = new Set();
@@ -74,7 +97,11 @@ export function fromProject(project) {
   validateProject(project);
   return {
     ...fromJSON(project.timing),
-    output: { fps: project.output.fps, ...(project.output.theme === undefined ? {} : { theme: project.output.theme }) },
+    output: {
+      fps: project.output.fps ?? DEFAULT_FPS,
+      ...(project.output.theme === undefined ? {} : { theme: project.output.theme }),
+      ...(project.output.resolution == null ? {} : { resolution: project.output.resolution }),
+    },
     ...(project.media_folder === undefined ? {} : { media_folder: project.media_folder }),
     media: project.media.map(({ id, path }) => ({ id, path })),
     clips: project.clips.map(({ id, media_id, start, source_in, source_out }) =>
