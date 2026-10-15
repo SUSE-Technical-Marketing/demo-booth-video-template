@@ -36,22 +36,26 @@ describe('videos and New in the editor', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ measureText: t => ({ width: t.length * 14 }) });
     Element.prototype.scrollIntoView = vi.fn();
     URL.createObjectURL = vi.fn(() => 'blob:x'); URL.revokeObjectURL = vi.fn();
-    // every "video file" reports a 40 s length
+    // every "video file" reports a 40 s length; metadata lands in a microtask so tests never wait on real timers
     const create = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation(tag => {
       const el = create(tag);
       if (tag === 'video') Object.defineProperty(el, 'src', { set() {
-        Object.defineProperty(el, 'duration', { value: 40 }); setTimeout(() => el.onloadedmetadata?.(), 0); } });
+        Object.defineProperty(el, 'duration', { value: 40 }); Promise.resolve().then(() => el.onloadedmetadata?.()); } });
       return el;
     });
     wrapper = mount(App, { attachTo: document.body });
   });
   afterEach(() => { wrapper.unmount(); delete document.fullscreenElement; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  // drain chained async work (file reads, clip probes, re-renders) without depending on wall-clock delays
+  async function settle(rounds = 4) {
+    for (let i = 0; i < rounds; i++) await flushPromises();
+  }
   async function addFiles(...names) {
     const input = wrapper.get('#videoFile');
     Object.defineProperty(input.element, 'files', { value: names.map(name => new File(['x'], name)), configurable: true });
     await input.trigger('change');
-    await new Promise(r => setTimeout(r, 20)); await flushPromises();
+    await settle();
   }
   async function importProject(project) {
     const input = wrapper.get('header input[type=file]');
@@ -94,9 +98,7 @@ describe('videos and New in the editor', () => {
     return { directory, manifests, sources, media };
   }
   async function settleFolder() {
-    await flushPromises();
-    await new Promise(resolve => setTimeout(resolve, 30));
-    await flushPromises();
+    await settle();
   }
   async function openNativeFolder(folder) {
     vi.stubGlobal('showDirectoryPicker', vi.fn().mockResolvedValue(folder.directory));
@@ -445,8 +447,7 @@ describe('videos and New in the editor', () => {
     const input = wrapper.get('#relinkFile');
     Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.mp4')], configurable: true });
     await input.trigger('change');
-    await new Promise(resolve => setTimeout(resolve, 20));
-    await flushPromises();
+    await settle();
     expect(wrapper.findAll('#content video')).toHaveLength(1);
     expect(wrapper.get('#content video').element.currentTime).toBe(7);
     expect(wrapper.findAll('#vlist .vrow')[0].get('.clip-path input').element.value).toBe('media/a.mp4');
