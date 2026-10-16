@@ -2,7 +2,7 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.vue';
 import Preview from './components/Preview.vue';
-import { chaptersCovered, clipAt, loadClip } from './videos.js';
+import { chaptersCovered, clipAt, clipLayersAt, loadClip } from './videos.js';
 import { zipProjectSource } from './zipProjects.js';
 import { downloadJSON, rememberHandle, rememberedHandle } from './fileAccess.js';
 import projectFixture from '../../tests/fixtures/project.json';
@@ -29,6 +29,26 @@ describe('clip helpers', () => {
     expect(chaptersCovered({ start: 0, dur: 30 }, sw)).toEqual([1]);
     expect(chaptersCovered({ start: 0, dur: 70 }, sw)).toEqual([1, 2, 3]);
     expect(chaptersCovered({ start: 30, dur: 40 }, sw)).toEqual([2, 3]);
+  });
+  it('does not activate the incoming hard-cut clip before its start', () => {
+    const outgoing = { id: 'a', start: 0, dur: 10 }, incoming = { id: 'b', start: 10, dur: 10 };
+    expect(clipLayersAt([outgoing, incoming], 10 - 5e-7)).toEqual([{ clip: outgoing, gain: 1, opacity: 1 }]);
+    expect(clipLayersAt([outgoing, incoming], 10)).toEqual([{ clip: incoming, gain: 1, opacity: 1 }]);
+  });
+  it('treats rounding-sized hard-cut overlaps as cuts, not dissolves', () => {
+    const outgoing = { id: 'a', start: 0.1, dur: 0.2 }, incoming = { id: 'b', start: 0.3, dur: 0.2 };
+    expect(outgoing.start + outgoing.dur).toBeGreaterThan(incoming.start);
+    expect(clipLayersAt([incoming, outgoing], 0.3)).toEqual([{ clip: incoming, gain: 1, opacity: 1 }]);
+    expect(clipAt([outgoing, incoming], 0.3)).toBe(incoming);
+  });
+  it('still blends declared dissolves at their start, midpoint and end', () => {
+    const outgoing = { id: 'a', start: 0, dur: 10 }, incoming = {
+      id: 'b', start: 8, dur: 10, transition_in: { type: 'crossfade', duration: 2 },
+    };
+    expect(clipLayersAt([outgoing, incoming], 8 - 5e-7)).toEqual([{ clip: outgoing, gain: 1, opacity: 1 }]);
+    expect(clipLayersAt([outgoing, incoming], 8).map(layer => layer.gain)).toEqual([1, 0]);
+    expect(clipLayersAt([outgoing, incoming], 9).map(layer => layer.gain)).toEqual([0.5, 0.5]);
+    expect(clipLayersAt([outgoing, incoming], 10)).toEqual([{ clip: incoming, gain: 1, opacity: 1 }]);
   });
 });
 
@@ -100,6 +120,22 @@ describe('videos and New in the editor', () => {
     const mediaId = wrapper.findComponent(Preview).props('clips')[row].media_id;
     await wrapper.get(`.relink-media[data-media-id="${mediaId}"]`).trigger('click');
   }
+  it('can add and reorder fractional-duration videos, then seek across their hard cuts without a dissolve', async () => {
+    videoLength = 0.1 + 0.2;
+    await addFiles('one.mp4', 'two.mp4', 'three.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('[aria-label="Move clip 3 up"]').trigger('click');
+    expect(wrapper.findAll('#vlist .name').map(el => el.text())).toEqual(['one.mp4', 'three.mp4', 'two.mp4']);
+    await wrapper.get('#scrub').setValue('0.3');
+    let videos = wrapper.findAll('#content video');
+    expect(videos.map(v => v.isVisible())).toEqual([true, false, false]);
+    await wrapper.get('#scrub').setValue(String(videoLength));
+    videos = wrapper.findAll('#content video');
+    expect(videos.map(v => v.isVisible())).toEqual([false, true, false]);
+    expect(videos[1].element.volume).toBe(1);
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(JSON.parse(downloadJSON.mock.calls.at(-1)[0]).clips.every(c => !c.transition_in)).toBe(true);
+  });
   it('relinks a missing recording once for video and freeze clips and removes it from the shared queue', async () => {
     const project = structuredClone(projectFixture);
     project.media = [project.media[0]];

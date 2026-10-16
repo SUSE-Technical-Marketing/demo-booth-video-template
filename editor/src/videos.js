@@ -3,10 +3,16 @@ let nextClipId = 0;
 
 export const clipEnd = clip => clip.start + clip.dur;
 export function clipLayersAt(clips, t) {
-  const active = clips.filter(c => t >= c.start - 1e-6 && t < clipEnd(c)).sort((a, b) => a.start - b.start);
-  const incoming = active[1];
-  const mix = incoming ? Math.max(0, Math.min(1, (t - incoming.start) / incoming.transition_in.duration)) : 0;
-  return active.map((clip, i) => ({ clip, gain: incoming ? (i ? mix : 1 - mix) : 1, opacity: i ? mix : 1 }));
+  const active = clips.filter(c => t >= c.start && t < clipEnd(c)).sort((a, b) => a.start - b.start);
+  const incoming = active.at(-1);
+  if (!incoming) return [];
+  // Hard cuts select the incoming clip even if floating-point rounding leaves a tiny overlap.
+  if (active.length === 1 || !incoming.transition_in) return [{ clip: incoming, gain: 1, opacity: 1 }];
+  const mix = Math.max(0, Math.min(1, (t - incoming.start) / incoming.transition_in.duration));
+  return [
+    { clip: active.at(-2), gain: 1 - mix, opacity: 1 },
+    { clip: incoming, gain: mix, opacity: mix },
+  ];
 }
 export const clipAt = (clips, t) => clipLayersAt(clips, t).at(-1)?.clip;
 
