@@ -9,6 +9,43 @@ const setup = () => mount(VideoList, { props: { clips, starts: [], linkMedia: vi
 const transfer = () => ({ effectAllowed: '', dropEffect: '', setData: vi.fn() });
 
 describe('clip order controls', () => {
+  it('keeps one clicked clip highlighted, including keyboard selection, until it is removed', async () => {
+    const wrapper = setup();
+    let rows = wrapper.findAll('.vrow');
+    await rows[1].trigger('click');
+    expect(rows.map(row => row.classes().includes('selected'))).toEqual([false, true, false]);
+    expect(rows[1].get('.name').attributes('aria-pressed')).toBe('true');
+    await rows[2].get('.name').trigger('keydown', { key: 'Enter' });
+    expect(rows.map(row => row.classes().includes('selected'))).toEqual([false, false, true]);
+    await rows[0].get('input').trigger('click');
+    expect(rows[2].classes()).toContain('selected');
+    await wrapper.setProps({ clips: [clips[2], clips[0], clips[1]] });
+    rows = wrapper.findAll('.vrow');
+    expect(rows[0].classes()).toContain('selected');
+    await wrapper.setProps({ clips: clips.slice(0, 2) });
+    expect(wrapper.find('.vrow.selected').exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it('seeks from the clip name, metadata or row background, with keyboard access', async () => {
+    const wrapper = setup();
+    const row = wrapper.findAll('.vrow')[1], name = row.get('.name');
+    await row.trigger('click');
+    await name.trigger('click');
+    await row.get('.meta').trigger('click');
+    await name.trigger('keydown', { key: 'Enter' });
+    await name.trigger('keydown', { key: ' ' });
+    expect(wrapper.emitted('seek')).toEqual(Array.from({ length: 5 }, () => [10]));
+    wrapper.unmount();
+  });
+  it('does not seek when using fields, labels, action buttons or the drag grip', async () => {
+    const wrapper = setup(), row = wrapper.findAll('.vrow')[1];
+    for (const control of row.findAll('input, select, label, button, svg, circle')) await control.trigger('click');
+    expect(wrapper.emitted('seek')).toBeUndefined();
+    await row.get('.clip-drag').trigger('dragstart', { dataTransfer: transfer() });
+    await row.trigger('click');
+    expect(wrapper.emitted('seek')).toBeUndefined();
+    wrapper.unmount();
+  });
   it('uses a labelled grip on each reorderable row rather than a text button', async () => {
     const wrapper = setup();
     expect(wrapper.findAll('.vrow.reorderable')).toHaveLength(3);

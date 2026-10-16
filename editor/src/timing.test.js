@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { activeChapter, activeHeadline, chapterEnd, chapterImportNotice, chapterScrollAt, chapterScrollSteps, DEFAULT, duration, fromJSON,
-  headlineEnd, headlineOutside, headlineTime, headlineWords, parseTime, removeChapter, sortAll, toJSON } from './timing.js';
+  headlineEnd, headlineOutside, headlineTime, headlineRuns, parseTime, removeChapter, sortAll, toJSON } from './timing.js';
 
 const fixture = count => ({
   chapters: Array.from({ length: count }, (_, i) => `Chapter ${i + 1}`),
@@ -212,9 +212,9 @@ describe('time and headline behavior', () => {
     }
   });
   it('preserves multiword accents, punctuation and safe text', () => {
-    expect(headlineWords('Plus *AI stack*, now <script>')).toEqual([
-      { text: 'Plus', accent: false }, { text: 'AI', accent: true },
-      { text: 'stack,', accent: true }, { text: 'now', accent: false }, { text: '<script>', accent: false },
+    expect(headlineRuns('Plus *AI stack*, now <script>')).toEqual([
+      { text: 'Plus ', accent: false }, { text: 'AI stack', accent: true },
+      { text: ', now <script>', accent: false },
     ]);
   });
   it('ends the last headline at the explicit end', () => {

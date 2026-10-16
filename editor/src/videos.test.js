@@ -120,6 +120,42 @@ describe('videos and New in the editor', () => {
     const mediaId = wrapper.findComponent(Preview).props('clips')[row].media_id;
     await wrapper.get(`.relink-media[data-media-id="${mediaId}"]`).trigger('click');
   }
+  it('seeks to the clicked video start without changing the saved project', async () => {
+    await addFiles('one.mp4', 'two.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('#btnDownload').trigger('click');
+    const before = downloadJSON.mock.calls.at(-1)[0];
+    await wrapper.get('#scrub').setValue('10');
+    await wrapper.findAll('#vlist .name')[1].trigger('click');
+    expect(wrapper.findComponent(Preview).props('cur')).toBe(40);
+    expect(wrapper.get('#scrub').element.value).toBe('40');
+    expect(wrapper.findAll('#content video').map(video => video.isVisible())).toEqual([false, true]);
+    expect(wrapper.get('.band.sel').text()).toBe('SUSE Observability');
+    expect(wrapper.get('.headline-band.sel').text()).toBe('See your whole stack in one view');
+    expect(wrapper.get('#settings-tab').attributes('aria-selected')).toBe('true');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(downloadJSON.mock.calls.at(-1)[0]).toBe(before);
+  });
+  it('clears the old headline selection when a clicked clip starts before its chapter headline', async () => {
+    const project = structuredClone(projectFixture);
+    project.clips = [
+      { id: 'a', media_id: project.media[0].id, start: 0, source_in: 0, source_out: 20 },
+      { id: 'b', media_id: project.media[0].id, start: 20, source_in: 0, source_out: 20 },
+    ];
+    project.timing.chapters = [
+      { title: 'First', start: 0, headlines: [[0, 'First headline']] },
+      { title: 'Delayed', start: 20, headlines: [[5, 'Later headline']] },
+    ];
+    await importProject(project);
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.findAll('#vlist .name')[0].trigger('click');
+    expect(wrapper.get('.headline-band.sel').text()).toBe('First headline');
+    await wrapper.findAll('#vlist .name')[1].trigger('keydown', { key: 'Enter' });
+    expect(wrapper.get('.band.sel').text()).toBe('Delayed');
+    expect(wrapper.find('.headline-band.sel').exists()).toBe(false);
+    expect(wrapper.findComponent(Preview).props('cur')).toBe(20);
+    expect(wrapper.get('#settings-tab').attributes('aria-selected')).toBe('true');
+  });
   it('can add and reorder fractional-duration videos, then seek across their hard cuts without a dissolve', async () => {
     videoLength = 0.1 + 0.2;
     await addFiles('one.mp4', 'two.mp4', 'three.mp4');

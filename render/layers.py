@@ -5,6 +5,7 @@ scaled down so the edges are smooth.
 """
 from functools import lru_cache
 from pathlib import Path
+import re
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -92,15 +93,14 @@ def paste_box(img, d, fill_hex, line_hex=None, cy=None):
 
 
 def parse_headline(s):
-    """'Plus the NVIDIA *AI stack*, now' -> [(word, is_accent)]. Same rules as the editor."""
-    words, acc = [], False
-    for tok in s.split():
-        if tok.startswith("*"):
-            acc = True
-        words.append((tok.replace("*", ""), acc))
-        if tok.rstrip(".,;:!?)\"'").endswith("*") and tok.strip("*"):
-            acc = False
-    return words
+    """Return (text run, is_accent) pairs, keeping spaces and exact marker boundaries."""
+    runs, accent = [], False
+    for part in re.split(r"(\*+)", " ".join(s.split())):
+        if part.startswith("*"):
+            accent = not accent
+        elif part:
+            runs.append((part, accent))
+    return runs
 
 
 class Layout:
@@ -133,7 +133,7 @@ class Layout:
                         if D.PILL_LINES > 1 else fit_px(self.chapters, D.PILL_TEXT_PX * S, D.PILL_TEXT_MAX_W))
         self.chapter_lines = [wrap_text(title, D.PILL_TEXT_MAX_W, self.pill_px) for title in self.chapters]
         self.prod_px = fit_px([self.product or " "], D.PRODUCT_PX * S, D.PRODUCT_MAX_W)
-        plains = [" ".join(w for w, _ in parse_headline(text)) for _, text in timing["headlines"]]
+        plains = ["".join(run for run, _ in parse_headline(text)) for _, text in timing["headlines"]]
         self.hl_px = fit_px(plains, D.HEADLINE_PX * S, D.HEADLINE_MAX_W)
         self.bar_x = int(round(D.BAR["cx"] - D.BAR["w"] / 2))
         self.bar_y = int(round(D.BAR["cy"] - D.BAR["h"] / 2))
@@ -264,19 +264,18 @@ class Layout:
         """(RGBA image the size of the bar with the headline drawn centred, left edge x, text width)."""
         D = self.design
         B = D.BRAND
-        words = self.headlines[idx][1]
+        runs = self.headlines[idx][1]
         f = font(self.hl_px)
-        widths = [f.getlength(w) for w, _ in words]
-        space = f.getlength(" ")
-        total = sum(widths) + space * (len(words) - 1)
+        widths = [f.getlength(run) for run, _ in runs]
+        total = sum(widths)
         img = Image.new("RGBA", (D.BAR["w"], D.BAR["h"]), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
         x = D.BAR["w"] / 2 - total / 2                       # centred in the bar, in every theme
         left = x
-        for (w, accent), wd in zip(words, widths):
-            d.text((x, D.BAR["h"] / 2), w, font=f, anchor="lm",
+        for (run, accent), width in zip(runs, widths):
+            d.text((x, D.BAR["h"] / 2), run, font=f, anchor="lm",
                    fill=rgb(B["accent"] if accent else B["headline"]))
-            x += wd + space
+            x += width
         return img, left, total
 
     @lru_cache(maxsize=4)

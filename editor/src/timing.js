@@ -191,16 +191,17 @@ export function tc(t, offset = 3600) {
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
 }
 
-export function headlineWords(text) {
+export function headlineRuns(text) {
   let accent = false;
-  return text.split(/\s+/).filter(Boolean).map(token => {
-    if (token.startsWith('*')) accent = true;
-    const word = { text: token.replace(/\*/g, ''), accent };
-    if (/\*[.,;:!?)"']*$/.test(token) && word.text) accent = false;
-    return word;
+  return text.trim().replace(/\s+/g, ' ').split(/(\*+)/).flatMap(part => {
+    if (part.startsWith('*')) {
+      accent = !accent;
+      return [];
+    }
+    return part ? [{ text: part, accent }] : [];
   });
 }
-export const plain = text => headlineWords(text).map(w => w.text).join(' ');
+export const plain = text => headlineRuns(text).map(run => run.text).join('');
 export const fitPx = (width, base, maxWidth) =>
   TEXT_SCALE * Math.min(base, base * maxWidth / Math.max(1, width * TEXT_SCALE));
 

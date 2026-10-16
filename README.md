@@ -85,6 +85,11 @@ were written with.
 ## Using the editor
 
 **New** starts a blank project. **Add videos…** places local videos sequentially in the content slot.
+Click a clip's name or row background in **Videos & settings** to pause playback and move the playhead to its start.
+The selected clip keeps a highlighted background; hovering over a clip shows a lighter background.
+Clicking a clip also selects the chapter and active headline at its start without switching tabs; if no headline
+is active there, the previous headline selection is cleared.
+The clip name also supports Enter or Space when focused; editing fields and action buttons do not seek.
 Change a clip's timeline start or **snap** it to a chapter, and set source **In/Out** to use part of a recording.
 Hard cuts remain the default, and gaps render black with silence. Chapters and clips are independent:
 one chapter can span several clips, and one clip can span several chapters.
@@ -298,7 +303,8 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    chapter's count; they are not shown
    until you adjust their times or the chapter boundary. Deleting every headline is allowed.
    Wrap words in `*asterisks*` for the orange accent
-   (an accent can span several words: `*AI stack*`).
+   (an accent can span several words: `*AI stack*`). Styling ends exactly at the closing asterisk:
+   `*AI*-powered` accents only `AI`, leaving the hyphen and suffix unaccented.
 4. **Times** accept `3:44` (minutes:seconds), `224` (seconds) or a full timecode like `1:03:44` (set **timeline starts at** in the top bar to the timecode your video editor shows at the start, often `01:00:00`).
    For headline fields, full timecodes are converted to that chapter's relative time;
    the tooltip shows the absolute timecode. `↑` / `↓` nudge by 1 second (`Shift` 5 s, `Alt` 0.1 s).
