@@ -54,9 +54,10 @@ describe('cancelling metadata loads', () => {
 });
 
 describe('videos and New in the editor', () => {
-  let wrapper, videoLength;
+  let wrapper, videoLength, metadataDelay;
   beforeEach(() => {
     videoLength = 40;
+    metadataDelay = 0;
     vi.clearAllMocks();
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     vi.stubGlobal('showDirectoryPicker', undefined);
@@ -69,7 +70,7 @@ describe('videos and New in the editor', () => {
     vi.spyOn(document, 'createElement').mockImplementation(tag => {
       const el = create(tag);
       if (tag === 'video') Object.defineProperty(el, 'src', { set() {
-        Object.defineProperty(el, 'duration', { value: videoLength }); setTimeout(() => el.onloadedmetadata?.(), 0); } });
+        Object.defineProperty(el, 'duration', { value: videoLength }); setTimeout(() => el.onloadedmetadata?.(), metadataDelay); } });
       return el;
     });
     wrapper = mount(App, { attachTo: document.body });
@@ -77,9 +78,11 @@ describe('videos and New in the editor', () => {
   afterEach(() => { wrapper.unmount(); delete document.fullscreenElement; vi.unstubAllGlobals(); vi.restoreAllMocks(); });
   async function addFiles(...names) {
     const input = wrapper.get('#videoFile');
+    const expected = wrapper.findAll('#vlist .vrow').length + names.length;
     Object.defineProperty(input.element, 'files', { value: names.map(name => new File(['x'], name)), configurable: true });
     await input.trigger('change');
-    await new Promise(r => setTimeout(r, 20)); await flushPromises();
+    await vi.waitFor(() => expect(wrapper.findAll('#vlist .vrow')).toHaveLength(expected));
+    await flushPromises();
   }
   async function importProject(project) {
     const input = wrapper.get('header input[type=file]');
@@ -90,6 +93,7 @@ describe('videos and New in the editor', () => {
     await flushPromises();
   }
   it('adds, adjusts, saves and undoes per-boundary dissolves, including chapter ripple and timeline indication', async () => {
+    metadataDelay = 30;
     await addFiles('one.mp4', 'two.mp4', 'three.mp4');
     await wrapper.get('#settings-tab').trigger('click');
     const transition = () => wrapper.findAll('[aria-label="Transition in"]')[0];
