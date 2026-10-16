@@ -14,9 +14,9 @@ import VideoList from './components/VideoList.vue';
 import ZipImport from './components/ZipImport.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { freezeFrame, freezeProblem, resizeFreeze, rippleDelete } from './edits.js';
+import { freezeFrame, freezeProblem, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
 import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, mediaPathValid, normalizeMediaFolder,
-  projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
+  projectClipEnd, projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { zipProjectSource } from './zipProjects.js';
 import { fitWrappedPx, themeLayout } from './themes.js';
@@ -146,7 +146,11 @@ function updateClip(clip, patch, recordHistory = true) {
 }
 function trimClip(clip, patch, time) {
   if (clip.freeze && patch.source_out != null) {           // dragging a freeze frame's edge: everything after follows
-    try { state.value = resizeFreeze(state.value, clip.id, patch.source_out - clip.source_in).state; }
+    try {
+      const next = resizeFreeze(state.value, clip.id, patch.source_out - clip.source_in).state;
+      validateProject({ project_version: 1, ...next, timing: { schema_version: 2 } });
+      state.value = next;
+    }
     catch (error) { return toast(error.message); }
     markDirty();
     editorTab.value = 'settings';
@@ -182,7 +186,10 @@ function updateCut(patch) {
 }
 function applyEdit(make, done) {
   let result;
-  try { result = make(); } catch (error) { return toast(error.message); }
+  try {
+    result = make();
+    validateProject({ project_version: 1, ...result.state, timing: { schema_version: 2 } });
+  } catch (error) { return toast(error.message); }
   pushHistory();
   state.value = result.state;
   selectedId.value = null;
@@ -211,6 +218,13 @@ function applyCut({ from, to, shift }) {
 function setFreezeLength(clip, length) {                     // from the Videos list: same ripple as dragging the edge
   if (!(length >= 0.1)) return toast('A freeze frame must be at least 0.1 seconds long');
   applyEdit(() => resizeFreeze(state.value, clip.id, length), () => toast(`Freeze frame is now ${fmt(length)} long`));
+}
+function updateDissolve(clip, seconds) {
+  applyEdit(() => setDissolve(state.value, clip.id, seconds), () => {
+    stop();
+    setCur(cur.value);
+    toast(seconds ? `Cross-dissolve set to ${seconds} seconds; later timing moved with the video` : 'Restored hard cut; later timing moved with the video');
+  });
 }
 function updateMediaFolder(value) {
   let folder;
@@ -242,7 +256,8 @@ function fitClipsToSource(mediaId, oldDur, newDur) {
     if (out <= c.source_in + 1e-6) { fits = false; return moved; }
     if (Math.abs(out - c.source_out) < 1e-6) return moved;
     changed = true;
-    if (out > c.source_out) shift += out - c.source_out;
+    if (out > c.source_out || state.value.clips.some(later =>
+      later.transition_in && Math.abs(later.start + later.transition_in.duration - projectClipEnd(c)) < 1e-6)) shift += out - c.source_out;
     return { ...moved, source_out: out };
   });
   return fits ? { clips, changed } : null;
@@ -262,6 +277,8 @@ async function relinkMedia(clip, file) {
       return toast('Selected video is shorter than where the clip starts (In point)');
     }
     if (next.changed) {
+      try { validateProject({ project_version: 1, ...state.value, clips: next.clips, timing: { schema_version: 2 } }); }
+      catch (error) { releaseClip(loaded); throw error; }
       pushHistory();
       state.value.clips = next.clips;
       markDirty();
@@ -299,6 +316,9 @@ function updateTheme(value) {
 }
 function removeClip(clip) {
   pushHistory();
+  const index = state.value.clips.findIndex(c => c.id === clip.id);
+  const following = state.value.clips[index + 1];
+  if (following) delete following.transition_in;
   state.value.clips = state.value.clips.filter(c => c.id !== clip.id);
   markDirty();
 }
@@ -948,7 +968,7 @@ onUnmounted(() => {
               <VideoList :clips="clips" :starts="state.chapter_starts" :media-folder="state.media_folder"
                 @update-folder="updateMediaFolder" @add="addVideos" @update-start="updateClipStart"
                 @update-clip="updateClip" @update-path="updateMediaPath" @relink="relinkMedia"
-                @remove="removeClip" @update-freeze="setFreezeLength" @error="toast" />
+                @remove="removeClip" @update-freeze="setFreezeLength" @update-dissolve="updateDissolve" @error="toast" />
               <ProjectSettings :title="state.title" :product-name="state.product_name"
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
                 :fps="state.output.fps" @update-fps="updateFPS"

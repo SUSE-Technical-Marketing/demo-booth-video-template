@@ -2,7 +2,13 @@
 let nextClipId = 0;
 
 export const clipEnd = clip => clip.start + clip.dur;
-export const clipAt = (clips, t) => clips.find(c => t >= c.start - 1e-6 && t < clipEnd(c));
+export function clipLayersAt(clips, t) {
+  const active = clips.filter(c => t >= c.start - 1e-6 && t < clipEnd(c)).sort((a, b) => a.start - b.start);
+  const incoming = active[1];
+  const mix = incoming ? Math.max(0, Math.min(1, (t - incoming.start) / incoming.transition_in.duration)) : 0;
+  return active.map((clip, i) => ({ clip, gain: incoming ? (i ? mix : 1 - mix) : 1, opacity: i ? mix : 1 }));
+}
+export const clipAt = (clips, t) => clipLayersAt(clips, t).at(-1)?.clip;
 
 // Which chapter buttons a clip overlaps, by number.
 export function chaptersCovered(clip, chapterStarts) {

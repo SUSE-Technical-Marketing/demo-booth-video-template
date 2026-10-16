@@ -71,21 +71,33 @@ export function validateProject(project) {
     }
     media.add(item.id);
   }
-  let end = 0;
+  let end = 0, previous = null;
   for (const clip of project.clips.slice().sort((a, b) => a?.start - b?.start)) {
     if (!clip || !id(clip.id) || clips.has(clip.id) || !media.has(clip.media_id) ||
         !time(clip.start) || !time(clip.source_in) || !time(clip.source_out) || clip.source_out <= clip.source_in) {
       throw new Error('Clips need unique IDs, existing media, non-negative times and source out after source in');
     }
     if (clip.freeze != null && typeof clip.freeze !== 'boolean') throw new Error('freeze must be true or false');
-    if (clip.transition_in != null) throw new Error('Transitions are not supported yet; use hard cuts');
-    if (clip.start < end - 1e-6) throw new Error('Clips overlap; move or trim them to use hard cuts');
+    const transition = clip.transition_in;
+    if (transition != null) {
+      if (transition.type !== 'crossfade' || !time(transition.duration) || transition.duration < 1 / fps - 1e-6) {
+        throw new Error('A cross-dissolve needs a duration of at least one output frame');
+      }
+      if (!previous || Math.abs(end - clip.start - transition.duration) > 1e-6) {
+        throw new Error('A dissolve must exactly match the overlap with the preceding clip');
+      }
+      if (transition.duration >= clip.source_out - clip.source_in - 1e-6 ||
+          (previous.transition_in?.duration ?? 0) + transition.duration > previous.source_out - previous.source_in - 1e-6) {
+        throw new Error('Dissolves must leave room in both clips and cannot overlap another dissolve');
+      }
+    } else if (clip.start < end - 1e-6) throw new Error('Clips overlap; add a cross-dissolve or move or trim them to use hard cuts');
     clips.add(clip.id);
     end = clip.start + clip.source_out - clip.source_in;
     if (!Number.isSafeInteger(Math.ceil(end * fps - 1e-7))) throw new Error('Clip timeline is too large');
     if (Math.ceil(end * fps - 1e-7) <= Math.ceil(clip.start * fps - 1e-7)) {
       throw new Error('Clip has no frames at the output frame rate');
     }
+    previous = clip;
   }
   if (project.timing?.schema_version !== 2) throw new Error('Project timing must use schema version 2');
 }
@@ -106,8 +118,10 @@ export function fromProject(project) {
     ...(project.media_folder === undefined ? {} : { media_folder: project.media_folder }),
     media: project.media.map(({ id, path }) => ({ id, path })),
     // A freeze clip holds the one frame at source_in for its length (source_out - source_in).
-    clips: project.clips.map(({ id, media_id, start, source_in, source_out, freeze }) =>
-      ({ id, media_id, start, source_in, source_out, ...(freeze ? { freeze: true } : {}) })).sort((a, b) => a.start - b.start),
+    clips: project.clips.map(({ id, media_id, start, source_in, source_out, freeze, transition_in }) =>
+      ({ id, media_id, start, source_in, source_out, ...(freeze ? { freeze: true } : {}),
+        ...(transition_in == null ? {} : { transition_in: { type: transition_in.type, duration: transition_in.duration } }) }))
+      .sort((a, b) => a.start - b.start),
   };
 }
 

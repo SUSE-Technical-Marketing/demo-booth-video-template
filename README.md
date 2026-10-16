@@ -5,8 +5,7 @@ headlines, and scrub a live preview of the finished layout: a **chapter panel** 
 the demo, and a **headline bar** on top where short headlines wipe in from left to right. Everything is saved in one
 project JSON per video, and a command-line renderer assembles its source clips into the final branded MP4.
 
-Use an external video editor for complex editing, or arrange and trim clips here with hard cuts.
-Crossfades and other transitions are not supported yet.
+Use an external video editor for complex editing, or arrange and trim clips here with hard cuts and optional cross-dissolves.
 
 For planned technical and functional work, see the [improvement roadmap](IMPROVEMENTS.md).
 
@@ -87,8 +86,19 @@ were written with.
 
 **New** starts a blank project. **Add videos…** places local videos sequentially in the content slot.
 Change a clip's timeline start or **snap** it to a chapter, and set source **In/Out** to use part of a recording.
-Clips cannot overlap; hard cuts are supported, and gaps render black with silence. Chapters and clips are independent:
+Hard cuts remain the default, and gaps render black with silence. Chapters and clips are independent:
 one chapter can span several clips, and one clip can span several chapters.
+
+In **Videos & settings**, choose **Cross-dissolve** under **Transition in** on any clip after the first, then edit
+its duration in seconds. The clips must meet before adding a dissolve: move or trim away any gap first.
+The incoming clip overlaps the end of the preceding clip, shortening the sequence; later clips, chapters, headlines
+and explicit end times ripple with the change. Reducing the duration or choosing **Hard cut** moves them later again.
+Timing inside a newly overlapped region is pulled back to the overlap start rather than reordered.
+An orange diagonal band marks each dissolve in the Videos timeline. Preview, fullscreen playback and exported video
+blend both pictures and audio linearly; silent sources and freeze frames contribute silence.
+Dissolves must last at least one output frame, leave room in both clips, and cannot intersect another dissolve.
+Trim handles at dissolved boundaries are hidden: edit the dissolve duration or restore a hard cut first.
+Freezing inside an overlap is blocked; cuts or trims that would break a dissolve are rejected without changing the project.
 
 **Open project folder…** opens a project and links its videos in one step: select the folder containing the JSON and its
 `media/` directory. A single JSON at the folder root opens automatically; if several JSON files exist, choose the
@@ -535,7 +545,10 @@ Changing references does not move files.
 `media` IDs and clip IDs are unique strings. A source can be referenced by several clips.
 Clip duration is `source_out - source_in`; `start` is absolute project time and is authoritative,
 regardless of array order. In this example there is a black/silent gap from 10 to 12 seconds and the project ends at 32 seconds.
-Source out is exclusive. Overlaps, transitions, invalid references and out-of-source trims fail explicitly.
+Source out is exclusive. Unmarked overlaps, invalid transitions, invalid references and out-of-source trims fail explicitly.
+An incoming dissolve is stored on its clip as `"transition_in": { "type": "crossfade", "duration": 0.5 }`.
+Its `start` must equal the preceding clip's end minus that duration; absent or null `transition_in` means a hard cut.
+Source trims do not change when adding a dissolve. Durations are sampled on the output frame grid, including rational FPS.
 A **freeze frame** is a clip with `"freeze": true`: it holds the single frame at `source_in` for `source_out - source_in`
 seconds (so that difference is the length of the hold, and it may be longer than the source video), with no sound:
 `{ "id": "hold-1", "media_id": "demo", "start": 12, "source_in": 7.5, "source_out": 10.5, "freeze": true }`.
@@ -577,7 +590,7 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Editor says "sample project" | Click **Open file…** and choose your project JSON, or **New** to start a blank one. |
 | Preview says "Missing media" | Use **Relink media…** in Videos & settings. Saved placements and trims are retained. |
 | Renderer reports missing media | Check the shared Media folder (relative to the JSON) and the video path (relative to that folder), or move the source into that location. |
-| Clips overlap | Move a clip later or shorten its source range. Crossfades are not supported yet. |
+| Clips overlap | Restore a hard-cut placement, or use **Transition in → Cross-dissolve** on two adjacent clips. Unmarked overlaps are rejected. |
 | Editor won't save to the file | Use Chrome or Edge. In other browsers use **Download** and replace the file in `timings/`. |
 | Export says "The export service isn't running" | Start the editor with `start_editor.command` or `mise run run`, or run `python3 render/server.py` (needs `pip install -r render/requirements.txt`). The hosted copy can't export. |
 | Export says a video is not linked | Link it in **Videos & settings** (**Relink media…**), or use **Open project folder…**. |
@@ -620,7 +633,7 @@ video list (`videos.js` holds the clip helpers), time input, and accent text are
 JSON helpers live in `timing.js`.
 `project.js` validates the portable project envelope; `videos.js` manages browser-local media URLs.
 The renderer's `project.py` validates the same contract and plans frame-aligned segments; `assemble.py` normalizes
-and concatenates those segments before branding. Both runtimes test `tests/fixtures/project.json`.
+and concatenates those segments, blending overlap segments' video and audio before branding. Both runtimes test `tests/fixtures/project.json`.
 `TabGroup` renders named slots using reusable `TabPane` panels, with controlled selection, keyboard navigation
 and panels kept mounted between switches. Tab IDs must be unique on the page. `ProjectSettings` renders the metadata,
 headline settings and ripple forms, emitting actions back to `App.vue` rather than changing the document directly.

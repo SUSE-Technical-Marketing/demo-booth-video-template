@@ -80,7 +80,7 @@ const clipHandles = computed(() => {
       { kind: 'clip-end', clip, value: end, lower: clip.start + length,
         upper: Math.min(clips[i + 1]?.start ?? Infinity,
           clip.sourceDuration == null ? end : clip.start + clip.sourceDuration - clip.source_in) },
-    ];
+    ].filter(handle => handle.kind === 'clip-start' ? !clip.transition_in : !clips[i + 1]?.transition_in);
   });
 });
 // The section the Cut tool will remove: its two edges can be dragged, and the tool's fields follow.
@@ -220,6 +220,10 @@ function keyboardSelect(event, kind, row, start) {
         :title="clip.freeze ? `Freeze frame of ${clip.name} at ${fmt(clip.source_in)}, held ${fmt(clip.dur)}. Drag its right edge to change the length.`
           : `${clip.name}  ${fmt(clip.start)} – ${fmt(clip.start + clip.dur)}`"
         :style="{ left: pct(clip.start), width: pct(clip.dur) }"><span>{{ clip.freeze ? 'Freeze frame' : clip.name }}</span><small>{{ fmt(clip.dur) }}</small></div>
+      <div v-for="clip in clips.filter(c => c.transition_in)" :key="'dissolve' + clip.id" class="dissolve-band"
+        :title="`Cross-dissolve: ${clip.transition_in.duration} seconds. Edit in Videos & settings.`"
+        :aria-label="`Cross-dissolve: ${clip.transition_in.duration} seconds`" role="img"
+        :style="{ left: pct(clip.start), width: pct(clip.transition_in.duration) }"></div>
       <div v-for="handle in clipHandles" :key="handle.kind + handle.clip.id" class="clip-handle"
         :class="handle.kind === 'clip-start' ? 'start' : 'end'" role="slider" tabindex="0" :data-handle="handle.kind"
         :aria-label="handle.clip.freeze ? `Change freeze frame length: ${handle.clip.name}`

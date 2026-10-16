@@ -89,6 +89,68 @@ describe('videos and New in the editor', () => {
     await input.trigger('change');
     await flushPromises();
   }
+  it('adds, adjusts, saves and undoes per-boundary dissolves, including chapter ripple and timeline indication', async () => {
+    await addFiles('one.mp4', 'two.mp4', 'three.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    const transition = () => wrapper.findAll('[aria-label="Transition in"]')[0];
+    await transition().setValue('crossfade');
+    await wrapper.get('[aria-label="Dissolve duration"]').setValue('2');
+    await wrapper.get('#btnDownload').trigger('click');
+    const saved = () => JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(saved().clips.map(c => c.start)).toEqual([0, 38, 78]);
+    expect(saved().clips[1].transition_in).toEqual({ type: 'crossfade', duration: 2 });
+    expect(saved().timing.chapters.map(c => c.start)).toEqual([0, 30, 58, 88, 118, 148]);
+    expect(wrapper.findAll('.dissolve-band')).toHaveLength(1);
+    expect(wrapper.findAll('[data-handle="clip-start"]')).toHaveLength(2);
+    expect(wrapper.findAll('[data-handle="clip-end"]')).toHaveLength(2);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('[aria-label="Dissolve duration"]').element.value).toBe('0.5');
+    await transition().setValue('cut');
+    await wrapper.get('#btnDownload').trigger('click');
+    expect(saved().clips.map(c => c.start)).toEqual([0, 40, 80]);
+    expect(saved().clips[1].transition_in).toBeUndefined();
+  });
+  it('rejects invalid dissolve edits without changing the document or leaving stale controls', async () => {
+    await addFiles('one.mp4', 'two.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('[aria-label="Transition in"]').setValue('crossfade');
+    await wrapper.get('[aria-label="Dissolve duration"]').setValue('99');
+    expect(wrapper.get('#toast').text()).toContain('Dissolves must leave room');
+    expect(wrapper.get('[aria-label="Dissolve duration"]').element.value).toBe('0.5');
+    await wrapper.get('[aria-label="Dissolve duration"]').setValue('0');
+    await wrapper.findAll('#vlist .vrow input[aria-label="Video start time"]')[1].setValue('0:45');
+    await wrapper.get('[aria-label="Transition in"]').setValue('crossfade');
+    expect(wrapper.get('#toast').text()).toContain('Close the gap');
+    expect(wrapper.get('[aria-label="Transition in"]').element.value).toBe('cut');
+  });
+  it('removes transitions attached to a deleted predecessor and restores them on undo', async () => {
+    await addFiles('one.mp4', 'two.mp4', 'three.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    for (const select of wrapper.findAll('[aria-label="Transition in"]')) await select.setValue('crossfade');
+    await wrapper.findAll('#vlist .vrow')[1].get('button.icon').trigger('click');
+    await wrapper.get('#btnDownload').trigger('click');
+    const saved = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(saved.clips).toHaveLength(2);
+    expect(saved.clips.every(c => !c.transition_in)).toBe(true);
+    expect(wrapper.findAll('.dissolve-band')).toHaveLength(0);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.findAll('.dissolve-band')).toHaveLength(2);
+  });
+  it('keeps an outgoing dissolve attached when relinking to a shorter recording', async () => {
+    await addFiles('one.mp4', 'two.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('[aria-label="Transition in"]').setValue('crossfade');
+    videoLength = 20;
+    await wrapper.findAll('#vlist .relink-media')[0].trigger('click');
+    const input = wrapper.get('#relinkFile');
+    Object.defineProperty(input.element, 'files', { value: [new File(['new'], 'short.mp4')], configurable: true });
+    await input.trigger('change');
+    await new Promise(r => setTimeout(r, 20)); await flushPromises();
+    await wrapper.get('#btnDownload').trigger('click');
+    const saved = JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    expect(saved.clips[0].source_out).toBe(20);
+    expect(saved.clips[1]).toMatchObject({ start: 19.5, transition_in: { type: 'crossfade', duration: 0.5 } });
+  });
   function zipSource(project = folderProject()) {
     const dispose = vi.fn().mockResolvedValue();
     const scoped = { directory: null, dispose,

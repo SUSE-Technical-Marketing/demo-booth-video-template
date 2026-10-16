@@ -49,6 +49,89 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(path=path, value=value), self.assertRaises(ValueError):
                 validate_project(project)
 
+    def test_cross_dissolve_contract_and_fractional_frame_plan(self):
+        project = copy.deepcopy(FIXTURE)
+        project["clips"][1]["start"] = 0.8
+        project["clips"][1]["transition_in"] = {"type": "crossfade", "duration": 0.4}
+        self.assertIs(validate_project(project), project)
+        segments = timeline_segments(project)
+        self.assertEqual([s["frames"] for s in segments], [5, 15, 10, 10])
+        self.assertEqual(segments[2]["incoming"]["id"], project["clips"][1]["id"])
+        self.assertAlmostEqual(segments[2]["mix_start"], 0)
+        self.assertAlmostEqual(segments[2]["source_start"], 1.0)
+        for transition, start in [
+                ({}, 0.8), ({"type": "wipe", "duration": 0.4}, 0.8),
+                ({"type": "crossfade", "duration": 0.01}, 1.19),
+                ({"type": "crossfade", "duration": True}, 0.2),
+                ({"type": "crossfade", "duration": "0.4"}, 0.8),
+                ({"type": "crossfade", "duration": 0.4}, 0.9),
+                ({"type": "crossfade", "duration": 0.8}, 0.4)]:
+            invalid = copy.deepcopy(project)
+            invalid["clips"][1].update(start=start, transition_in=transition)
+            with self.subTest(transition=transition, start=start), self.assertRaises(ValueError):
+                validate_project(invalid)
+        project["output"]["fps"] = "30000/1001"
+        project["clips"][1]["start"] = 0.801
+        project["clips"][1]["transition_in"]["duration"] = 0.399
+        segments = timeline_segments(validate_project(project))
+        self.assertEqual(sum(s["frames"] for s in segments), 48)
+        blend = next(s for s in segments if "incoming" in s)
+        self.assertAlmostEqual(blend["mix_start"], (25 / (30000 / 1001) - 0.801) / 0.399)
+
+    def test_render_cross_dissolves_mix_pixels_audio_and_freeze_frames(self):
+        ffmpeg = find_ffmpeg()
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            red, blue = directory / "red.mp4", directory / "blue.mp4"
+            subprocess.run([ffmpeg, "-y", "-v", "error",
+                            "-f", "lavfi", "-i", "color=c=red:s=160x90:r=25:d=2",
+                            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                            "-c:v", "libx264", "-c:a", "aac", str(red)], check=True)
+            subprocess.run([ffmpeg, "-y", "-v", "error", "-f", "lavfi", "-i",
+                            "color=c=blue:s=320x180:r=30:d=2", "-c:v", "libx264", str(blue)], check=True)
+            project = copy.deepcopy(FIXTURE)
+            project["output"]["resolution"] = "640x360"
+            project["media"] = [{"id": "red", "path": red.name}, {"id": "blue", "path": blue.name}]
+            project["clips"] = [
+                {"id": "a", "media_id": "red", "start": 0, "source_in": 0.2, "source_out": 1.4},
+                {"id": "b", "media_id": "blue", "start": 0.8, "source_in": 0.1, "source_out": 1.3,
+                 "transition_in": {"type": "crossfade", "duration": 0.4}},
+                {"id": "hold", "media_id": "red", "start": 1.6, "source_in": 0.5, "source_out": 1.5,
+                 "freeze": True, "transition_in": {"type": "crossfade", "duration": 0.4}},
+            ]
+            path, output = directory / "project.json", directory / "final.mp4"
+            for fps, count in [("25/1", 65), ("30000/1001", 78)]:
+                project["output"]["fps"] = fps
+                path.write_text(json.dumps(project))
+                result = subprocess.run([sys.executable, str(ROOT / "render/render.py"), str(path), "-o", str(output),
+                                         "--preset", "veryfast", "--crf", "18"], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                frames = subprocess.run([ffmpeg, "-v", "error", "-i", str(output), "-an",
+                                         "-vf", "scale=16:16", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                        capture_output=True, check=True).stdout
+                self.assertEqual(len(frames) // (16 * 16 * 3), count)
+                if fps != "25/1":
+                    continue
+                x, y = L.CONTENT["cx"] // 3, L.CONTENT["cy"] // 3
+                for time, expected in [(0.4, (255, 0, 0)), (0.8, (255, 0, 0)), (1, (128, 0, 128)),
+                                       (1.4, (0, 0, 255)), (1.8, (128, 0, 128)), (2.2, (255, 0, 0))]:
+                    frame = subprocess.run([ffmpeg, "-v", "error", "-ss", str(time), "-i", str(output),
+                                            "-vf", "scale=in_color_matrix=bt709:in_range=tv:out_range=full,format=rgb24",
+                                            "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                           capture_output=True, check=True).stdout
+                    pixel = frame[(y * 640 + x) * 3:(y * 640 + x) * 3 + 3]
+                    self.assertLessEqual(max(abs(a - b) for a, b in zip(pixel, expected)), 16, (time, pixel))
+                rms = []
+                for start in (0.38, 0.98, 1.38, 2.18):
+                    raw = subprocess.run([ffmpeg, "-v", "error", "-ss", str(start), "-i", str(output), "-t", "0.04",
+                                          "-vn", "-ac", "1", "-ar", "48000", "-f", "s16le", "-"],
+                                         capture_output=True, check=True).stdout
+                    samples = array("h", raw)
+                    rms.append((sum(v * v for v in samples) / len(samples)) ** 0.5)
+                self.assertGreater(rms[0], 1000)
+                self.assertAlmostEqual(rms[1] / rms[0], 0.5, delta=0.12)
+                self.assertLess(max(rms[2:]), 50)
+
     def test_media_folder_base_does_not_get_baked_into_relative_paths(self):
         for folder in ("", ".", "./", "media", "media/", "./media//demos/", "../shared videos", "media/\u89c6\u9891"):
             project = copy.deepcopy(FIXTURE)
