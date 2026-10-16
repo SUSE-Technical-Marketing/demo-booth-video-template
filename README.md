@@ -85,6 +85,11 @@ were written with.
 ## Using the editor
 
 **New** starts a blank project. **Add videos…** places local videos sequentially in the content slot.
+Click a clip's name or row background in **Videos & settings** to pause playback and move the playhead to its start.
+The selected clip keeps a highlighted background; hovering over a clip shows a lighter background.
+Clicking a clip also selects the chapter and active headline at its start without switching tabs; if no headline
+is active there, the previous headline selection is cleared.
+The clip name also supports Enter or Space when focused; editing fields and action buttons do not seek.
 Change a clip's timeline start or **snap** it to a chapter, and set source **In/Out** to use part of a recording.
 Hard cuts remain the default, and gaps render black with silence. Chapters and clips are independent:
 one chapter can span several clips, and one clip can span several chapters.

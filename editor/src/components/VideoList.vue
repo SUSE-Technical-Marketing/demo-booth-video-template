@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { chaptersCovered } from '../videos.js';
 import { fmt, parseClock } from '../timing.js';
 
@@ -9,7 +9,7 @@ const props = defineProps({
   mediaFolder: { type: String, default: '' },
   linkMedia: { type: Function, required: true },
 });
-const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'remove', 'update-freeze', 'update-dissolve', 'reorder', 'error']);
+const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'remove', 'update-freeze', 'update-dissolve', 'reorder', 'seek', 'error']);
 const input = ref(null), relinkInput = ref(null), relinking = ref(null);
 const relinkPopover = ref(null), relinkButton = ref(null), relinkOpen = ref(false);
 const showLinked = ref(false), linking = ref(false), linkError = ref('');
@@ -42,6 +42,18 @@ function chooseMedia(clip) {
   relinkInput.value.click();
 }
 const draggingId = ref(null), dropIndex = ref(null);
+const selectedClipId = ref(null);
+watch(() => props.clips.map(clip => clip.id), ids => {
+  if (!ids.includes(selectedClipId.value)) selectedClipId.value = null;
+});
+function selectClip(clip) {
+  selectedClipId.value = clip.id;
+  emit('seek', clip.start);
+}
+function seekClip(clip, event) {
+  if (draggingId.value !== null || event.target.closest('button, input, select, textarea, label, a, [contenteditable]')) return;
+  selectClip(clip);
+}
 function dragStart(clip, event) {
   draggingId.value = clip.id;
   event.dataTransfer.effectAllowed = 'move';
@@ -153,10 +165,13 @@ function snap(clip, event) {
       Incompatible dissolves become hard cuts with a notification.</p>
     <div id="vlist" @dragleave="!$event.currentTarget.contains($event.relatedTarget) && (dropIndex = null)">
       <div v-for="(clip, index) in clips" :key="clip.id" class="vrow" :data-clip-id="clip.id"
-        :class="{ freeze: clip.freeze, reorderable: clips.length > 1, dragging: draggingId === clip.id,
+        :class="{ freeze: clip.freeze, selected: selectedClipId === clip.id, reorderable: clips.length > 1, dragging: draggingId === clip.id,
           'drop-before': dropIndex === index, 'drop-after': index === clips.length - 1 && dropIndex === clips.length }"
-        @dragover="dragOver(index, $event)" @drop="drop">
-        <div class="name" :title="clip.name">{{ clip.freeze ? 'Freeze frame' : clip.name }}</div>
+        @dragover="dragOver(index, $event)" @drop="drop" @click="seekClip(clip, $event)">
+        <div class="name" role="button" tabindex="0" :title="`Go to clip start: ${fmt(clip.start)} · ${clip.name}`"
+          :aria-label="`Seek to start of clip ${index + 1}: ${clip.name}`" :aria-pressed="selectedClipId === clip.id"
+          @keydown.enter.stop.prevent="selectClip(clip)"
+          @keydown.space.stop.prevent="selectClip(clip)">{{ clip.freeze ? 'Freeze frame' : clip.name }}</div>
         <span v-if="clip.freeze" class="meta">of {{ clip.name }} · held {{ fmt(clip.dur) }}</span>
         <span v-else class="meta">{{ fmt(clip.dur) }} · {{ clip.url ? 'linked' : 'missing media' }}<template v-if="chaptersCovered(clip, starts).length"> · ch {{ chaptersCovered(clip, starts).join(', ') }}</template></span>
         <input class="time" :value="fmt(clip.start)" aria-label="Video start time" title="Where this video starts on the timeline (m:ss)"

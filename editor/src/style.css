@@ -252,6 +252,12 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 .videos-toggle[aria-pressed="true"]::before { background: var(--orange); }
 .vrow { position: relative; display: grid; grid-template-columns: 78px minmax(0, 1fr) auto; gap: 4px 8px; align-items: center; padding: 7px 6px; }
 .vrow.reorderable { padding-left: 28px; }
+.vrow { cursor: pointer; border-radius: 7px; }
+.vrow:hover { background: color-mix(in srgb, var(--green) 8%, transparent); }
+.vrow.selected { background: color-mix(in srgb, var(--orange) 14%, transparent); outline: 1px solid var(--orange); outline-offset: -1px; }
+.vrow.selected:hover { background: color-mix(in srgb, var(--orange) 20%, transparent); }
+.vrow .name:hover { color: var(--orange); }
+.vrow .name:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 3px; }
 .vrow .name { grid-column: 1 / -1; grid-row: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .vrow .meta { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; flex-wrap: wrap; white-space: normal; }
 .vrow input.time { grid-column: 1; grid-row: 3; }

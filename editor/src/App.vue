@@ -20,7 +20,7 @@ import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, norma
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { zipProjectSource } from './zipProjects.js';
 import { fitWrappedPx, themeLayout } from './themes.js';
-import { activeChapter, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
+import { activeChapter, activeHeadline, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
   headlineOutside, headlineTime, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE } from './timing.js';
 
@@ -431,6 +431,12 @@ function setCur(time) {
 function seek(time) {
   stop();
   setCur(time);
+}
+function seekVideo(time) {
+  followPlayhead.value = false;
+  seek(time);
+  selectedChapterId.value = state.value.chapter_starts.find(chapter => chapter.ch === activeChapter(state.value, time)).id;
+  selectedId.value = activeHeadline(previewState.value, time)?.id ?? null;
 }
 function present(active) {
   stop();
@@ -971,7 +977,7 @@ onUnmounted(() => {
                 @update-folder="updateMediaFolder" @add="addVideos" @update-start="updateClipStart"
                 @update-clip="updateClip"
                 @remove="removeClip" @update-freeze="setFreezeLength" @update-dissolve="updateDissolve"
-                @reorder="moveClip" @error="toast" />
+                @reorder="moveClip" @seek="seekVideo" @error="toast" />
               <ProjectSettings :title="state.title" :product-name="state.product_name"
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
                 :fps="state.output.fps" @update-fps="updateFPS"
