@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipEnd, freezeFrame, freezeProblem, resizeFreeze, rippleDelete } from './edits.js';
+import { clipEnd, freezeFrame, freezeProblem, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
 import { fromJSON, headlineTime } from './timing.js';
 import { validateProject, toProjectJSON, createProject, fromProject } from './project.js';
 
@@ -19,6 +19,72 @@ const chapterTimes = state => state.chapter_starts.map(c => c.t);
 const headlineTimes = state => state.headlines.map(h => [h.text, headlineTime(state, h), h.end]);
 const valid = state => validateProject({ project_version: 1, output: state.output, media: state.media, clips: state.clips,
   timing: { schema_version: 2 } });
+
+describe('cross-dissolve editing', () => {
+  const sequence = () => base([
+    { id: 'a', media_id: 'x', start: 0, source_in: 0, source_out: 20 },
+    { id: 'b', media_id: 'x', start: 20, source_in: 5, source_out: 25 },
+    { id: 'c', media_id: 'x', start: 40, source_in: 0, source_out: 20 },
+  ]);
+  it('overlaps the incoming clip and ripples video, chapter-relative headlines and ends', () => {
+    const original = sequence();
+    original.chapters_end = 60; original.headlines_end = 58;
+    const next = setDissolve(original, 'b', 2).state;
+    expect(next.clips.map(c => c.start)).toEqual([0, 18, 38]);
+    expect(next.clips[1]).toMatchObject({ source_in: 5, source_out: 25, transition_in: { type: 'crossfade', duration: 2 } });
+    expect(chapterTimes(next)).toEqual([0, 18, 38]);
+    expect(headlineTimes(next).at(-1)[1]).toBe(43);
+    expect(next.chapters_end).toBe(58);
+    expect(next.headlines_end).toBe(56);
+    expect(original.clips[1].start).toBe(20);
+    valid(next);
+    expect(JSON.parse(toProjectJSON(fromProject(JSON.parse(toProjectJSON(next))))).clips).toEqual(next.clips);
+  });
+  it('changes and removes a dissolve, retaining downstream dissolves and source trims', () => {
+    let next = setDissolve(sequence(), 'b', 2).state;
+    next = setDissolve(next, 'c', 3).state;
+    next = setDissolve(next, 'b', 4).state;
+    expect(next.clips.map(c => c.start)).toEqual([0, 16, 33]);
+    next = setDissolve(next, 'b', 0).state;
+    expect(next.clips.map(c => c.start)).toEqual([0, 20, 37]);
+    expect(next.clips[1].transition_in).toBeUndefined();
+    expect(next.clips[2].transition_in.duration).toBe(3);
+    valid(next);
+  });
+  it('does not reorder chapter starts inside the newly overlapped region', () => {
+    const original = sequence();
+    original.chapter_starts[1].t = 19;
+    original.headlines.find(h => h.text === 'three').t = 0;
+    const next = setDissolve(original, 'b', 2).state;
+    expect(chapterTimes(next)).toEqual([0, 18, 38]);
+  });
+  it('rejects gaps, first clips, invalid durations and intersecting dissolves without mutating state', () => {
+    const original = sequence(), snapshot = JSON.stringify(original);
+    for (const seconds of [NaN, Infinity, -1, 0.01, 20, 21]) expect(() => setDissolve(original, 'b', seconds)).toThrow();
+    expect(() => setDissolve(original, 'a', 1)).toThrow('preceding');
+    expect(() => setDissolve(original, 'missing', 1)).toThrow('preceding');
+    expect(JSON.stringify(original)).toBe(snapshot);
+    const next = setDissolve(original, 'b', 12).state;
+    expect(() => setDissolve(next, 'c', 9)).toThrow('cannot overlap');
+    original.clips[1].start = 22;
+    expect(() => setDissolve(original, 'b', 1)).toThrow('Close the gap');
+  });
+  it('supports freeze clips and keeps their outgoing dissolve attached when resizing', () => {
+    const original = sequence();
+    original.clips[1].freeze = true;
+    let next = setDissolve(original, 'b', 2).state;
+    next = setDissolve(next, 'c', 3).state;
+    expect(freezeProblem(next, 19)).toContain('dissolve');
+    next = resizeFreeze(next, 'b', 25).state;
+    expect(next.clips.map(c => c.start)).toEqual([0, 18, 40]);
+    valid(next);
+  });
+  it('splitting a clip after its incoming dissolve keeps the transition only on the head', () => {
+    const next = freezeFrame(setDissolve(sequence(), 'b', 2).state, 25, 3).state;
+    expect(next.clips.filter(c => c.transition_in)).toHaveLength(1);
+    valid(next);
+  });
+});
 
 describe('freeze frame', () => {
   it('insert splits the video, adds the hold and pushes everything after it later', () => {

@@ -48,34 +48,48 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
         output = directory / ("%06d.mkv" % index)
         frames = segment["frames"]
         duration = frames / rate
-        clip = segment["clip"]
         command = [ffmpeg, "-y", "-v", "error"]
-        if clip:
-            path = sources[clip["media_id"]]
-            w, h, _, _, tagged, audio = info[path]
-            source_start = segment["source_start"]
-            if clip.get("freeze"):           # decode the one frame at source_in, hold it for the whole segment, no sound
-                command += ["-ss", "%.9f" % source_start, "-i", str(path)]
-                video = (slot_filter(fps, source_matrix(w, h, tagged), content) +
-                         ",trim=end_frame=1,tpad=stop_mode=clone:stop_duration=%.9f" % duration +
-                         ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
-                audio = False
+        tracks = [segment["clip"]] + ([segment["incoming"]] if "incoming" in segment else [])
+        filters = []
+        silence_input = len(tracks)
+        for track, clip in enumerate(tracks):
+            if clip:
+                path = sources[clip["media_id"]]
+                w, h, _, _, tagged, audio = info[path]
+                source_start = segment["source_start" if track == 0 else "incoming_source_start"]
+                if clip.get("freeze"):
+                    command += ["-ss", "%.9f" % source_start, "-i", str(path)]
+                    video = (slot_filter(fps, source_matrix(w, h, tagged), content) +
+                             ",trim=end_frame=1,tpad=stop_mode=clone:stop_duration=%.9f" % duration +
+                             ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
+                    audio = False
+                else:
+                    command += ["-ss", "%.9f" % source_start, "-t", "%.9f" % (clip["source_out"] - source_start),
+                                "-i", str(path)]
+                    video = ("tpad=stop_mode=clone:stop_duration=%.9f," % duration +
+                             slot_filter(fps, source_matrix(w, h, tagged), content) +
+                             ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
             else:
-                command += ["-ss", "%.9f" % source_start, "-t", "%.9f" % (clip["source_out"] - source_start),
-                            "-i", str(path)]
-                video = ("tpad=stop_mode=clone:stop_duration=%.9f," % duration +
-                         slot_filter(fps, source_matrix(w, h, tagged), content) +
-                         ",trim=end_frame=%d,setpts=PTS-STARTPTS" % frames)
-        else:
-            command += ["-f", "lavfi", "-i", "color=c=black:s=1920x1080:r=" + fps]
-            video = "scale=%d:%d,format=rgb24,trim=end_frame=%d,setpts=PTS-STARTPTS" % (
-                content["w"], content["h"], frames)
-            audio = False
+                command += ["-f", "lavfi", "-i", "color=c=black:s=1920x1080:r=" + fps]
+                video = "scale=%d:%d,format=rgb24,trim=end_frame=%d,setpts=PTS-STARTPTS" % (
+                    content["w"], content["h"], frames)
+                audio = False
+            audio_input = "%d:a:0" % (track if audio else silence_input)
+            filters.append("[%d:v:0]%s,format=gbrp[v%d]" % (track, video, track))
+            filters.append("[%s]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=duration=%.9f,asetpts=PTS-STARTPTS[a%d]" % (
+                audio_input, duration, track))
         command += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-        audio_input = "0:a:0" if audio else "1:a:0"
-        filters = "[0:v:0]%s[v];[%s]aresample=48000,aformat=channel_layouts=stereo,apad,atrim=duration=%.9f,asetpts=PTS-STARTPTS[a]" % (
-            video, audio_input, duration)
-        command += ["-filter_complex", filters, "-map", "[v]", "-map", "[a]",
+        if len(tracks) == 2:
+            length = segment["incoming"]["transition_in"]["duration"]
+            phase = "min(1,max(0,%.12f+T/%.12f))" % (segment["mix_start"], length)
+            filters.append("[v0][v1]blend=all_expr='A*(1-(%s))+B*(%s)'[v]" % (phase, phase))
+            for track in range(2):
+                gain = phase.lower() if track else "1-(%s)" % phase.lower()
+                filters.append("[a%d]aeval=exprs='val(0)*(%s)|val(1)*(%s)'[mix%d]" % (track, gain, gain, track))
+            filters.append("[mix0][mix1]amix=inputs=2:normalize=0[a]")
+        else:
+            filters += ["[v0]null[v]", "[a0]anull[a]"]
+        command += ["-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]",
                     "-t", "%.9f" % duration, "-r", fps, "-c:v", "ffv1", "-level", "3", "-pix_fmt", "bgr0",
                     "-c:a", "pcm_s16le", str(output)]
         _run(command)

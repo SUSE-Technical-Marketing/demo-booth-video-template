@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import AccentText from './AccentText.vue';
-import { clipAt } from '../videos.js';
+import { clipAt, clipLayersAt } from '../videos.js';
 import { activeChapter, activeHeadline, chapterEnd, chapterScrollAt, chapterScrollSteps, duration, TEXT_SCALE } from '../timing.js';
 import { themeLayout } from '../themes.js';
 import localLogo from '../../../assets/SUSE_Logo-hor_Green.png';
@@ -27,37 +27,53 @@ onMounted(() => {
 });
 onUnmounted(() => observer?.disconnect());
 
-// one <video> per clip; only the clip under the playhead is shown and played
+// A dissolve plays both sources, compositing the incoming video over the outgoing one.
 const videos = new Map();
 const clip = computed(() => clipAt(props.clips, props.cur));
+const layers = computed(() => clipLayersAt(props.clips, props.cur));
+const videoStyle = c => {
+  const index = layers.value.findIndex(layer => layer.clip.id === c.id);
+  return { display: index < 0 ? 'none' : '', opacity: layers.value[index]?.opacity ?? 0, zIndex: index + 1 };
+};
 const setVideo = (id, el) => { if (el) videos.set(id, el); else videos.delete(id); };
 let previousTime = props.cur;
+let previousActive = new Set();
 function mediaError(c, event) {
   const error = event.target.error;
   emit('playback-error', new Error(`Could not load ${c.name}: ${error?.message || 'video decoding failed'}`));
 }
 function waiting(c) {
-  if (props.playing && clip.value?.id === c.id) emit('buffering', true);
+  if (props.playing && layers.value.some(layer => layer.clip.id === c.id)) emit('buffering', true);
 }
 function syncVideo() {
   const rewound = props.cur < previousTime;
   previousTime = props.cur;
-  const current = clip.value;
-  videos.forEach((el, id) => { if (id !== current?.id && !el.paused) el.pause(); });
-  const el = current && videos.get(current.id);
-  emit('buffering', !!el && props.playing && el.readyState < 3);
-  if (!el) return;
-  // a freeze frame shows one fixed frame of its video and never plays
-  const frozen = !!current.freeze;
-  const want = frozen ? current.source_in : (current.source_in ?? 0) + props.cur - current.start;
-  const drift = Math.abs(el.currentTime - want);
-  if (drift > 0.001 && (frozen || rewound || !props.playing || drift > 0.4)) el.currentTime = want;
-  if (props.playing && !frozen && el.paused && !el.ended) el.play?.()?.catch?.(error => {
-    if (props.playing && clip.value?.id === current.id && clip.value.url === current.url && videos.get(current.id) === el) {
-      emit('playback-error', new Error(`Could not play ${current.name}: ${error.message}`));
+  const active = new Map(layers.value.map(layer => [layer.clip.id, layer]));
+  emit('buffering', props.playing && layers.value.some(({ clip }) => {
+    const el = videos.get(clip.id);
+    return !!el && el.readyState < 3;
+  }));
+  videos.forEach((el, id) => {
+    const layer = active.get(id);
+    if (!layer) {
+      if (!el.paused) el.pause();
+      return;
     }
+    const current = layer.clip;
+    el.volume = layer.gain;
+    // A freeze frame shows one fixed frame of its video and never plays.
+    const frozen = !!current.freeze;
+    const want = frozen ? current.source_in : (current.source_in ?? 0) + props.cur - current.start;
+    const drift = Math.abs(el.currentTime - want);
+    if (drift > 0.001 && (frozen || rewound || !props.playing || !previousActive.has(id) || drift > 0.4)) el.currentTime = want;
+    if (props.playing && !frozen && el.paused && !el.ended) el.play?.()?.catch?.(error => {
+      if (props.playing && layers.value.some(layer => layer.clip.id === current.id && layer.clip.url === current.url) && videos.get(current.id) === el) {
+        emit('playback-error', new Error(`Could not play ${current.name}: ${error.message}`));
+      }
+    });
+    else if ((!props.playing || frozen) && !el.paused) el.pause();
   });
-  else if ((!props.playing || frozen) && !el.paused) el.pause();
+  previousActive = new Set(active.keys());
 }
 watch([() => props.cur, () => props.playing, clip, () => props.clips.length], syncVideo, { flush: 'post' });
 const themeId = computed(() => props.state.output?.theme ?? 'classic');
@@ -128,8 +144,9 @@ const headlineStyle = computed(() => {
       '--theme-accent': design.BRAND.accent, '--theme-headline': design.BRAND.headline,
       '--chapter-number-px': `${design.CHAPTER_SCROLL.indicator_px * TEXT_SCALE}px` }">
       <div id="content" class="abs" :style="{ ...boxStyle(design.CONTENT), background: clips.length && !clip ? '#000' : design.BRAND.content_bg }">
-        <video v-for="c in clips.filter(c => c.url)" v-show="clip?.id === c.id" :key="c.id" :ref="el => setVideo(c.id, el)" :src="c.url"
-          :muted="muted" playsinline preload="auto" @waiting="waiting(c)" @canplay="syncVideo"
+        <video v-for="c in clips.filter(c => c.url)" :style="videoStyle(c)"
+          :key="c.id" :ref="el => setVideo(c.id, el)" :src="c.url"
+          :muted="muted || c.freeze" playsinline preload="auto" @waiting="waiting(c)" @canplay="syncVideo"
           @playing="syncVideo" @seeked="syncVideo" @error="mediaError(c, $event)"></video>
         <span v-if="!clips.length">your video here</span>
         <span v-else-if="!clip && !presentation" class="gap">no video at this time</span>

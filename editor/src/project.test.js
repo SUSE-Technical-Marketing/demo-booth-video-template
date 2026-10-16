@@ -139,4 +139,28 @@ describe('project documents', () => {
     project.clips[1].media_id = 'red';
     expect(fromProject(project).clips[1].media_id).toBe('red');
   });
+  it('round-trips a cross-dissolve without changing trims or timeline positions', () => {
+    const project = copy();
+    project.clips[1].start = 0.8;
+    project.clips[1].transition_in = { type: 'crossfade', duration: 0.4 };
+    expect(JSON.parse(toProjectJSON(fromProject(project)))).toEqual(project);
+  });
+  it.each([
+    project => { project.clips[1].transition_in.type = 'wipe'; },
+    project => { project.clips[1].transition_in.duration = 0; },
+    project => { project.clips[1].transition_in.duration = 0.01; },
+    project => { project.clips[1].transition_in.duration = '0.4'; },
+    project => { project.clips[1].transition_in.duration = Infinity; },
+    project => { project.clips[1].start = 0.9; },
+    project => { project.clips[1].start = 2; },
+    project => { project.clips[1].source_out = project.clips[1].source_in + 0.4; },
+    project => { project.clips.push({ id: 'third', media_id: 'red', start: 1, source_in: 0, source_out: 2,
+      transition_in: { type: 'crossfade', duration: 0.6 } }); },
+  ])('rejects invalid dissolve duration, placement and intersecting dissolves', change => {
+    const project = copy();
+    project.clips[1].start = 0.8;
+    project.clips[1].transition_in = { type: 'crossfade', duration: 0.4 };
+    change(project);
+    expect(() => fromProject(project)).toThrow();
+  });
 });

@@ -8,7 +8,7 @@ const props = defineProps({
   starts: { type: Array, required: true },
   mediaFolder: { type: String, default: '' },
 });
-const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'update-path', 'relink', 'remove', 'update-freeze', 'error']);
+const emit = defineEmits(['add', 'update-folder', 'update-start', 'update-clip', 'update-path', 'relink', 'remove', 'update-freeze', 'update-dissolve', 'error']);
 const input = ref(null), relinkInput = ref(null), relinking = ref(null);
 function add(event) {
   const files = [...event.target.files];
@@ -52,6 +52,17 @@ function commitFolder(event) {
   event.target.value = props.mediaFolder;
   emit('update-folder', folder);
 }
+function commitDissolve(clip, event) {
+  const raw = event.target.value.trim(), seconds = raw === '' ? NaN : Number(raw);
+  event.target.value = clip.transition_in?.duration ?? 0;
+  if (!Number.isFinite(seconds) || seconds < 0) return emit('error', 'Enter a non-negative dissolve duration in seconds');
+  emit('update-dissolve', clip, seconds);
+}
+function commitTransition(clip, index, event) {
+  const seconds = event.target.value === 'cut' ? 0 : Math.min(0.5, clip.dur / 4, props.clips[index - 1].dur / 4);
+  event.target.value = clip.transition_in ? 'crossfade' : 'cut';
+  emit('update-dissolve', clip, seconds);
+}
 function relink(event) {
   const file = event.target.files[0];
   event.target.value = '';
@@ -74,7 +85,7 @@ function snap(clip, event) {
     <p id="mediaFolderHint" class="hint">Relative to the project JSON; leave blank for the JSON's folder.
       Applied automatically to every media path below. Changing it updates all references, without moving files.</p>
     <div id="vlist">
-      <div v-for="clip in clips" :key="clip.id" class="vrow" :class="{ freeze: clip.freeze }">
+      <div v-for="(clip, index) in clips" :key="clip.id" class="vrow" :class="{ freeze: clip.freeze }">
         <div class="name" :title="clip.name">{{ clip.freeze ? 'Freeze frame' : clip.name }}</div>
         <span v-if="clip.freeze" class="meta">of {{ clip.name }} · held {{ fmt(clip.dur) }}</span>
         <span v-else class="meta">{{ fmt(clip.dur) }} · {{ clip.url ? 'linked' : 'missing media' }}<template v-if="chaptersCovered(clip, starts).length"> · ch {{ chaptersCovered(clip, starts).join(', ') }}</template></span>
@@ -97,6 +108,20 @@ function snap(clip, event) {
           <label>Out <input class="time" :value="fmt(clip.source_out)" aria-label="Source out"
             @change="commitTrim(clip, 'source_out', $event)"></label>
         </div>
+        <div v-if="index" class="clip-source dissolve-controls">
+          <label>Transition in
+            <select aria-label="Transition in" :value="clip.transition_in ? 'crossfade' : 'cut'"
+              @change="commitTransition(clip, index, $event)">
+              <option value="cut">Hard cut</option>
+              <option value="crossfade">Cross-dissolve</option>
+            </select>
+          </label>
+          <label v-if="clip.transition_in">Seconds
+            <input class="time" :value="clip.transition_in.duration" aria-label="Dissolve duration"
+              inputmode="decimal" @change="commitDissolve(clip, $event)" @keydown.enter="$event.target.blur()">
+          </label>
+          <span class="hint">Overlaps clips; later video, chapters and headlines ripple with the change.</span>
+        </div>
         <label v-if="!clip.freeze" class="clip-path">Media path <input :value="clip.path" aria-label="Media path"
           title="Relative to the media folder, using forward slashes" @change="commitPath(clip, $event)">
           <span class="hint resolved-media-path">Project path: {{ clip.resolvedPath }}</span>
@@ -111,7 +136,8 @@ function snap(clip, event) {
     </div>
     <p class="hint">Add one video per chapter, or one that covers several. Each plays from the time you set; <b>snap</b> moves it
       to the start of a chapter. Placements, source trims and relative media paths are saved in the project.
-      Hard cuts only: overlapping clips are rejected. Gaps render black with silence.
+      Add a cross-dissolve on a clip to blend from the preceding clip; set its duration in seconds.
+      Other overlaps are rejected. Gaps render black with silence.
       Use <b>Open project folder…</b> to link videos automatically, or <b>Relink media…</b> when opening only the JSON.</p>
   </section>
 </template>

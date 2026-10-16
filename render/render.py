@@ -3,7 +3,7 @@
 
     python render/render.py project.json -o my-video-final.mp4
 
-Assembles the project's source clips with hard cuts, then draws the chapter panel and timed headlines.
+Assembles the project's source clips with optional cross-dissolves, then draws the chapter panel and timed headlines.
 
     python render/render.py project.json -o my-video.mp4 --size 1280x720 --fps 30/1       # override the project
     python render/render.py project.json --frame 75 --png check.png
@@ -395,7 +395,7 @@ def render_project(args, ffmpeg, progress=None, cancel=None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Render a video project with hard cuts, audio, chapters and headlines.")
+    ap = argparse.ArgumentParser(description="Render a video project with optional cross-dissolves, audio, chapters and headlines.")
     ap.add_argument("project", nargs="?", help="project JSON; media paths are relative to its media_folder (default: JSON's folder)")
     ap.add_argument("-o", "--output", help="output .mp4 (default: <project>-branded.mp4)")
     ap.add_argument("--fps", type=fps_argument, metavar="RATE", help="output frame rate such as 25 or 30000/1001 "

@@ -222,4 +222,37 @@ describe('the preview holds a freeze frame', () => {
     expect(videos[1].isVisible()).toBe(true);
     wrapper.unmount();
   });
+  it('composites two videos, mixes their audio, seeks both and buffers on either source during a dissolve', async () => {
+    const state = { ...createProject(DEFAULT), preview_end: 18 };
+    const clips = [
+      { id: 'a', name: 'a.mp4', url: 'blob:a', start: 0, dur: 10, source_in: 3, source_out: 13 },
+      { id: 'b', name: 'b.mp4', url: 'blob:b', start: 8, dur: 10, source_in: 5, source_out: 15,
+        transition_in: { type: 'crossfade', duration: 2 } },
+    ];
+    const wrapper = mount(Preview, { attachTo: document.body, props: { state, cur: 7, headlinePx: 70, pillPx: 28, productPx: 56, clips } });
+    await wrapper.setProps({ cur: 9 });
+    const videos = wrapper.findAll('#content video');
+    expect(videos.map(v => v.isVisible())).toEqual([true, true]);
+    expect(videos.map(v => v.element.currentTime)).toEqual([12, 6]);
+    expect(videos.map(v => v.element.volume)).toEqual([0.5, 0.5]);
+    expect(videos.map(v => v.element.style.opacity)).toEqual(['1', '0.5']);
+    expect(videos[1].element.style.zIndex).toBe('2');
+    await wrapper.setProps({ playing: true });
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalled();
+    await videos[0].trigger('waiting');
+    expect(wrapper.emitted('buffering').at(-1)).toEqual([true]);
+    await wrapper.setProps({ cur: 8.5, playing: false, muted: true });
+    expect(videos.map(v => v.element.currentTime)).toEqual([11.5, 5.5]);
+    expect(videos.map(v => v.element.volume)).toEqual([0.75, 0.25]);
+    expect(videos.map(v => v.element.muted)).toEqual([true, true]);
+    await wrapper.setProps({ cur: 10 });
+    expect(videos[0].element.style.display).toBe('none');
+    expect(videos.map(v => v.isVisible())).toEqual([false, true]);
+    expect(videos[1].element.volume).toBe(1);
+    await wrapper.setProps({ cur: 7, playing: true });
+    videos[1].element.currentTime = 5.3;
+    await wrapper.setProps({ cur: 8.05 });
+    expect(videos[1].element.currentTime).toBeCloseTo(5.05);
+    wrapper.unmount();
+  });
 });

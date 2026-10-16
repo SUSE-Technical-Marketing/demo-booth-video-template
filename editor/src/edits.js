@@ -2,20 +2,51 @@
 // and returns a changed copy (or throws an Error whose message is meant for the user), so the app can record one undo
 // step and the rules can be tested without a browser.
 import { sortAll } from './timing.js';
+import { validateProject } from './project.js';
 
 const EPS = 1e-6;
 const round = value => +value.toFixed(2);
 const clone = state => JSON.parse(JSON.stringify(state));
 const newId = () => crypto.randomUUID();
 
+export function setDissolve(state, clipId, duration) {
+  if (!Number.isFinite(duration) || duration < 0) throw new Error('Enter a non-negative dissolve duration in seconds.');
+  const next = clone(state);
+  next.clips.sort((a, b) => a.start - b.start);
+  const index = next.clips.findIndex(c => c.id === clipId), clip = next.clips[index], previous = next.clips[index - 1];
+  if (!clip || !previous) throw new Error('A dissolve needs a preceding clip.');
+  const old = clip.transition_in?.duration ?? 0, boundary = clip.start + old;
+  if (duration && Math.abs(clipEnd(previous) - boundary) > EPS) {
+    throw new Error('Close the gap between these clips before adding a dissolve.');
+  }
+  if (duration >= clipLength(clip) - EPS ||
+      (previous.transition_in?.duration ?? 0) + duration > clipLength(previous) - EPS ||
+      duration + (next.clips[index + 1]?.transition_in?.duration ?? 0) > clipLength(clip) - EPS) {
+    throw new Error('Dissolves must leave room in both clips and cannot overlap another dissolve');
+  }
+  const delta = old - duration;
+  for (const later of next.clips.slice(index)) later.start += delta;
+  if (duration) clip.transition_in = { type: 'crossfade', duration };
+  else delete clip.transition_in;
+  validateProject({ project_version: 1, ...next, timing: { schema_version: 2 } });
+  // Keep chapter-relative headlines with the rippled footage, including ones in the old overlap.
+  const start = boundary - old;
+  retimeTiming(next, x => delta < 0
+    ? (x <= start + delta ? x : Math.max(start + delta, x + delta))
+    : (x >= start - EPS ? x + delta : x));
+  return { state: next };
+}
+
 export const clipLength = clip => clip.source_out - clip.source_in;
 export const clipEnd = clip => clip.start + clipLength(clip);
 export const MIN_FREEZE = 0.1;
 
 // A freeze clip holds the frame at source_in for its whole length (source_out - source_in).
-const piece = (clip, start, sourceIn, length, extra = {}) => ({
-  ...clip, ...extra, start, source_in: sourceIn, source_out: sourceIn + length,
-});
+const piece = (clip, start, sourceIn, length, extra = {}) => {
+  const next = { ...clip, ...extra, start, source_in: sourceIn, source_out: sourceIn + length };
+  if (start > clip.start + EPS) delete next.transition_in;
+  return next;
+};
 
 /**
  * Remove the timeline range [from, to) from the clips without moving anything: a clip that spans the range is split
@@ -72,6 +103,9 @@ const clipAtTime = (clips, t) => clips.find(c => t >= c.start - EPS && t < clipE
 
 /** Why a freeze frame cannot be made at t (nothing to freeze, or it is already one), or null if it can. */
 export function freezeProblem(state, t) {
+  if (state.clips.filter(c => t >= c.start - EPS && t < clipEnd(c) - EPS).length > 1) {
+    return 'Remove the dissolve before freezing a frame inside its overlap.';
+  }
   const clip = clipAtTime(state.clips, t);
   if (!clip) return 'There is no video at the playhead. Move it onto a video to freeze that frame.';
   if (clip.freeze) return 'This is already a freeze frame. Drag its right edge or change its length instead.';
@@ -120,11 +154,13 @@ export function resizeFreeze(state, clipId, length, { shiftTiming = true } = {})
   if (!freeze?.freeze) throw new Error('That clip is not a freeze frame.');
   const length0 = clipLength(freeze), end0 = freeze.start + length0, length1 = Math.max(MIN_FREEZE, length);
   const delta = length1 - length0, end1 = freeze.start + length1;
+  const incoming = next.clips.find(c => c.transition_in && Math.abs(c.start + c.transition_in.duration - end0) < EPS);
   next.clips = next.clips.map(clip => {
     if (clip.id === clipId) return { ...clip, source_out: clip.source_in + length1 };
-    return clip.start >= end0 - EPS ? { ...clip, start: clip.start + delta } : clip;
+    return clip.start > freeze.start + EPS ? { ...clip, start: clip.start + delta } : clip;
   }).sort((a, b) => a.start - b.start);
-  if (shiftTiming && Math.abs(delta) > EPS) retimeTiming(next, x => (x >= end0 - EPS ? x + delta : Math.min(x, end1)));
+  const boundary = incoming?.start ?? end0;
+  if (shiftTiming && Math.abs(delta) > EPS) retimeTiming(next, x => (x >= boundary - EPS ? x + delta : Math.min(x, boundary + delta)));
   return { state: next };
 }
 
