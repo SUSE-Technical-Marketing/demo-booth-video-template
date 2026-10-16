@@ -213,7 +213,7 @@ describe('Vue editor', () => {
     expect(wrapper.findAll('.headline-list .row')).toHaveLength(2);
     expect(wrapper.findAll('#tl .headline-band')).toHaveLength(12);
     expect(wrapper.findAll('#tl .band')).toHaveLength(6);
-    expect(wrapper.get('#hl b').text()).toBe('Kubernetes,');
+    expect(wrapper.get('#hl b').text()).toBe('Kubernetes');
   });
   it('adds custom chapters beyond six and synchronizes all titles', async () => {
     for (let i = 0; i < 6; i++) await wrapper.get('#addChapter').trigger('click');
@@ -354,7 +354,7 @@ describe('Vue editor', () => {
     await text.trigger('focus');
     await text.setValue('A *new accent* headline');
     expect(wrapper.get('#hl').text()).toBe('A new accent headline');
-    expect(wrapper.findAll('#hl b')).toHaveLength(2);
+    expect(wrapper.findAll('#hl b').map(el => el.text())).toEqual(['new accent']);
     await text.trigger('keydown', { key: 'Enter' });
     expect(wrapper.findAll('.headline-list .row')).toHaveLength(3);
     await wrapper.get('#scrub').setValue('30');

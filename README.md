@@ -298,7 +298,8 @@ hidden in the stacked small-screen layout. Scrollbars use the editor's dark gree
    chapter's count; they are not shown
    until you adjust their times or the chapter boundary. Deleting every headline is allowed.
    Wrap words in `*asterisks*` for the orange accent
-   (an accent can span several words: `*AI stack*`).
+   (an accent can span several words: `*AI stack*`). Styling ends exactly at the closing asterisk:
+   `*AI*-powered` accents only `AI`, leaving the hyphen and suffix unaccented.
 4. **Times** accept `3:44` (minutes:seconds), `224` (seconds) or a full timecode like `1:03:44` (set **timeline starts at** in the top bar to the timecode your video editor shows at the start, often `01:00:00`).
    For headline fields, full timecodes are converted to that chapter's relative time;
    the tooltip shows the absolute timecode. `↑` / `↓` nudge by 1 second (`Shift` 5 s, `Alt` 0.1 s).

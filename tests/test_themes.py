@@ -12,7 +12,7 @@ from PIL import Image, ImageChops
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "render"))
 import layout as L
-from layers import Layout, rgb, text_width
+from layers import Layout, font, parse_headline, rgb, text_width
 from project import validate_project
 from render import find_ffmpeg, probe
 
@@ -24,6 +24,33 @@ def timing(count=12):
 
 
 class ThemeTests(unittest.TestCase):
+    def test_headline_emphasis_stops_at_closing_marker_inside_a_word(self):
+        for text, expected in [
+                ("*bold*characters after", [("bold", True), ("characters after", False)]),
+                ("*Kubernetes*, anywhere", [("Kubernetes", True), (", anywhere", False)]),
+                ("*AI*-powered *GPU*!", [("AI", True), ("-powered ", False), ("GPU", True), ("!", False)]),
+                ("pre*middle*suffix", [("pre", False), ("middle", True), ("suffix", False)]),
+                ("Plus *AI stack*, now", [("Plus ", False), ("AI stack", True), (", now", False)]),
+                ("**bold**suffix", [("bold", True), ("suffix", False)]),
+                ("  Plain \n text  ", [("Plain text", False)]),
+                ("*still open", [("still open", True)]),
+                ("", [])]:
+            with self.subTest(text=text):
+                self.assertEqual(parse_headline(text), expected)
+
+    def test_rendered_suffix_uses_normal_headline_colour_in_every_theme(self):
+        for theme in L.THEMES:
+            source = timing(1)
+            source["chapters"][0]["headlines"] = [[0, "*AI*powered"]]
+            layout = Layout(source, theme)
+            image, left, total = layout.headline_layer(0)
+            prefix_width = font(layout.hl_px).getlength("AI")
+            suffix = image.crop((int(left + prefix_width) + 2, 0, int(left + total) + 2, image.height))
+            colours = {colour for _, colour in suffix.getcolors(suffix.width * suffix.height)}
+            with self.subTest(theme=theme):
+                self.assertIn((*rgb(layout.design.BRAND["headline"]), 255), colours)
+                self.assertNotIn((*rgb(layout.design.BRAND["accent"]), 255), colours)
+
     def test_the_headline_is_centred_in_the_bar_in_every_theme(self):
         for theme in L.THEMES:
             with self.subTest(theme=theme):

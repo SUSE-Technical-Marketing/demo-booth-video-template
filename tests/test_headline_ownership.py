@@ -138,7 +138,7 @@ class HeadlineOwnershipTests(unittest.TestCase):
         source = owned_timing()
         source["chapters"][0]["headlines"][2][1] = "Long outside headline " * 20
         layout = Layout(source)
-        plains = [" ".join(word for word, _ in parse_headline(text))
+        plains = ["".join(run for run, _ in parse_headline(text))
                   for chapter in source["chapters"] for _, text in chapter["headlines"]]
         self.assertEqual(layout.hl_px, fit_px(plains, L.HEADLINE_PX * L.TEXT_SCALE, L.HEADLINE_MAX_W))
 
