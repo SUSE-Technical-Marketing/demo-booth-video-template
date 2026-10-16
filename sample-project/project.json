@@ -1,0 +1,326 @@
+{
+  "project_version": 1,
+  "output": {
+    "fps": "25/1",
+    "theme": "minimal-stage",
+    "resolution": "1920x1080"
+  },
+  "media_folder": "media",
+  "media": [
+    {
+      "id": "a14ad675-52d4-42b7-81d6-3dc3a4d1da50",
+      "path": "Rancher-Demo-Loop.mp4"
+    },
+    {
+      "id": "046f94ce-fc1c-4b33-8739-68848880ffaa",
+      "path": "media/AppCo-Demo-Loop.mp4"
+    },
+    {
+      "id": "7a2b01cf-3d3e-42b3-90ce-26467a62ecae",
+      "path": "AppCo-Demo-Loop.mp4"
+    },
+    {
+      "id": "fb6dfa9a-1934-4eac-aaf1-cc05e78a6d91",
+      "path": "Security-demo-loop.mp4"
+    },
+    {
+      "id": "05f76811-3b24-4fae-95e8-4c31caad0ee5",
+      "path": "Appco-Demo-Loop.mp4"
+    },
+    {
+      "id": "88a51095-9c66-4b87-97fc-c76dea7148fd",
+      "path": "Security-demo-loop.mp4"
+    },
+    {
+      "id": "bde5dc17-8c22-41d4-95c9-63d393667374",
+      "path": "Observability-Demo-loop.mp4"
+    },
+    {
+      "id": "b5027a05-8a0e-4721-aad6-a56c7fec5cb1",
+      "path": "Observability-Demo-loop.mp4"
+    },
+    {
+      "id": "60cd3b9b-e390-4216-ba35-10910c2d167f",
+      "path": "Liz-Demo-Loop.mp4"
+    },
+    {
+      "id": "eb9d6ea6-33d2-462e-8f5e-ca7e547ab616",
+      "path": "Appco-Demo-Loop.mp4"
+    },
+    {
+      "id": "c9893cba-2b63-4101-867c-8118370939b1",
+      "path": "Liz-Config.mp4"
+    }
+  ],
+  "clips": [
+    {
+      "id": "c0900f97-934f-4c78-8bb5-5bdfa080ef90",
+      "media_id": "a14ad675-52d4-42b7-81d6-3dc3a4d1da50",
+      "start": 0,
+      "source_in": 0,
+      "source_out": 32
+    },
+    {
+      "id": "dc7db8a1-4a4b-4644-8fb5-d49bfb0af85e",
+      "media_id": "05f76811-3b24-4fae-95e8-4c31caad0ee5",
+      "start": 31.5,
+      "source_in": 0,
+      "source_out": 39,
+      "transition_in": {
+        "type": "crossfade",
+        "duration": 0.5
+      }
+    },
+    {
+      "id": "3821ce2d-0266-418e-9f6c-08a5cc922e95",
+      "media_id": "88a51095-9c66-4b87-97fc-c76dea7148fd",
+      "start": 70,
+      "source_in": 0,
+      "source_out": 9.800000000000011,
+      "transition_in": {
+        "type": "crossfade",
+        "duration": 0.5
+      }
+    },
+    {
+      "id": "d548b653-905f-47e0-bcd7-f3702f32697e",
+      "media_id": "60cd3b9b-e390-4216-ba35-10910c2d167f",
+      "start": 79.30000000000001,
+      "source_in": 0,
+      "source_out": 54.85,
+      "transition_in": {
+        "type": "crossfade",
+        "duration": 0.5
+      }
+    },
+    {
+      "id": "6fb68140-8eb1-4c6b-9b55-f96cffac7698",
+      "media_id": "c9893cba-2b63-4101-867c-8118370939b1",
+      "start": 133.65,
+      "source_in": 0,
+      "source_out": 13.05,
+      "transition_in": {
+        "type": "crossfade",
+        "duration": 0.5
+      }
+    },
+    {
+      "id": "c3999dd8-afd0-4665-b646-3d3c5188da59",
+      "media_id": "b5027a05-8a0e-4721-aad6-a56c7fec5cb1",
+      "start": 146.20000000000002,
+      "source_in": 0,
+      "source_out": 34.49999999999997,
+      "transition_in": {
+        "type": "crossfade",
+        "duration": 0.5
+      }
+    },
+    {
+      "id": "d35b8345-ac33-4384-9a89-3b147f54b394",
+      "media_id": "b5027a05-8a0e-4721-aad6-a56c7fec5cb1",
+      "start": 180.7,
+      "source_in": 34.49999999999997,
+      "source_out": 38.49999999999997,
+      "freeze": true
+    },
+    {
+      "id": "06a1798d-4a2a-4584-b307-60d07bb4d923",
+      "media_id": "b5027a05-8a0e-4721-aad6-a56c7fec5cb1",
+      "start": 184.7,
+      "source_in": 34.49999999999997,
+      "source_out": 71.48333299999999
+    }
+  ],
+  "timing": {
+    "schema_version": 2,
+    "title": "SUSE Rancher Prime",
+    "product_name": "SUSE Rancher Prime",
+    "chapters": [
+      {
+        "title": "SUSE Rancher Prime",
+        "start": 0,
+        "headlines": [
+          [
+            0,
+            "Open source with enterprise *control*"
+          ],
+          [
+            6,
+            "Manage any *Kubernetes*, anywhere",
+            10.4
+          ],
+          [
+            10,
+            "Every *version* in your estate",
+            14
+          ],
+          [
+            14,
+            "A *single pane* of glass"
+          ],
+          [
+            17.5,
+            "*Upgrade* straight from the console"
+          ],
+          [
+            25.5,
+            "Without *downtime* for your workloads"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Application Collection",
+        "start": 31.5,
+        "headlines": [
+          [
+            0,
+            "A curated collection of *trusted* open source applications "
+          ],
+          [
+            10,
+            "*FIPS* compliant when you need it"
+          ],
+          [
+            17.5,
+            "Built on *SUSE Linux Enterprise* images",
+            21.4
+          ],
+          [
+            21.2,
+            "Full *SLSA L3* Provenance and Attestation"
+          ],
+          [
+            25.3,
+            "Near *0 CVE* and *continuous* vulnerability scanning",
+            29.7
+          ],
+          [
+            29.7,
+            "Trusted applications *built-in* with Rancher"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Security",
+        "start": 70,
+        "headlines": [
+          [
+            0,
+            "Built-in *security* console"
+          ],
+          [
+            4.2,
+            "*Insight* into all vulnerabilities in your images"
+          ]
+        ]
+      },
+      {
+        "title": "Liz, the AI Assistant",
+        "start": 79.4,
+        "headlines": [
+          [
+            0,
+            "Introducing *Liz*, the Rancher AI Assistant"
+          ],
+          [
+            4,
+            "The *context* follows the user"
+          ],
+          [
+            10,
+            "*Chat* with Rancher instead of clicking the UI"
+          ],
+          [
+            17,
+            "Liz's *crew* of Agents works for you"
+          ],
+          [
+            22,
+            "Integrated with the entire *platform*"
+          ],
+          [
+            26,
+            "Research and *Remediate* issues in your clusters"
+          ],
+          [
+            34.3,
+            "Grounded in *your* workloads on your clusters"
+          ],
+          [
+            44.2,
+            "*Human in the loop* for any change to your clusters"
+          ],
+          [
+            54.3,
+            "*Configuring* Liz is easy"
+          ],
+          [
+            59.3,
+            "Bring your *own* local model"
+          ],
+          [
+            63.2,
+            "or choose a *frontier* cloud-based model"
+          ]
+        ]
+      },
+      {
+        "title": "SUSE Observability",
+        "start": 146.2,
+        "headlines": [
+          [
+            0,
+            "SUSE Observability is *included* in SUSE Rancher Prime"
+          ],
+          [
+            5,
+            "Our *topology* shows you how the world connects"
+          ],
+          [
+            10,
+            "Jumping *through time* to see the health of your workloads"
+          ],
+          [
+            21,
+            "Zooming in to a *component* for it's details"
+          ],
+          [
+            24,
+            "All *signals* correlated in a single view"
+          ],
+          [
+            28.6,
+            "Dedicated *monitors* for detecting health issues"
+          ],
+          [
+            34.2,
+            "A *built-in* AI Assistant to troubleshoot"
+          ],
+          [
+            38.5,
+            "Taking the *context* from where you are"
+          ],
+          [
+            43.9,
+            "Fully *autonomous* troubleshooting, keeping you up-to-date"
+          ],
+          [
+            53.8,
+            "Using *time-travel* to find what changed"
+          ],
+          [
+            59.3,
+            "*Root-cause* identified"
+          ],
+          [
+            65.1,
+            "A *report* ready for remediation in SUSE Rancher Prime"
+          ]
+        ]
+      }
+    ],
+    "headlines_end": null,
+    "chapters_end": null,
+    "wipe_seconds": 0.8
+  }
+}

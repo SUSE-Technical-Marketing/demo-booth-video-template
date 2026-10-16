@@ -271,7 +271,8 @@ class ProjectTests(unittest.TestCase):
                     ("project.mp4", [], (640, 360, 25), 25),                           # project resolution
                     ("cli.mp4", ["--size", "480x270", "--fps", "50"], (480, 270, 50), 50),  # command line wins
                     ("square.mp4", ["--size", "300x300"], (300, 300, 25), 25),
-                    ("part.mp4", ["--fps", "5", "--duration", "0.6"], (640, 360, 5), 3)]:
+                    ("part.mp4", ["--fps", "5", "--duration", "0.6"], (640, 360, 5), 3),
+                    ("silent.mp4", ["--no-audio"], (640, 360, 25), 25)]:
                 output = directory / name
                 result = render("-o", str(output), *options)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -279,6 +280,9 @@ class ProjectTests(unittest.TestCase):
                 frames = subprocess.run([ffmpeg, "-v", "error", "-i", str(output), "-an", "-f", "rawvideo",
                                          "-pix_fmt", "rgb24", "-"], capture_output=True, check=True).stdout
                 self.assertEqual(len(frames) // (expected[0] * expected[1] * 3), count, name)
+                if name == "silent.mp4":
+                    info = subprocess.run([ffmpeg, "-i", str(output)], capture_output=True, text=True).stderr
+                    self.assertNotIn("Audio:", info)
                 if name == "square.mp4":           # 16:9 composition letterboxed in a square: black above and below
                     top, middle = frames[:3], frames[(150 * 300 + 150) * 3:(150 * 300 + 150) * 3 + 3]
                     self.assertLessEqual(max(top), 20, top)

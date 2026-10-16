@@ -100,7 +100,7 @@ describe('service calls', () => {
     expect((await getInfo()).ok).toBe(true);
   });
 
-  it('creates a job, uploads every video, starts it and waits for done, sending the editor header each time', async () => {
+  it.each([[undefined, true], [false, false]])('creates an export with audio=%j, uploads and waits for done', async (audio, expectedAudio) => {
     const polls = [{ status: 'rendering', progress: 0.05, message: 'Preparing clips' },
       { status: 'rendering', progress: 0.5, message: 'Rendering', fps: 20, eta: 30 },
       { status: 'done', progress: 1, filename: 'x.mp4', size: 10 }];
@@ -114,14 +114,14 @@ describe('service calls', () => {
     vi.useFakeTimers();
     const updates = [];
     const files = new Map([['ma', new File(['aaaa'], 'a.mp4')], ['mb', new File(['bb'], 'b.mp4')], ['unused', new File(['zzzz'], 'z.mp4')]]);
-    const promise = runExport({ project: '{"project_version":1}', size: '3840x2160', quality: 'high', fast: false, filename: 'x',
+    const promise = runExport({ project: '{"project_version":1}', size: '3840x2160', quality: 'high', fast: false, audio, filename: 'x',
       files, onUpdate: u => updates.push(u) });
     await vi.advanceTimersByTimeAsync(2000);
     const out = await promise;
     vi.useRealTimers();
     expect(out).toMatchObject({ job: 'j1', token: 'tok', view: { status: 'done' } });
     const create = fetch.mock.calls[0];
-    expect(JSON.parse(create[1].body)).toEqual({ project: { project_version: 1 }, size: '3840x2160', quality: 'high', fast: false, filename: 'x' });
+    expect(JSON.parse(create[1].body)).toEqual({ project: { project_version: 1 }, size: '3840x2160', quality: 'high', fast: false, audio: expectedAudio, filename: 'x' });
     expect(calls.filter(c => c[0] === 'upload').map(c => [c[2], c[3], c[4]])).toEqual([
       ['/api/jobs/j1/media/0', ['X-Booth-Export', '1'], 4], ['/api/jobs/j1/media/1', ['X-Booth-Export', '1'], 2]]);   // only the used media, by slot
     expect(calls.filter(c => c[0] !== 'upload').every(c => c[2] === '1')).toBe(true);

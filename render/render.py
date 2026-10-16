@@ -218,16 +218,16 @@ def render_video(args, ffmpeg, lay, progress=None, cancel=None):
     if args.fast:
         vcodec = ["-c:v", "h264_videotoolbox", "-b:v", getattr(args, "bitrate", None) or "12M"]
     resize = resize_filter(size)
+    audio = ["-an"] if getattr(args, "no_audio", False) else ["-map", "1:a?", "-c:a", "aac", "-b:a", "192k"]
     enc = subprocess.Popen([ffmpeg, "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
                             "-s", "%dx%d" % (L.W, L.H), "-r", rate, "-i", "-"] + seek + lim +
-                           ["-i", str(args.input)] + meta_args + ["-map", "0:v", "-map", "1:a?"] + vcodec +
+                           ["-i", str(args.input)] + meta_args + ["-map", "0:v"] + audio + vcodec +
                            # RGB -> video colours with the HD matrix, and say so in the file, so players show the
                            # exact brand colours (ffmpeg's default would be BT.601 and shift SUSE green)
                            ["-vf", resize + "scale=in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,"
                                    "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
                             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
                             "-color_range", "tv",
-                            "-c:a", "aac", "-b:a", "192k",
                             "-movflags", "+faststart", str(args.output)],
                            stdin=subprocess.PIPE, stderr=enc_err)
     t0 = time.time()
@@ -408,6 +408,7 @@ def main():
     ap.add_argument("--duration", type=float, help="only render this many seconds")
     ap.add_argument("--crf", type=int, default=18, help="x264 quality, lower is better (default 18)")
     ap.add_argument("--preset", default="medium", help="x264 speed preset (default medium)")
+    ap.add_argument("--no-audio", action="store_true", help="export without an audio track")
     ap.add_argument("--fast", action="store_true", help="use the Mac hardware encoder (h264_videotoolbox)")
     ap.add_argument("--system-ffmpeg", action="store_true", help="prefer ffmpeg from PATH over the bundled one")
     ap.add_argument("--selftest", action="store_true", help="render a generated test clip and exit")

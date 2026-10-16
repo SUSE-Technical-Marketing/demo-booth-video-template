@@ -16,7 +16,7 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const info = ref(null), checking = ref(true);
-const size = ref(props.resolution), quality = ref('standard'), fast = ref(false);
+const size = ref(props.resolution), quality = ref('standard'), fast = ref(false), audio = ref(true);
 const filename = ref((props.title || 'booth-video').replace(/[^\w .-]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'booth-video');
 const stage = ref('form');                           // form | running | done | error
 const update = ref({ phase: 'uploading', fraction: 0, message: '' });
@@ -58,7 +58,7 @@ async function start() {
   try {
     result.value = await runExport({
       project, files: props.files, size: size.value, quality: quality.value,
-      fast: fast.value && hardware.value, filename: filename.value, signal: controller.signal,
+      fast: fast.value && hardware.value, audio: audio.value, filename: filename.value, signal: controller.signal,
       onUpdate: value => { update.value = value; },
     });
     stage.value = 'done';
@@ -173,12 +173,16 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <label class="export-check"><input id="exportAudio" v-model="audio" type="checkbox">
+          <span>Include audio <small>Turn off to export video without an audio track. Preview and project settings stay unchanged.</small></span></label>
+
         <label v-if="hardware" class="export-check"><input id="exportFast" v-model="fast" type="checkbox">
           <span>Use the Mac hardware encoder <small>(much faster, slightly larger files, quality setting is ignored)</small></span></label>
 
         <div class="export-chips" aria-label="Summary">
           <span class="chip">{{ width }} × {{ height }}</span>
           <span class="chip">H.264 · MP4</span>
+          <span class="chip">{{ audio ? 'With audio' : 'No audio' }}</span>
           <span class="chip">{{ videoCount }} {{ videoCount === 1 ? 'video' : 'videos' }}</span>
           <span class="chip">{{ fmt(duration) }} long</span>
           <span id="exportSpeed" class="chip" :class="factor >= 3 ? 'warn' : 'info'">{{ speed }}</span>

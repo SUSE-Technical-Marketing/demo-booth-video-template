@@ -101,6 +101,9 @@ class Service:
         quality = body.get("quality", "standard")
         if quality not in QUALITY:
             raise ValueError("quality must be one of: " + ", ".join(QUALITY))
+        audio = body.get("audio", True)
+        if not isinstance(audio, bool):
+            raise ValueError("audio must be true or false")
         used = [m for m in project["media"] if any(c["media_id"] == m["id"] for c in project["clips"])]
         if not used:
             raise ValueError("add at least one video to export")
@@ -112,7 +115,7 @@ class Service:
         fast = bool(body.get("fast")) and self.encoders()["h264_videotoolbox"]
         title = (project["timing"].get("title") or "").strip()
         options = {"project": project, "size": "%dx%d" % (width, height), "height": height, "quality": quality,
-                   "fast": fast, "names": names, "ids": [m["id"] for m in used],
+                   "fast": fast, "audio": audio, "names": names, "ids": [m["id"] for m in used],
                    "filename": safe_name(body.get("filename") or title or "booth-video") + ".mp4"}
         job = Job(options)
         with self.lock:
@@ -144,7 +147,7 @@ class Service:
             bitrate = next(rate for height, rate in BITRATE if opts["height"] >= height)
             args = SimpleNamespace(project=str(project_file), output=str(job.dir / "final.mp4"), frame=None, png=None,
                                    start=None, duration=None, crf=crf, preset=preset, fast=opts["fast"],
-                                   bitrate=bitrate, size=opts["size"], fps=None)
+                                   bitrate=bitrate, size=opts["size"], fps=None, no_audio=not opts["audio"])
             job.status = "rendering"
 
             def progress(fraction, note, fps=None, remaining=None):

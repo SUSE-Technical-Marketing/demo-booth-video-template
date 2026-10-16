@@ -149,6 +149,10 @@ sizes/frame rates and audio; the output has stereo 48 kHz audio and defaults to 
 down to 640 × 360) scale the 1920 × 1080 composition, so the preview does not change. Source clips without audio and
 timeline gaps produce silence. Command-line options override the saved settings for one render.
 
+To export video only, turn off **Include audio** in the export dialog, or pass **`--no-audio`** to the command-line
+renderer. This removes the audio track entirely rather than encoding silence. Audio is included by default;
+this per-export choice does not change the project or mute browser preview/fullscreen playback.
+
 ### Opening ZIP projects (local or URL)
 
 Use **Open ZIP…** in the header to select a local archive or paste a direct HTTP/HTTPS ZIP URL.

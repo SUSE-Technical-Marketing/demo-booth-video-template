@@ -101,7 +101,8 @@ class ServerTests(unittest.TestCase):
         bad_media = copy.deepcopy(PROJECT)
         bad_media["media"][0]["path"] = "/etc/passwd"
         for patch in ({"size": "1281x721"}, {"size": "huge"}, {"quality": "ultra"}, {"project": no_clips},
-                      {"project": bad_media}, {"project": {"timing": {}}}, {"project": None}):
+                      {"project": bad_media}, {"project": {"timing": {}}}, {"project": None},
+                      {"audio": "false"}, {"audio": 0}, {"audio": None}):
             status, data = self.json("POST", "/api/jobs", {"project": PROJECT, **patch})
             self.assertEqual(status, 400, patch)
             self.assertIn("error", data)
@@ -133,6 +134,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual((w, h), (1280, 720))
         self.assertAlmostEqual(dur, 5, delta=0.3)                 # 2 s clip, 1 s black gap, 2 s clip
         info = subprocess.run([self.ffmpeg, "-i", str(out)], capture_output=True, text=True).stderr
+        self.assertIn("Audio:", info)
         self.assertIn("title           : Intro", info)
         self.assertIn("title           : Details", info)
         token = self.tokens[job]
@@ -141,6 +143,23 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/jobs/%s/download" % job, headers={})[0], 403)
         self.assertEqual(self.call("GET", "/api/jobs/%s" % job, headers={})[0], 403)    # the token opens only the download
         self.assertEqual(self.json("DELETE", "/api/jobs/" + job)[1], {"removed": True})
+
+    def test_export_without_audio_has_no_audio_stream_and_keeps_video_and_chapters(self):
+        job = self.create(audio=False, size="640x360")["id"]
+        self.assertFalse(self.httpd.service.get(job).options["audio"])
+        self.json("POST", "/api/jobs/%s/start" % job)
+        view = self.wait(job)
+        self.assertEqual(view["status"], "done", view)
+        out = Path(self.tmp.name) / "without-audio.mp4"
+        out.write_bytes(self.call("GET", "/api/jobs/%s/download" % job)[2])
+        w, h, fps, duration, _ = probe(self.ffmpeg, out)
+        self.assertEqual((w, h, fps), (640, 360, 25))
+        self.assertAlmostEqual(duration, 5, delta=0.1)
+        info = subprocess.run([self.ffmpeg, "-i", str(out)], capture_output=True, text=True).stderr
+        self.assertIn("Video:", info)
+        self.assertNotIn("Audio:", info)
+        self.assertIn("title           : Intro", info)
+        self.assertIn("title           : Details", info)
 
     def test_the_export_size_overrides_the_project_and_defaults_to_it(self):
         project = copy.deepcopy(PROJECT)

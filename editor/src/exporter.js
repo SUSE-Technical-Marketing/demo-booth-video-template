@@ -73,8 +73,8 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
  * onUpdate({ phase, fraction, message, fps, eta, uploaded, total }) is called as things move along.
  * Aborting the signal cancels the export and removes its working files.
  */
-export async function runExport({ project, files, size, quality, fast, filename, onUpdate, signal }) {
-  const created = await post('/jobs', { project: JSON.parse(project), size, quality, fast, filename });
+export async function runExport({ project, files, size, quality, fast, audio = true, filename, onUpdate, signal }) {
+  const created = await post('/jobs', { project: JSON.parse(project), size, quality, fast, audio, filename });
   const job = created.id;
   try {
     const list = created.media.map((id, slot) => {

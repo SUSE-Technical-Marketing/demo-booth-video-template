@@ -84,6 +84,18 @@ describe('Export dialog', () => {
     expect(without.find('#exportFast').exists()).toBe(false);
     without.unmount();
   });
+  it('can export without audio without changing the project', async () => {
+    const getProject = vi.fn(() => '{"project_version":1}');
+    runExport.mockResolvedValue({ job: 'silent', token: 't', view: { filename: 'silent.mp4', size: 100 } });
+    const wrapper = await mountDialog({ getProject });
+    expect(wrapper.get('#exportAudio').element.checked).toBe(true);
+    await wrapper.get('#exportAudio').setValue(false);
+    expect(wrapper.get('.export-chips').text()).toContain('No audio');
+    await wrapper.get('#exportStart').trigger('click');
+    await flushPromises();
+    expect(runExport).toHaveBeenCalledWith(expect.objectContaining({ audio: false, project: '{"project_version":1}' }));
+    wrapper.unmount();
+  });
 
   it('sends the chosen options, shows progress, then lets you save the finished video', async () => {
     let finish;
@@ -99,7 +111,7 @@ describe('Export dialog', () => {
     await wrapper.get('#exportStart').trigger('click');
     await flushPromises();
     const call = runExport.mock.calls[0][0];
-    expect(call).toMatchObject({ size: '3840x2160', quality: 'high', fast: true, filename: 'my-demo', project: '{"project_version":1}' });
+    expect(call).toMatchObject({ size: '3840x2160', quality: 'high', fast: true, audio: true, filename: 'my-demo', project: '{"project_version":1}' });
     expect([...call.files.keys()]).toEqual(['a.mp4', 'b.mp4']);
     const running = wrapper.get('#exportRunning');
     expect(running.text()).toContain('Rendering');
