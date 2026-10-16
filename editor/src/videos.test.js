@@ -92,6 +92,88 @@ describe('videos and New in the editor', () => {
     await input.trigger('change');
     await flushPromises();
   }
+  async function selectRelink(row, showLinked = true) {
+    const popover = wrapper.get('#media-relink-popover').element;
+    popover.showPopover = vi.fn();
+    await wrapper.get('#btnRelinkMedia').trigger('click');
+    if (showLinked) await wrapper.get('#media-relink-popover input[type=checkbox]').setValue(true);
+    const mediaId = wrapper.findComponent(Preview).props('clips')[row].media_id;
+    await wrapper.get(`.relink-media[data-media-id="${mediaId}"]`).trigger('click');
+  }
+  it('relinks a missing recording once for video and freeze clips and removes it from the shared queue', async () => {
+    const project = structuredClone(projectFixture);
+    project.media = [project.media[0]];
+    project.clips = [
+      { id: 'hold', media_id: project.media[0].id, start: 0, source_in: 0, source_out: 1, freeze: true },
+      { id: 'video', media_id: project.media[0].id, start: 1, source_in: 0, source_out: 1 },
+    ];
+    await importProject(project);
+    expect(wrapper.get('#btnRelinkMedia').text()).toContain('1 missing');
+    expect(wrapper.findAll('.relink-item')).toHaveLength(1);
+    expect(wrapper.find('#vlist .relink-media').exists()).toBe(false);
+    await selectRelink(0, false);
+    const input = wrapper.get('#relinkFile');
+    Object.defineProperty(input.element, 'files', { value: [new File(['video'], 'source.mp4')], configurable: true });
+    await input.trigger('change');
+    await vi.waitFor(() => expect(wrapper.findAll('#content video')).toHaveLength(2));
+    expect(wrapper.findAll('.relink-item')).toHaveLength(0);
+    expect(wrapper.get('#media-relink-popover').text()).toContain('All media is linked.');
+  });
+  it('keeps rejected source files in the relink queue with an inline error and allows retry', async () => {
+    const project = structuredClone(projectFixture);
+    project.clips = [project.clips[0]];
+    await importProject(project);
+    await selectRelink(0, false);
+    videoLength = 0.1;
+    const input = wrapper.get('#relinkFile');
+    Object.defineProperty(input.element, 'files', { value: [new File(['video'], 'short.mp4')], configurable: true });
+    await input.trigger('change');
+    await vi.waitFor(() => expect(wrapper.get('.relink-error').text()).toContain('shorter than where the clip starts'));
+    expect(wrapper.findAll('.relink-item')).toHaveLength(1);
+    expect(wrapper.findAll('#content video')).toHaveLength(0);
+    videoLength = 40;
+    await wrapper.get('.relink-item .relink-media').trigger('click');
+    await input.trigger('change');
+    await vi.waitFor(() => expect(wrapper.findAll('#content video')).toHaveLength(1));
+    expect(wrapper.find('.relink-error').exists()).toBe(false);
+    expect(wrapper.findAll('.relink-item')).toHaveLength(0);
+  });
+  it('reorders clips into the middle, updates preview and saved positions, keeps timing fixed and undoes in one step', async () => {
+    await addFiles('one.mp4', 'two.mp4', 'three.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    const save = async () => {
+      await wrapper.get('#btnDownload').trigger('click');
+      return JSON.parse(downloadJSON.mock.calls.at(-1)[0]);
+    };
+    const before = await save();
+    await wrapper.get('[aria-label="Move clip 3 up"]').trigger('click');
+    let saved = await save();
+    expect(saved.clips.map(c => c.media_id)).toEqual([before.clips[0].media_id, before.clips[2].media_id, before.clips[1].media_id]);
+    expect(saved.clips.map(c => c.start)).toEqual([0, 40, 80]);
+    expect(saved.timing).toEqual(before.timing);
+    expect(wrapper.findAll('#vlist .name').map(n => n.text())).toEqual(['one.mp4', 'three.mp4', 'two.mp4']);
+    expect(wrapper.findComponent(Preview).props('cur')).toBe(40);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(await save()).toEqual(before);
+    const rows = wrapper.findAll('#vlist .vrow'), dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn() };
+    vi.spyOn(rows[0].element, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 100 });
+    await rows[2].get('[draggable=true]').trigger('dragstart', { dataTransfer });
+    await rows[0].trigger('dragover', { dataTransfer, clientY: 25 });
+    await rows[0].trigger('drop', { dataTransfer });
+    saved = await save();
+    expect(saved.clips.map(c => c.media_id)).toEqual([before.clips[2].media_id, before.clips[0].media_id, before.clips[1].media_id]);
+    expect(saved.timing).toEqual(before.timing);
+  });
+  it('reports a dissolve removed when its clip becomes first and restores it on undo', async () => {
+    await addFiles('one.mp4', 'two.mp4');
+    await wrapper.get('#settings-tab').trigger('click');
+    await wrapper.get('[aria-label="Transition in"]').setValue('crossfade');
+    await wrapper.get('[aria-label="Move clip 2 up"]').trigger('click');
+    expect(wrapper.get('#toast').text()).toContain('1 incompatible incoming dissolve');
+    expect(wrapper.find('[aria-label="Dissolve duration"]').exists()).toBe(false);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(wrapper.get('[aria-label="Dissolve duration"]').element.value).toBe('0.5');
+  });
   it('adds, adjusts, saves and undoes per-boundary dissolves, including chapter ripple and timeline indication', async () => {
     metadataDelay = 30;
     await addFiles('one.mp4', 'two.mp4', 'three.mp4');
@@ -145,7 +227,7 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#settings-tab').trigger('click');
     await wrapper.get('[aria-label="Transition in"]').setValue('crossfade');
     videoLength = 20;
-    await wrapper.findAll('#vlist .relink-media')[0].trigger('click');
+    await selectRelink(0);
     const input = wrapper.get('#relinkFile');
     Object.defineProperty(input.element, 'files', { value: [new File(['new'], 'short.mp4')], configurable: true });
     await input.trigger('change');
@@ -631,7 +713,6 @@ describe('videos and New in the editor', () => {
     const row = wrapper.findAll('#vlist .vrow')[0];
     await row.get('[aria-label="Source in"]').setValue('5');
     await row.get('[aria-label="Source out"]').setValue('15');
-    await row.get('[aria-label="Media path"]').setValue('media/a.mp4');
     await wrapper.get('#outputFPS').setValue('30000/1001');
     await wrapper.get('#scrub').setValue('5');
     expect(wrapper.findAll('#content video')[0].element.currentTime).toBe(10);
@@ -640,17 +721,18 @@ describe('videos and New in the editor', () => {
     await wrapper.get('#btnDownload').trigger('click');
     const project = JSON.parse(downloadJSON.mock.calls[0][0]);
     expect(project.output.fps).toBe('30000/1001');
-    expect(project.media[0].path).toBe('media/a.mp4');
+    expect(project.media[0].path).toBe('a.mp4');
     expect(project.clips[0]).toMatchObject({ start: 0, source_in: 5, source_out: 15 });
     expect(project.clips[1].start).toBe(40);
     expect(JSON.stringify(project)).not.toContain('blob:');
+    project.media[0].path = 'media/a.mp4';
     await importProject(project);
     expect(wrapper.findAll('#vlist .vrow')).toHaveLength(2);
     expect(wrapper.findAll('#content video')).toHaveLength(0);
     await wrapper.get('#scrub').setValue('2');
     expect(wrapper.get('#content').text()).toContain('Missing media: a.mp4');
     expect(wrapper.get('#durChip').text()).toBe('to 1:20');
-    await wrapper.findAll('#vlist .vrow')[0].get('.relink-media').trigger('click');
+    await selectRelink(0, false);
     const input = wrapper.get('#relinkFile');
     Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.mp4')], configurable: true });
     await input.trigger('change');
@@ -658,12 +740,12 @@ describe('videos and New in the editor', () => {
     await flushPromises();
     expect(wrapper.findAll('#content video')).toHaveLength(1);
     expect(wrapper.get('#content video').element.currentTime).toBe(7);
-    expect(wrapper.findAll('#vlist .vrow')[0].get('.clip-path input').element.value).toBe('media/a.mp4');
+    expect(wrapper.findAll('#vlist .vrow')[0].get('.resolved-media-path').text()).toBe('Project path: media/a.mp4');
   });
   it('follows a re-exported file when it is relinked: longer pushes later clips, shorter shortens, trims are kept', async () => {
     async function relink(row, length) {
       videoLength = length;
-      await wrapper.findAll('#vlist .vrow')[row].get('.relink-media').trigger('click');
+      await selectRelink(row);
       const input = wrapper.get('#relinkFile');
       Object.defineProperty(input.element, 'files', { value: [new File(['x'], 'a.mp4')], configurable: true });
       await input.trigger('change');
@@ -721,7 +803,7 @@ describe('videos and New in the editor', () => {
     await addFiles('original.mp4');
     await wrapper.get('#mediaFolder').setValue(' ./shared videos//takes/ ');
     expect(wrapper.get('#mediaFolder').element.value).toBe('shared videos/takes');
-    expect(wrapper.get('#vlist [aria-label="Media path"]').element.value).toBe('original.mp4');
+    expect(wrapper.find('#vlist [aria-label="Media path"]').exists()).toBe(false);
     expect(wrapper.get('#vlist .resolved-media-path').text()).toBe('Project path: shared videos/takes/original.mp4');
     await addFiles('new clip.mp4', 'another.mp4');
     await wrapper.get('#btnDownload').trigger('click');
@@ -746,25 +828,23 @@ describe('videos and New in the editor', () => {
     expect(wrapper.get('#mediaFolder').element.value).toBe('shared videos/takes');
     await wrapper.get('#btnUndo').trigger('click');
     expect(wrapper.get('#mediaFolder').element.value).toBe('');
-    expect(wrapper.get('#vlist [aria-label="Media path"]').element.value).toBe('original.mp4');
     expect(wrapper.get('#vlist .resolved-media-path').text()).toBe('Project path: original.mp4');
   });
   it('loads a media-folder base with its document, supports clearing it and resets it for New', async () => {
     await importProject(folderProject());
     expect(wrapper.get('#mediaFolder').element.value).toBe('media');
     await addFiles('new.mp4');
-    expect(wrapper.findAll('#vlist [aria-label="Media path"]').at(-1).element.value).toBe('new.mp4');
     expect(wrapper.findAll('#vlist .resolved-media-path').at(-1).text()).toBe('Project path: media/new.mp4');
     await wrapper.get('#mediaFolder').setValue('');
     expect(wrapper.findAll('#vlist .resolved-media-path').at(-1).text()).toBe('Project path: new.mp4');
     await addFiles('beside-json.mp4');
-    expect(wrapper.findAll('#vlist [aria-label="Media path"]').at(-1).element.value).toBe('beside-json.mp4');
+    expect(wrapper.findAll('#vlist .resolved-media-path').at(-1).text()).toBe('Project path: beside-json.mp4');
     await wrapper.get('#mediaFolder').setValue('other');
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     await wrapper.get('#btnNew').trigger('click');
     expect(wrapper.get('#mediaFolder').element.value).toBe('');
     await addFiles('fresh.mp4');
-    expect(wrapper.get('#vlist [aria-label="Media path"]').element.value).toBe('fresh.mp4');
+    expect(wrapper.get('#vlist .resolved-media-path').text()).toBe('Project path: fresh.mp4');
   });
   it('rejects invalid media folders without replacing the previous setting', async () => {
     await wrapper.get('#mediaFolder').setValue('media');
@@ -802,7 +882,7 @@ describe('videos and New in the editor', () => {
       'Project path: next-batch/first.mp4', 'Project path: next-batch/second.mp4',
     ]);
   });
-  it('rejects overlaps, out-of-source trims and invalid paths without changing the project', async () => {
+  it('rejects overlaps and out-of-source trims without changing the project', async () => {
     await addFiles('a.mp4', 'b.mp4');
     const [first, second] = wrapper.findAll('#vlist .vrow');
     await second.get('[aria-label="Video start time"]').setValue('30');
@@ -811,9 +891,6 @@ describe('videos and New in the editor', () => {
     await first.get('[aria-label="Source out"]').setValue('41');
     expect(wrapper.get('#toast').text()).toContain('exceeds the video duration');
     expect(first.get('[aria-label="Source out"]').element.value).toBe('0:40');
-    await first.get('[aria-label="Media path"]').setValue('/absolute/a.mp4');
-    expect(wrapper.get('#toast').text()).toContain('relative media path');
-    expect(first.get('[aria-label="Media path"]').element.value).toBe('a.mp4');
   });
   it('undoes persisted clip removal and source edits', async () => {
     await addFiles('a.mp4');

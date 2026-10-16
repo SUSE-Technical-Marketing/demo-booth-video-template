@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipEnd, freezeFrame, freezeProblem, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
+import { clipEnd, freezeFrame, freezeProblem, reorderClip, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
 import { fromJSON, headlineTime } from './timing.js';
 import { validateProject, toProjectJSON, createProject, fromProject } from './project.js';
 
@@ -19,6 +19,80 @@ const chapterTimes = state => state.chapter_starts.map(c => c.t);
 const headlineTimes = state => state.headlines.map(h => [h.text, headlineTime(state, h), h.end]);
 const valid = state => validateProject({ project_version: 1, output: state.output, media: state.media, clips: state.clips,
   timing: { schema_version: 2 } });
+
+describe('clip reordering', () => {
+  const sequence = () => base([
+    { id: 'a', media_id: 'x', start: 2, source_in: 3, source_out: 13 },
+    { id: 'b', media_id: 'x', start: 15, source_in: 1, source_out: 6 },
+    { id: 'c', media_id: 'x', start: 25, source_in: 2, source_out: 5, freeze: true },
+  ]);
+  it('inserts a clip between others, removes gaps, preserves trims and leaves all timing unchanged', () => {
+    const original = sequence(), snapshot = structuredClone(original);
+    original.headlines_end = 50; original.chapters_end = 55;
+    const { state, changed, removedTransitions } = reorderClip(original, 'c', 'b');
+    expect(state.clips.map(c => [c.id, c.start])).toEqual([['a', 0], ['c', 10], ['b', 13]]);
+    expect(state.clips[1]).toMatchObject({ freeze: true, source_in: 2, source_out: 5 });
+    expect(state.chapter_starts).toEqual(original.chapter_starts);
+    expect(state.headlines).toEqual(original.headlines);
+    expect(state.chapters_end).toBe(55);
+    expect(state.headlines_end).toBe(50);
+    expect(original.clips).toEqual(snapshot.clips);
+    expect(changed).toBe(true);
+    expect(removedTransitions).toEqual([]);
+    expect(fromProject(JSON.parse(toProjectJSON(state))).clips).toEqual(state.clips);
+    valid(state);
+  });
+  it('moves to the start or end regardless of input array order', () => {
+    const original = sequence();
+    original.clips.reverse();
+    const first = reorderClip(original, 'c', 'a').state;
+    expect(first.clips.map(c => [c.id, c.start])).toEqual([['c', 0], ['a', 3], ['b', 13]]);
+    const last = reorderClip(first, 'c', null).state;
+    expect(last.clips.map(c => [c.id, c.start])).toEqual([['a', 0], ['b', 10], ['c', 15]]);
+    valid(last);
+  });
+  it('preserves valid incoming dissolves with new neighbours', () => {
+    const original = sequence();
+    original.clips[1].transition_in = { type: 'crossfade', duration: 1 };
+    const result = reorderClip(original, 'c', 'b');
+    expect(result.state.clips.map(c => [c.id, c.start])).toEqual([['a', 0], ['c', 10], ['b', 12]]);
+    expect(result.state.clips[2].transition_in.duration).toBe(1);
+    expect(result.removedTransitions).toEqual([]);
+    valid(result.state);
+  });
+  it('reports dissolved first clips and overlaps that do not fit a new predecessor', () => {
+    const original = sequence();
+    original.clips[1].transition_in = { type: 'crossfade', duration: 4 };
+    let result = reorderClip(original, 'b', 'a');
+    expect(result.removedTransitions).toEqual(['b']);
+    expect(result.state.clips[0].transition_in).toBeUndefined();
+    valid(result.state);
+    result = reorderClip(original, 'c', 'b');
+    expect(result.removedTransitions).toEqual(['b']);
+    expect(result.state.clips[2].transition_in).toBeUndefined();
+    valid(result.state);
+  });
+  it('removes only incompatible dissolves when adjacent blends would intersect', () => {
+    const original = base([
+      { id: 'a', media_id: 'x', start: 0, source_in: 0, source_out: 10 },
+      { id: 'b', media_id: 'x', start: 6, source_in: 0, source_out: 6, transition_in: { type: 'crossfade', duration: 4 } },
+      { id: 'c', media_id: 'x', start: 12, source_in: 0, source_out: 6 },
+      { id: 'd', media_id: 'x', start: 14, source_in: 0, source_out: 10, transition_in: { type: 'crossfade', duration: 4 } },
+    ]);
+    const result = reorderClip(original, 'c', 'b');
+    expect(result.removedTransitions).toEqual(['d']);
+    expect(result.state.clips.find(c => c.id === 'b').transition_in.duration).toBe(4);
+    valid(result.state);
+  });
+  it('does not close gaps for a no-op and rejects missing clip IDs', () => {
+    const original = sequence();
+    for (const [id, before] of [['a', 'a'], ['a', 'b'], ['c', null]]) {
+      expect(reorderClip(original, id, before)).toMatchObject({ state: original, changed: false });
+    }
+    expect(() => reorderClip(original, 'missing', null)).toThrow('no longer exists');
+    expect(() => reorderClip(original, 'a', 'missing')).toThrow('no longer exists');
+  });
+});
 
 describe('cross-dissolve editing', () => {
   const sequence = () => base([

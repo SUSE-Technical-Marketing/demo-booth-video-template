@@ -14,8 +14,8 @@ import VideoList from './components/VideoList.vue';
 import ZipImport from './components/ZipImport.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { freezeFrame, freezeProblem, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
-import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, mediaPathValid, normalizeMediaFolder,
+import { freezeFrame, freezeProblem, reorderClip, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
+import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, normalizeMediaFolder,
   projectClipEnd, projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { zipProjectSource } from './zipProjects.js';
@@ -190,6 +190,7 @@ function applyEdit(make, done) {
     result = make();
     validateProject({ project_version: 1, ...result.state, timing: { schema_version: 2 } });
   } catch (error) { return toast(error.message); }
+  if (result.changed === false) return;
   pushHistory();
   state.value = result.state;
   selectedId.value = null;
@@ -226,6 +227,15 @@ function updateDissolve(clip, seconds) {
     toast(seconds ? `Cross-dissolve set to ${seconds} seconds; later timing moved with the video` : 'Restored hard cut; later timing moved with the video');
   });
 }
+function moveClip(clipId, beforeId) {
+  applyEdit(() => reorderClip(state.value, clipId, beforeId), ({ removedTransitions }) => {
+    stop();
+    setCur(state.value.clips.find(c => c.id === clipId).start);
+    const warning = removedTransitions.length
+      ? ` ${removedTransitions.length} incompatible incoming dissolve(s) changed to hard cuts.` : '';
+    toast(`Clips reordered into a continuous sequence. Chapter and headline times unchanged.${warning}`);
+  });
+}
 function updateMediaFolder(value) {
   let folder;
   try { folder = normalizeMediaFolder(value); }
@@ -233,12 +243,6 @@ function updateMediaFolder(value) {
   if (folder === (state.value.media_folder ?? '')) return;
   pushHistory();
   state.value.media_folder = folder;
-  markDirty();
-}
-function updateMediaPath(clip, path) {
-  if (!mediaPathValid(path)) return toast('Use a relative media path with forward slashes');
-  pushHistory();
-  state.value.media.find(m => m.id === clip.media_id).path = path;
   markDirty();
 }
 // A re-exported file has a new length. Clips that played the whole old file follow it; clips trimmed inside it
@@ -264,29 +268,27 @@ function fitClipsToSource(mediaId, oldDur, newDur) {
 }
 async function relinkMedia(clip, file) {
   const generation = documentGeneration;
-  try {
-    const loaded = await loadClip(file, 0);
-    if (generation !== documentGeneration) {
-      releaseClip(loaded);
-      return toast('Project changed; media was not linked');
-    }
-    const previous = mediaFiles.value.get(clip.media_id);
-    const next = fitClipsToSource(clip.media_id, previous?.dur, loaded.dur);
-    if (!next) {
-      releaseClip(loaded);
-      return toast('Selected video is shorter than where the clip starts (In point)');
-    }
-    if (next.changed) {
-      try { validateProject({ project_version: 1, ...state.value, clips: next.clips, timing: { schema_version: 2 } }); }
-      catch (error) { releaseClip(loaded); throw error; }
-      pushHistory();
-      state.value.clips = next.clips;
-      markDirty();
-    }
-    if (previous) releaseClip(previous);
-    mediaFiles.value = new Map(mediaFiles.value).set(clip.media_id, loaded);
-    toast(next.changed ? `Linked ${file.name}; clip length updated to ${fmt(loaded.dur)}` : 'Linked ' + file.name);
-  } catch (error) { toast(error.message); }
+  const loaded = await loadClip(file, 0);
+  if (generation !== documentGeneration || !state.value.clips.some(c => c.media_id === clip.media_id)) {
+    releaseClip(loaded);
+    throw new Error('Project changed; media was not linked');
+  }
+  const previous = mediaFiles.value.get(clip.media_id);
+  const next = fitClipsToSource(clip.media_id, previous?.dur, loaded.dur);
+  if (!next) {
+    releaseClip(loaded);
+    throw new Error('Selected video is shorter than where the clip starts (In point)');
+  }
+  if (next.changed) {
+    try { validateProject({ project_version: 1, ...state.value, clips: next.clips, timing: { schema_version: 2 } }); }
+    catch (error) { releaseClip(loaded); throw error; }
+    pushHistory();
+    state.value.clips = next.clips;
+    markDirty();
+  }
+  if (previous) releaseClip(previous);
+  mediaFiles.value = new Map(mediaFiles.value).set(clip.media_id, loaded);
+  toast(next.changed ? `Linked ${file.name}; clip length updated to ${fmt(loaded.dur)}` : 'Linked ' + file.name);
 }
 function updateFPS(value) {
   try {
@@ -965,10 +967,11 @@ onUnmounted(() => {
           </template>
           <template #settings>
             <div class="project-settings">
-              <VideoList :clips="clips" :starts="state.chapter_starts" :media-folder="state.media_folder"
+              <VideoList :clips="clips" :starts="state.chapter_starts" :media-folder="state.media_folder" :link-media="relinkMedia"
                 @update-folder="updateMediaFolder" @add="addVideos" @update-start="updateClipStart"
-                @update-clip="updateClip" @update-path="updateMediaPath" @relink="relinkMedia"
-                @remove="removeClip" @update-freeze="setFreezeLength" @update-dissolve="updateDissolve" @error="toast" />
+                @update-clip="updateClip"
+                @remove="removeClip" @update-freeze="setFreezeLength" @update-dissolve="updateDissolve"
+                @reorder="moveClip" @error="toast" />
               <ProjectSettings :title="state.title" :product-name="state.product_name"
                 :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
                 :fps="state.output.fps" @update-fps="updateFPS"

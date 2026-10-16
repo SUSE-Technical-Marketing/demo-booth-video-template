@@ -89,6 +89,15 @@ Change a clip's timeline start or **snap** it to a chapter, and set source **In/
 Hard cuts remain the default, and gaps render black with silence. Chapters and clips are independent:
 one chapter can span several clips, and one clip can span several chapters.
 
+To reorder clips or insert one between existing clips, open **Videos & settings** and drag the dotted grip bar on the left edge of its row
+onto the upper or lower half of another clip. An orange insertion line shows where it will go.
+Use **Move up / Move down** for keyboard or touch operation. Newly added videos start at the end; move them into
+place using the same controls. Freeze-frame clips can be moved too.
+Reordering rebuilds a continuous sequence from time zero, removing gaps while keeping media links and source trims.
+Chapter/headline times and explicit end settings stay unchanged. Incoming dissolves travel with their clips where
+they fit the new neighbours; a first clip or incompatible overlap becomes a hard cut and a notification reports it.
+Each move is a single undo step and is saved in the project. The timeline reflects the new order but is not a reorder surface.
+
 In **Videos & settings**, choose **Cross-dissolve** under **Transition in** on any clip after the first, then edit
 its duration in seconds. The clips must meet before adding a dissolve: move or trim away any gap first.
 The incoming clip overlaps the end of the preceding clip, shortening the sequence; later clips, chapters, headlines
@@ -114,13 +123,19 @@ Files are read locally; no project or video files are uploaded to a server.
 
 The project saves media references and clip data, never video bytes or temporary browser URLs. In **Videos & settings**,
 set **Media folder** relative to the saved project JSON, for example `media` or `media/recordings`.
-Every **Media path** is relative to that folder: enter `demo.mp4` or `subfolder/demo.mp4`, without repeating the media folder.
-The editor shows the combined **Project path** underneath each entry. Changing the folder automatically updates every
+Each saved media path is relative to that folder, such as `demo.mp4` or `subfolder/demo.mp4`, without repeating the media folder.
+New videos use their filenames; existing paths are preserved when opening a project or relinking media.
+The editor shows the combined **Project path** as read-only text underneath each entry, without a per-clip path input. Changing the folder automatically updates every
 video reference, including existing clips; no individual path edits are needed. The editor and renderer both apply this base.
 The setting is saved with the project and supports undo/autosave. Leave it blank to resolve paths relative to the JSON.
 Videos are not copied or moved:
-place the actual files in that folder for automatic linking and rendering. Opening only the JSON with **Open file…** still requires each clip's
-**Relink media…** button to select the local source again for preview. Relinking does not change its saved path or trims. Missing media does not prevent
+place the actual files in that folder for automatic linking and rendering. Opening only the JSON with **Open file…** requires
+selecting local sources again for preview. Use the single **Relink media…** button beside **Add videos…**:
+its popover lists missing or invalid links, with a **Choose file…** action for each source. Successfully linked sources
+disappear from the missing list. Clips sharing a recording (including freeze frames) need that recording selected only once.
+Enable **Show linked media too** to replace an existing linked recording, such as a re-exported file.
+Relinking keeps the saved path; valid source trims are retained, while full-source clips follow the updated recording length.
+Errors stay visible in the popover so you can retry. Missing media does not prevent
 editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
 keeping the same relative media layout or updating the paths.
 

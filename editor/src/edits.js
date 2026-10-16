@@ -41,6 +41,32 @@ export const clipLength = clip => clip.source_out - clip.source_in;
 export const clipEnd = clip => clip.start + clipLength(clip);
 export const MIN_FREEZE = 0.1;
 
+export function reorderClip(state, clipId, beforeId = null) {
+  const next = clone(state);
+  const ordered = next.clips.slice().sort((a, b) => a.start - b.start);
+  const clip = ordered.find(c => c.id === clipId);
+  if (!clip || (beforeId !== null && !ordered.some(c => c.id === beforeId))) {
+    throw new Error('The clip to move or its destination no longer exists.');
+  }
+  if (clipId === beforeId) return { state: next, changed: false, removedTransitions: [] };
+  const clips = ordered.filter(c => c.id !== clipId);
+  clips.splice(beforeId === null ? clips.length : clips.findIndex(c => c.id === beforeId), 0, clip);
+  if (clips.every((c, i) => c.id === ordered[i].id)) return { state: next, changed: false, removedTransitions: [] };
+  const removedTransitions = [];
+  for (const [i, current] of clips.entries()) {
+    const previous = clips[i - 1], duration = current.transition_in?.duration;
+    if (duration != null && (!previous || duration >= clipLength(current) - EPS ||
+        duration + (previous.transition_in?.duration ?? 0) > clipLength(previous) - EPS)) {
+      removedTransitions.push(current.id);
+      delete current.transition_in;
+    }
+    current.start = previous ? clipEnd(previous) - (current.transition_in?.duration ?? 0) : 0;
+  }
+  next.clips = clips;
+  validateProject({ project_version: 1, ...next, timing: { schema_version: 2 } });
+  return { state: next, changed: true, removedTransitions };
+}
+
 // A freeze clip holds the frame at source_in for its whole length (source_out - source_in).
 const piece = (clip, start, sourceIn, length, extra = {}) => {
   const next = { ...clip, ...extra, start, source_in: sourceIn, source_out: sourceIn + length };
