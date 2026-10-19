@@ -530,6 +530,14 @@ function setChapterToPlayhead(chapter) {      // like the headline button: the p
   markDirty();
   toast(`Chapter ${chapter.ch} now starts at ${fmt(chapter.t)}`);
 }
+function setChapterLevel(chapter, level) {      // 1 makes it a sub-chapter of the chapter before it
+  pushHistory();
+  chapter.level = level;
+  markDirty();
+  const theme = themeLayout(state.value.output.theme);
+  toast(level ? `Chapter ${chapter.ch} is now a sub-chapter${theme.SUBCHAPTERS ? '' : ' (this theme lists it as a chapter)'}`
+    : `Chapter ${chapter.ch} is a chapter again`);
+}
 async function addChapter() {
   pushHistory();
   state.value.chapters.push('New chapter');
@@ -966,7 +974,7 @@ onUnmounted(() => {
               :text-size-id="state.headlines[headlineFit.idx]?.id"
               @begin-edit="beginEdit" @update-time="updateTime" @commit-time="commitTime" @error="toast"
               @select="chooseChapter" @update-chapter-title="updateChapterTitle" @update-follow="followPlayhead = $event"
-              @delete-chapter="deleteChapter" @add-chapter="addChapter"
+              @delete-chapter="deleteChapter" @add-chapter="addChapter" @set-chapter-level="setChapterLevel"
               @select-headline="activateHeadline" @update-text="updateHeadline" @add-headline="addHeadline"
               @set-playhead="setHeadlineToPlayhead" @set-chapter-playhead="setChapterToPlayhead" @delete-headline="deleteHeadline"
             />

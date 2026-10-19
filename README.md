@@ -243,6 +243,20 @@ in the project, supports undo/autosave, and is used by both fullscreen playback 
 Projects without a theme setting retain Classic. Switching themes does not change clip placement, trims,
 chapter/headline timing or the playhead. All themes preserve the source aspect ratio with letterboxing when needed.
 
+### Sub-chapters
+
+A chapter can have sub-chapters: *Blueprints* as a chapter, with *Install* and *Create* beneath it. In the
+**Chapters** list, click the **⇥** button on a chapter to make it a sub-chapter of the chapter above it (**⇤** makes it
+a chapter again). Sub-chapters are numbered 2.1, 2.2, and the first chapter cannot be one. They have their own start
+time and headlines; the chapter's own headlines, before its first sub-chapter, introduce it.
+
+- **Dark rail** and **Classic** keep sub-chapters collapsed: they appear under their chapter only while that chapter
+  or one of its sub-chapters is playing, and the chapter stays lit. The counter and progress line count chapters
+  ("Chapter 2 of 4"); the progress line runs through the sub-chapters.
+- **Cinematic** and **Minimal stage** show a sub-chapter as an ordinary chapter.
+- The MP4 has one chapter marker per chapter and sub-chapter, named "Blueprints › Install".
+- Deleting a chapter turns its sub-chapters into chapters. Saved as `"level": 1` on the chapter in the project JSON.
+
 ### Fullscreen booth playback (no export required)
 
 After adding or relinking all videos, click the orange **Play fullscreen loop** button in the main header. The full branded composition

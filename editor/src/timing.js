@@ -41,9 +41,11 @@ export function fromJSON(o) {
   const nested = o?.schema_version === 2;
   if (!o || !Array.isArray(o.chapters) || !o.chapters.length ||
       o.chapters.some(c => nested ? !c || typeof c.title !== 'string' || !validTime(c.start) ||
-        !Array.isArray(c.headlines) || c.headlines.some(h => !validHeadline(h, true)) : typeof c !== 'string')) {
+        !Array.isArray(c.headlines) || c.headlines.some(h => !validHeadline(h, true)) ||
+        (c.level != null && c.level !== 0 && c.level !== 1) : typeof c !== 'string')) {
     throw new Error(nested ?
-      'Each chapter needs a title, non-negative start and headline list with finite relative times and non-empty text' :
+      'Each chapter needs a title, non-negative start and headline list with finite relative times and non-empty text, ' +
+      'and a level of 0 (chapter) or 1 (sub-chapter)' :
       'chapters must contain at least one chapter title');
   }
   if (!nested && (!Array.isArray(o.chapter_starts) || !o.chapter_starts.length ||
@@ -65,7 +67,7 @@ export function fromJSON(o) {
     title: o.title || '',
     product_name: o.product_name ?? '',
     chapters: nested ? o.chapters.map(c => c.title) : o.chapters.slice(),
-    chapter_starts: nested ? o.chapters.map((c, i) => newRow({ t: c.start, ch: i + 1 })) :
+    chapter_starts: nested ? o.chapters.map((c, i) => newRow({ t: c.start, ch: i + 1, level: c.level === 1 ? 1 : 0 })) :
       o.chapter_starts.map(([t, ch]) => newRow({ t, ch })),
     headlines: [],
     headlines_end: o.headlines_end ?? null,
@@ -103,7 +105,7 @@ export function toJSON(state) {
     title: state.title || '',
     product_name: state.product_name || '',
     chapters: state.chapter_starts.map((c, i) => ({
-      title: state.chapters[i], start: n(c.t),
+      title: state.chapters[i], start: n(c.t), ...(c.level === 1 && i > 0 ? { level: 1 } : {}),
       headlines: state.headlines.filter(h => h.chapterId === c.id).map(h =>
         h.end == null ? [n(h.t), h.text] : [n(h.t), h.text, n(h.end)]),
     })),
@@ -117,6 +119,7 @@ export function sortAll(state) {
   state.chapter_starts.sort((a, b) => a.t - b.t);
   state.chapters = state.chapter_starts.map(c => state.chapters[c.ch - 1]);
   state.chapter_starts.forEach((c, i) => { c.ch = i + 1; });
+  if (state.chapter_starts[0]?.level) state.chapter_starts[0].level = 0;        // nothing for it to belong to
   state.headlines.sort((a, b) => headlineTime(state, a) - headlineTime(state, b));
   // an explicit end that is no longer after its start (the start was moved past it) goes back to automatic
   state.headlines.forEach(h => { if (h.end != null && h.end <= h.t + 1e-6) h.end = null; });
@@ -138,6 +141,9 @@ export function chapterImportNotice(source) {
 export function removeChapter(state, ch) {
   const removed = state.chapter_starts.find(c => c.ch === ch);
   state.headlines = state.headlines.filter(h => h.chapterId !== removed.id);
+  if (!removed.level) {                  // its sub-chapters become chapters rather than joining the one before
+    for (let i = ch; i < state.chapter_starts.length && state.chapter_starts[i].level; i++) state.chapter_starts[i].level = 0;
+  }
   state.chapters.splice(ch - 1, 1);
   state.chapter_starts = state.chapter_starts.filter(c => c.ch !== ch);
   state.chapter_starts.forEach(c => { if (c.ch > ch) c.ch--; });
@@ -224,15 +230,45 @@ export function scrollPosition(t, step, seconds = CHAPTER_SCROLL.seconds) {
   const p = Math.max(0, Math.min(1, (t - step.t) / seconds));
   return step.origin + (step.target - step.origin) * p * p * (3 - 2 * p);
 }
-export function chapterScrollSteps(state, settings = CHAPTER_SCROLL) {
-  const windowStart = ch => Math.max(0, Math.min(state.chapters.length - settings.visible,
-    ch - settings.previous - 1));
+// Sub-chapters (level 1) belong to the chapter before them. Only some themes list them (SUBCHAPTERS in themes.json).
+export function chapterLevels(state, enabled = true) {      // indexed by chapter number - 1, like state.chapters
+  const levels = state.chapters.map(() => 0);
+  if (enabled) state.chapter_starts.forEach(c => { if (c.ch > 1 && c.level === 1) levels[c.ch - 1] = 1; });
+  return levels;
+}
+export function chapterParents(levels) {
+  let top = 1;
+  return levels.map((level, i) => { if (!level) top = i + 1; return top; });
+}
+/** Chapter numbers (1-based) listed while `active` plays: every chapter plus the sub-chapters of the playing one. */
+export function visibleRows(levels, active) {
+  const top = chapterParents(levels);
+  return levels.map((_, i) => i + 1).filter(i => !levels[i - 1] || top[i - 1] === top[active - 1]);
+}
+/** "1", "2", "2.1", "2.2": the number the editor shows; the video pads chapter numbers to two digits. */
+export function chapterLabels(levels) {
+  let number = 0, sub = 0;
+  return levels.map(level => level ? `${number}.${++sub}` : (sub = 0, String(++number)));
+}
+/** [number of the playing chapter, number of chapters], counting sub-chapters with their chapter. */
+export function chapterNumber(levels, active) {
+  const top = chapterParents(levels)[active - 1];
+  return [levels.slice(0, top).filter(level => !level).length, levels.filter(level => !level).length];
+}
+export function chapterScrollSteps(state, settings = CHAPTER_SCROLL, levels = chapterLevels(state, false)) {
+  const where = ch => {
+    const rows = visibleRows(levels, ch);
+    return { rows, target: Math.max(0, Math.min(rows.length - settings.visible, rows.indexOf(ch) - settings.previous)) };
+  };
   const starts = state.chapter_starts.slice().sort((a, b) => a.t - b.t);
-  const first = starts[0], target = windowStart(first.ch);
-  const steps = [{ t: first.t, origin: target, target }];
+  const first = starts[0], start = where(first.ch);
+  const steps = [{ t: first.t, origin: start.target, target: start.target }];
+  let rows = start.rows;
   starts.slice(1).forEach(c => {
-    const last = steps[steps.length - 1], target = windowStart(c.ch);
-    if (target !== last.target) steps.push({ t: c.t, origin: scrollPosition(c.t, last, settings.seconds), target });
+    const last = steps[steps.length - 1], next = where(c.ch);
+    if (next.rows.join() !== rows.join()) steps.push({ t: c.t, origin: next.target, target: next.target });   // another list: jump
+    else if (next.target !== last.target) steps.push({ t: c.t, origin: scrollPosition(c.t, last, settings.seconds), target: next.target });
+    rows = next.rows;
   });
   return steps;
 }

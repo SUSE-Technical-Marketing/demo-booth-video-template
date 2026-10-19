@@ -170,6 +170,7 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .crow .textcell { grid-column: 2; grid-row: 1; }
 .crow .textcell > div { display: flex; align-items: center; min-width: 0; }
 .crow .chapter-title { flex: 1; min-width: 0; }
+.crow.sub .textcell { padding-left: 18px; }
 .chapter-number { flex-shrink: 0; margin-right: 6px; color: var(--muted); font-size: 11px; }
 .crow .acts { grid-column: 3; grid-row: 1; }
 .chapter-count { padding: 2px 5px; font-size: 11px; min-width: 24px; background: transparent; color: var(--muted); }
@@ -208,7 +209,8 @@ kbd { background: var(--jungle); border: 1px solid var(--line); border-bottom-wi
 #stage:is([data-theme="dark-rail"], [data-theme="minimal-stage"]) .pill { justify-content: flex-start; white-space: normal; line-height: 1.15; }
 #stage:is([data-theme="dark-rail"], [data-theme="minimal-stage"]) .pill::before { content: attr(data-number); position: absolute; left: 12px;
   top: 50%; transform: translateY(-50%); font-size: var(--chapter-number-px); }
-#stage:is([data-theme="dark-rail"], [data-theme="minimal-stage"]) .pill.on::before { color: var(--theme-accent); }
+#stage:is([data-theme="dark-rail"], [data-theme="minimal-stage"]) .pill:is(.on, .opened)::before { color: var(--theme-accent); }
+#stage[data-theme="dark-rail"] .pill.sub::before { left: 26px; font-size: calc(var(--chapter-number-px) * .9); }
 #stage[data-theme="dark-rail"] .pill.on::after { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px;
   width: 4px; background: var(--theme-accent); }
 .current-chapter { display: flex; align-items: center; white-space: nowrap; color: var(--theme-headline); line-height: 1; }
