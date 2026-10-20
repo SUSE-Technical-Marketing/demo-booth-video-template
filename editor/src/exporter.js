@@ -73,8 +73,8 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
  * onUpdate({ phase, fraction, message, fps, eta, uploaded, total }) is called as things move along.
  * Aborting the signal cancels the export and removes its working files.
  */
-export async function runExport({ project, files, size, quality, fast, audio = true, filename, onUpdate, signal }) {
-  const created = await post('/jobs', { project: JSON.parse(project), size, quality, fast, audio, filename });
+export async function runExport({ project, files, size, quality, fast, audio = true, filename, kind = 'video', onUpdate, signal }) {
+  const created = await post('/jobs', { project: JSON.parse(project), size, quality, fast, audio, filename, kind });
   const job = created.id;
   try {
     const list = created.media.map((id, slot) => {
@@ -114,12 +114,19 @@ export async function runExport({ project, files, size, quality, fast, audio = t
 export const downloadUrl = (job, token) => `${BASE}/jobs/${job}/download?token=${encodeURIComponent(token)}`;
 export const removeJob = job => json(`/jobs/${job}`, { method: 'DELETE' }).catch(() => {});
 
+// What each kind of export produces: the video, or the zip holding the interactive page and its footage.
+export const KINDS = {
+  video: { ext: '.mp4', mime: 'video/mp4', description: 'MP4 video' },
+  page: { ext: '.zip', mime: 'application/zip', description: 'Zip archive' },
+};
+
 export const canChooseLocation = () => typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function';
 
 // Ask where the MP4 should go. startIn (the project's folder or file handle) makes the picker open there. It is only a
 // hint, so anything that is not a real handle is ignored, and a picker that rejects it is asked again without it.
-export async function chooseLocation(filename, startIn) {
-  const options = { suggestedName: filename, types: [{ description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } }] };
+export async function chooseLocation(filename, startIn, kind = 'video') {
+  const { ext, mime, description } = KINDS[kind];
+  const options = { suggestedName: filename, types: [{ description, accept: { [mime]: [ext] } }] };
   const hint = startIn && typeof startIn.kind === 'string' ? toRaw(startIn) : null;
   try {
     return await window.showSaveFilePicker(hint ? { ...options, startIn: hint } : options);
@@ -131,9 +138,9 @@ export async function chooseLocation(filename, startIn) {
 
 // Write the finished video to a chosen file, or ask now (picker, starting in startIn), or fall back to a plain
 // browser download. Resolves with { name, where } so the dialog can say where it went.
-export async function saveVideo({ job, token }, filename, { target = null, startIn = null } = {}) {
+export async function saveVideo({ job, token }, filename, { target = null, startIn = null, kind = 'video' } = {}) {
   if (target || canChooseLocation()) {
-    const handle = target || await chooseLocation(filename, startIn);
+    const handle = target || await chooseLocation(filename, startIn, kind);
     const res = await fetch(downloadUrl(job, token));
     if (!res.ok) throw new Error(`Could not fetch the video (${res.status})`);
     const writable = await handle.createWritable();

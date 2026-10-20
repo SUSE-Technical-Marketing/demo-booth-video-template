@@ -9,9 +9,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "bun run build:player && vite",
     "serve": "python3 render/server.py",
     "build": "vite build",
+    "build:player": "node scripts/build-player.mjs",
     "preview": "vite preview",
     "test": "vitest run"
   },

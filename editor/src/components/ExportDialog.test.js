@@ -8,7 +8,7 @@ vi.mock('../exporter.js', async importOriginal => ({
   getInfo: vi.fn(), runExport: vi.fn(), saveVideo: vi.fn(), removeJob: vi.fn(), chooseLocation: vi.fn(), canChooseLocation: vi.fn(),
 }));
 
-const INFO = { ok: true, encoders: { libx264: true, h264_videotoolbox: true } };
+const INFO = { ok: true, page: true, encoders: { libx264: true, h264_videotoolbox: true } };
 const clip = (name, start = 0) => ({ id: name + start, media_id: name, name, start, dur: 10 });
 const linked = (...names) => new Map(names.map(name => [name, new File(['x'], name)]));
 const mountDialog = async (props = {}) => {
@@ -47,6 +47,76 @@ describe('Export dialog', () => {
     expect(wrapper.get('#resHint').text()).toContain('Upscaled');
     expect(wrapper.text()).toContain('3840 × 2160');
     wrapper.unmount();
+  });
+
+  describe('interactive page', () => {
+    it('is chosen with the Format buttons, and swaps the options that only apply to a video', async () => {
+      const wrapper = await mountDialog({ theme: 'dark-rail' });
+      expect(wrapper.get('[data-kind="video"]').attributes('aria-checked')).toBe('true');
+      expect(wrapper.find('#exportResolution').exists()).toBe(true);
+      expect(wrapper.get('.export-name em').text()).toBe('.mp4');
+      await wrapper.get('[data-kind="page"]').trigger('click');
+      expect(wrapper.get('[data-kind="page"]').attributes('aria-checked')).toBe('true');
+      expect(wrapper.find('#exportResolution').exists()).toBe(false);          // the page's video is sized by the layout
+      expect(wrapper.get('.export-name em').text()).toBe('.zip');
+      expect(wrapper.get('#exportTitle').text()).toBe('Export interactive page');
+      expect(wrapper.get('#pageHint').text()).toContain('1504 × 846');
+      expect(wrapper.text()).toContain('Web page · ZIP');
+      expect(wrapper.get('#exportSpeed').text()).toContain('as fast as');
+      wrapper.unmount();
+    });
+
+    it('asks the service for a page and offers a zip', async () => {
+      const wrapper = await mountDialog({ theme: 'classic' });
+      chooseLocation.mockResolvedValue({ name: 'booth.zip' });
+      runExport.mockResolvedValue({ job: 'j9', token: 't', view: { filename: 'my-demo.zip', size: 5e7 } });
+      saveVideo.mockResolvedValue({ name: 'my-demo.zip', where: 'the location you chose' });
+      await wrapper.get('[data-kind="page"]').trigger('click');
+      expect(wrapper.get('#pageHint').text()).toContain('1459 × 820');
+      await wrapper.get('#exportChoose').trigger('click');
+      expect(chooseLocation).toHaveBeenCalledWith('my-demo.zip', null, 'page');
+      await wrapper.get('#exportStart').trigger('click');
+      await flushPromises();
+      expect(runExport).toHaveBeenCalledWith(expect.objectContaining({ kind: 'page' }));
+      expect(wrapper.get('#exportDone').text()).toContain('Your interactive page is ready.');
+      expect(wrapper.get('#exportPageHow').text()).toContain('open index.html');
+      expect(saveVideo).toHaveBeenCalledWith(expect.any(Object), 'my-demo.zip', expect.objectContaining({ kind: 'page' }));
+      expect(wrapper.get('#exportSave').text()).toBe('Save another copy…');
+      wrapper.unmount();
+    });
+
+    it('forgets a chosen location when the format changes, so a zip is never written over an mp4', async () => {
+      const wrapper = await mountDialog();
+      chooseLocation.mockResolvedValue({ name: 'my-demo.mp4' });
+      await wrapper.get('#exportChoose').trigger('click');
+      await flushPromises();
+      expect(wrapper.get('#exportTarget').text()).toBe('my-demo.mp4');
+      await wrapper.get('[data-kind="page"]').trigger('click');
+      expect(wrapper.get('#exportTarget').text()).not.toContain('my-demo.mp4');
+      wrapper.unmount();
+    });
+
+    it('says how to build the page when the service does not have it, and will not start', async () => {
+      getInfo.mockResolvedValue({ ...INFO, page: false });
+      const wrapper = await mountDialog();
+      expect(wrapper.find('#exportNoPage').exists()).toBe(false);
+      expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();     // video exports are unaffected
+      await wrapper.get('[data-kind="page"]').trigger('click');
+      expect(wrapper.get('#exportNoPage').text()).toContain('bun run build:player');
+      expect(wrapper.get('#exportStart').attributes('disabled')).toBeDefined();
+      wrapper.unmount();
+    });
+
+    it('tells you to restart a service that is older than the editor, instead of getting a video back', async () => {
+      getInfo.mockResolvedValue({ ok: true, encoders: {} });
+      const wrapper = await mountDialog();
+      await wrapper.get('[data-kind="page"]').trigger('click');
+      expect(wrapper.get('#exportNoPage').text()).toContain('older than this editor');
+      expect(wrapper.get('#exportStart').attributes('disabled')).toBeDefined();
+      await wrapper.get('[data-kind="video"]').trigger('click');
+      expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();
+      wrapper.unmount();
+    });
   });
 
   it('starts at the project resolution, including a custom one that is not in the list', async () => {
@@ -127,7 +197,7 @@ describe('Export dialog', () => {
     await wrapper.get('#exportSave').trigger('click');
     await flushPromises();
     expect(saveVideo).toHaveBeenCalledWith({ job: 'j1', token: 't', view: expect.any(Object) }, 'my-demo.mp4',
-      { target: null, startIn: null });
+      { target: null, startIn: null, kind: 'video' });
     expect(wrapper.get('#exportSaved').text()).toBe('Saved as final.mp4 in the location you chose.');
     wrapper.unmount();
     expect(removeJob).toHaveBeenCalledWith('j1');                                    // working files are cleaned up
@@ -142,11 +212,11 @@ describe('Export dialog', () => {
     const wrapper = await mountDialog({ startIn });
     expect(wrapper.get('#exportTarget').text()).toContain('starting in your project folder');
     await wrapper.get('#exportChoose').trigger('click');
-    expect(chooseLocation).toHaveBeenCalledWith('my-demo.mp4', startIn);
+    expect(chooseLocation).toHaveBeenCalledWith('my-demo.mp4', startIn, 'video');
     expect(wrapper.get('#exportTarget').text()).toBe('chosen.mp4');
     await wrapper.get('#exportStart').trigger('click');
     await flushPromises();
-    expect(saveVideo).toHaveBeenCalledWith(expect.any(Object), 'my-demo.mp4', { target: picked, startIn });   // no second prompt
+    expect(saveVideo).toHaveBeenCalledWith(expect.any(Object), 'my-demo.mp4', { target: picked, startIn, kind: 'video' });   // no second prompt
     expect(wrapper.get('#exportSaved').text()).toContain('chosen.mp4');
     wrapper.unmount();
   });

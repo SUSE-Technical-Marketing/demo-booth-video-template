@@ -25,6 +25,8 @@ For planned technical and functional work, see the [improvement roadmap](IMPROVE
 - **Export the final MP4 from the editor** with the **Export** button (needs the local export service, below), or
   render with one command (or a container): multiple clips, gaps, branded layout, your audio, and an MP4 chapter marker
   per chapter. Choose the frame rate and resolution in the editor, or override them per render.
+- **Export an interactive web page** for an unattended booth screen: the same layout, but visitors press a chapter
+  or click the timeline to jump to the part they care about (see [Interactive web page](#interactive-web-page-for-a-booth-screen-nobody-is-standing-at)).
 
 ## How the pieces fit
 
@@ -405,6 +407,32 @@ listening only on `127.0.0.1:8766`):
 - The resolution chosen here applies to this export only; the project's own setting is not changed. Sizes above
   1920 × 1080 are upscaled from the layout (see [Output resolution](#output-resolution)).
 
+### Interactive web page (for a booth screen nobody is standing at)
+
+In the Export dialog, set **Format** to **Interactive page**. Instead of an MP4 with the layout burned in, you get a zip
+holding `index.html` and `video.mp4`. Unzip it and open `index.html` in any browser, with or without an internet
+connection:
+
+- **Press a chapter** in the list and it jumps there and plays. Sub-chapters open under their chapter, as in the
+  editor. In the Cinematic theme, which has no chapter list, use the timeline and the previous/next buttons.
+- **A timeline underneath** shows every chapter as a coloured block with its start time, small ticks for headlines, and
+  the playhead. Click or drag anywhere to jump; hover to see the chapter and headline at that moment.
+- The chapters, headlines and wipe animation are drawn live over the video using the same layout code as the editor's
+  preview, so the page looks like the video. Only the footage is encoded, at the theme's video area (for example
+  1504 × 846 in Dark rail), with no branding burned in, so the file is smaller than a full export.
+- **Keys:** Space (or K) play/pause, ← → 5 seconds back/forward (Shift for 15), N / P next / previous chapter (P first
+  restarts the current one), Home / End, M sound, F fullscreen. Touch screens work: the buttons are large and
+  dragging the timeline scrubs.
+- It plays through to the end and stops on the last picture; pressing Play or any chapter starts again. It does not
+  loop by itself, so a visitor always starts from the beginning.
+
+Keep `video.mp4` beside `index.html` (a short `README.txt` in the zip says so). To show it on a booth screen, put the
+folder on that computer, open `index.html` and press **F** for fullscreen. Browsers play it from a folder (`file://`) with no web server.
+
+The page template is built from the editor's own source into `dist-player/player.html` (one file with the script, styles,
+font and logo inside). `bun run dev`, `mise run run`, `start_editor.command` and the container build it for you. If you
+only run `python3 render/server.py`, build it once with `bun run build:player`; the dialog says so when it is missing.
+
 ## Render the finished video
 
 The editor previews the layout; the renderer produces the MP4. It assembles the clips from your project, puts them in the content
@@ -663,6 +691,7 @@ bun install --frozen-lockfile
 bun run dev        # editor with hot reload
 bun run test       # editor tests (Vitest; not `bun test`, which selects Bun's own runner)
 bun run build      # production build into dist/
+bun run build:player   # the interactive page template, dist-player/player.html (bun run dev does this first)
 bun run preview    # serve that build locally
 python -m unittest discover -s tests    # renderer and timing tests
 mise run test      # everything: editor tests and build, renderer tests, timing files, render self-test
@@ -672,6 +701,8 @@ The editor's `App.vue` owns document changes, undo, autosave, and playback. `Edi
 and `HeadlineEditor`/`HeadlineRow` handle the editing sections through props and emitted actions; the timeline dock, preview,
 video list (`videos.js` holds the clip helpers), time input, and accent text are separate components too. Pure timing and
 JSON helpers live in `timing.js`.
+`player/` holds the exported interactive page: `Player.vue` reuses `Preview.vue` (with `interactive`, `offline` and `settled` set) and
+`PlayerTimeline.vue` is its timeline; `render_footage` in `render.py` encodes its video and `Service.package_page` zips it.
 `project.js` validates the portable project envelope; `videos.js` manages browser-local media URLs.
 The renderer's `project.py` validates the same contract and plans frame-aligned segments; `assemble.py` normalizes
 and concatenates those segments, blending overlap segments' video and audio before branding. Both runtimes test `tests/fixtures/project.json`.
