@@ -221,7 +221,7 @@ function keyboardSelect(event, kind, row, start) {
           : `${clip.name}  ${fmt(clip.start)} – ${fmt(clip.start + clip.dur)}`"
         :style="{ left: pct(clip.start), width: pct(clip.dur) }"><span>{{ clip.freeze ? 'Freeze frame' : clip.name }}</span><small>{{ fmt(clip.dur) }}</small></div>
       <div v-for="clip in clips.filter(c => c.transition_in)" :key="'dissolve' + clip.id" class="dissolve-band"
-        :title="`Cross-dissolve: ${clip.transition_in.duration} seconds. Edit in Videos & settings.`"
+        :title="`Cross-dissolve: ${clip.transition_in.duration} seconds. Edit in Videos.`"
         :aria-label="`Cross-dissolve: ${clip.transition_in.duration} seconds`" role="img"
         :style="{ left: pct(clip.start), width: pct(clip.transition_in.duration) }"></div>
       <div v-for="handle in clipHandles" :key="handle.kind + handle.clip.id" class="clip-handle"

@@ -22,11 +22,14 @@ function switchTab(event, index) {
 
 <template>
   <div class="tab-group">
-    <div class="tab-list" role="tablist" :aria-label="label">
-      <button v-for="(tab, index) in tabs" :key="tab.id" :id="`${tab.id}-tab`" role="tab"
-        :aria-controls="`${tab.id}-panel`" :aria-selected="selected === tab.id"
-        :tabindex="selected === tab.id ? 0 : -1"
-        @click="selected = tab.id" @keydown="switchTab($event, index)">{{ tab.label }}</button>
+    <div class="tab-bar">
+      <div class="tab-list" role="tablist" :aria-label="label">
+        <button v-for="(tab, index) in tabs" :key="tab.id" :id="`${tab.id}-tab`" role="tab"
+          :aria-controls="`${tab.id}-panel`" :aria-selected="selected === tab.id"
+          :tabindex="selected === tab.id ? 0 : -1"
+          @click="selected = tab.id" @keydown="switchTab($event, index)">{{ tab.label }}</button>
+      </div>
+      <slot name="actions" />
     </div>
     <TabPane v-for="tab in tabs" :key="tab.id" :id="tab.id" :active="selected === tab.id">
       <slot :name="tab.id" />

@@ -137,11 +137,11 @@ onUnmounted(() => {
       <div v-else-if="stage === 'form'" class="export-body">
         <div v-if="!clips.length" id="exportNoVideo" class="export-callout warn">
           <strong>Add a video first.</strong>
-          <p>Use <b>Add videos…</b> in <i>Videos &amp; settings</i>. The export wraps your recording in the layout.</p>
+          <p>Use <b>Add videos…</b> in <i>Videos</i>. The export wraps your recording in the layout.</p>
         </div>
         <div v-else-if="missing.length" id="exportMissing" class="export-callout warn">
           <strong>{{ missing.length === 1 ? 'A video is' : 'Some videos are' }} not linked.</strong>
-          <p>Link {{ missing.join(', ') }} in <i>Videos &amp; settings</i> (<b>Relink media…</b> or <b>Open project folder…</b>) so it can be rendered.</p>
+          <p>Link {{ missing.join(', ') }} in <i>Videos</i> (<b>Relink media…</b> or <b>Open project folder…</b>) so it can be rendered.</p>
         </div>
 
         <label class="export-field"><span>File name</span>

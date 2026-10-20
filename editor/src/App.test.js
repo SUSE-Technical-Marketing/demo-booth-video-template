@@ -139,6 +139,19 @@ describe('Vue editor', () => {
     await flushPromises();
     expect(JSON.parse(writable.write.mock.calls.at(-1)[0]).media_folder).toBe('');
   });
+  it('keeps theme, title, headline, render and ripple settings in the gear menu, not in the Videos tab', async () => {
+    expect(wrapper.get('#settings-tab').text()).toBe('Videos');
+    const menu = wrapper.get('#config-menu'), videos = wrapper.get('#settings-panel');
+    expect(menu.isVisible()).toBe(false);
+    await wrapper.get('.config-button').trigger('click');
+    expect(menu.isVisible()).toBe(true);
+    ['#videoTheme', '#titleIn', '#productIn', '#endAt', '#wipe', '#outputFPS', '#outputResolution', '#rippleBy']
+      .forEach(id => {
+        expect(menu.find(id).exists(), id).toBe(true);
+        expect(videos.find(id).exists(), id).toBe(false);
+      });
+    expect(videos.find('#vlist').exists()).toBe(true);
+  });
   it('shows one sidebar tab at a time while preserving edits, selection and panel instances', async () => {
     const chapters = wrapper.get('#chapters-panel'), settings = wrapper.get('#settings-panel');
     const inspector = wrapper.get('.chapter-inspector').element;

@@ -150,7 +150,7 @@ const headlineStyle = computed(() => {
           @playing="syncVideo" @seeked="syncVideo" @error="mediaError(c, $event)"></video>
         <span v-if="!clips.length">your video here</span>
         <span v-else-if="!clip && !presentation" class="gap">no video at this time</span>
-        <span v-else-if="clip && !clip.url" class="gap">Missing media: {{ clip.name }}. Relink in Videos &amp; settings.</span>
+        <span v-else-if="clip && !clip.url" class="gap">Missing media: {{ clip.name }}. Relink in Videos.</span>
       </div>
       <div v-for="(fade, i) in design.FADES ?? []" :key="i" class="abs video-fade" :style="fadeStyle(fade)"></div>
       <div v-if="!cinematic && !horizontal" id="panel" class="abs" :style="{ ...boxStyle(design.PANEL), background: design.BRAND.panel }"></div>

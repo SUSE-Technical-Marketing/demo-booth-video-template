@@ -62,9 +62,20 @@ header.top h1 { font-size: 16px; margin: 0 8px 0 0; font-weight: 650; letter-spa
 .editor-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow: hidden; }
 .editor-panel:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 .tab-group { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; }
+.tab-bar { position: relative; display: flex; gap: 6px; align-items: stretch; flex-shrink: 0; }
+.tab-bar > .tab-list { flex: 1; min-width: 0; }
+.config { display: flex; flex-shrink: 0; }
+.config-button { width: 42px; height: 100%; min-height: 38px; font-size: 20px; line-height: 1; padding: 0;
+  background: var(--jungle); border: 1px solid var(--line); border-radius: 10px; }
+.config-button[aria-expanded=true] { background: var(--surface2); border-color: var(--green); }
+.config-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0; max-height: calc(100vh - 120px);
+  overflow: auto; overscroll-behavior: contain; padding: 10px; background: var(--jungle); border: 1px solid var(--green);
+  border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, .55); }
+.config-menu-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.config-menu-heading h2 { margin: 0; }
 .tab-list { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; flex-shrink: 0;
   padding: 4px; background: var(--jungle); border: 1px solid var(--line); border-radius: 10px; }
-.editor-panel > .tab-group > .tab-list { grid-template-columns: 1.15fr 1fr; }
+.editor-panel .tab-bar > .tab-list { grid-template-columns: 1.15fr .7fr; }
 .tab-list [role=tab] { min-width: 0; font-size: 12px; font-weight: 600; background: transparent; border-color: transparent; }
 .tab-list [aria-selected=true] { background: var(--surface2); border-color: var(--green); color: var(--text); }
 .tab-list [role=tab]:focus-visible, .tab-pane:focus-visible {

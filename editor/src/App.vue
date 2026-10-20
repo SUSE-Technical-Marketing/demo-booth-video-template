@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import ChapterEditor from './components/ChapterEditor.vue';
+import ConfigMenu from './components/ConfigMenu.vue';
 import EditorWorkspace from './components/EditorWorkspace.vue';
 import EditStrip from './components/EditStrip.vue';
 import ExportDialog from './components/ExportDialog.vue';
@@ -31,10 +32,10 @@ const projectFolder = shallowRef(null), reconnectFolder = shallowRef(null), open
 const dirty = ref(false), saving = ref(false), autosave = ref(true);
 const cur = ref(0), selectedId = ref(null), playing = ref(false);
 const presenting = ref(false), buffering = ref(false);
-const editorTab = ref('chapters');
+const editorTab = ref('chapters'), configOpen = ref(false);
 const editorTabs = [
   { id: 'chapters', label: 'Chapters & headlines' },
-  { id: 'settings', label: 'Videos & settings' },
+  { id: 'settings', label: 'Videos' },
 ];
 const selectedChapterId = ref(state.value.chapter_starts[0].id), followPlayhead = ref(false);
 const playingChapter = computed(() => state.value.chapter_starts.find(c => c.ch === activeChapter(state.value, cur.value)));
@@ -978,14 +979,20 @@ onUnmounted(() => {
                 @update-clip="updateClip"
                 @remove="removeClip" @update-freeze="setFreezeLength" @update-dissolve="updateDissolve"
                 @reorder="moveClip" @seek="seekVideo" @error="toast" />
-              <ProjectSettings :title="state.title" :product-name="state.product_name"
-                :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
-                :fps="state.output.fps" @update-fps="updateFPS"
-                :resolution="state.output.resolution" @update-resolution="updateResolution"
-                :theme="state.output.theme" @update-theme="updateTheme"
-                v-model:ripple-by="rippleBy" @begin-edit="beginEdit" @update-metadata="updateMetadata"
-                @change-end="updateEnd" @change-wipe="updateWipe" @ripple="ripple" />
             </div>
+          </template>
+          <template #actions>
+            <ConfigMenu v-model:open="configOpen">
+              <div class="project-settings">
+                <ProjectSettings :title="state.title" :product-name="state.product_name"
+                  :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"
+                  :fps="state.output.fps" @update-fps="updateFPS"
+                  :resolution="state.output.resolution" @update-resolution="updateResolution"
+                  :theme="state.output.theme" @update-theme="updateTheme"
+                  v-model:ripple-by="rippleBy" @begin-edit="beginEdit" @update-metadata="updateMetadata"
+                  @change-end="updateEnd" @change-wipe="updateWipe" @ripple="ripple" />
+              </div>
+            </ConfigMenu>
           </template>
         </TabGroup>
       </aside>
