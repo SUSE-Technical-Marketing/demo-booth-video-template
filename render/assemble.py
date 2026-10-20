@@ -38,7 +38,7 @@ def assemble_project(project, project_path, directory, ffmpeg, probe, slot_filte
                                                else "Source out exceeds media duration", clip["id"], path))
     segments = timeline_segments(project)
     if not segments:
-        raise ValueError("Project has no clips to render; add media in Videos & settings")
+        raise ValueError("Project has no clips to render; add media in Videos")
     files = []
     for index, segment in enumerate(segments):
         if cancel is not None and cancel.is_set():

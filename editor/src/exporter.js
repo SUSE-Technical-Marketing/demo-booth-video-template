@@ -79,7 +79,7 @@ export async function runExport({ project, files, size, quality, fast, audio = t
   try {
     const list = created.media.map((id, slot) => {
       const file = files.get(id);
-      if (!file) throw new Error(`${created.names[slot]} is not linked: relink it in Videos & settings`);
+      if (!file) throw new Error(`${created.names[slot]} is not linked: relink it in Videos`);
       return { slot, file };
     });
     const total = list.reduce((sum, item) => sum + item.file.size, 0);

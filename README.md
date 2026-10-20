@@ -65,7 +65,7 @@ narration ──► LLM prompt ──► headlines ──► timing editor ─�
    (see [Run everything in a container](#run-everything-in-a-container-no-installs)).
 2. **Start or open a project.** **New** starts a blank project. **Open file…** opens an existing project JSON
    (copy `timings/example.json` to begin from a sample).
-3. **Add your recordings** in **Videos & settings**. Set timeline starts, source **In/Out** trims and relative media paths.
+3. **Add your recordings** in **Videos**. Set timeline starts, source **In/Out** trims and relative media paths.
 4. **Write chapters and headlines** and set their times (see [Using the editor](#using-the-editor)).
 5. **Save** the project next to its media, then **render** it (see [Render the finished video](#render-the-finished-video)).
 
@@ -85,7 +85,7 @@ were written with.
 ## Using the editor
 
 **New** starts a blank project. **Add videos…** places local videos sequentially in the content slot.
-Click a clip's name or row background in **Videos & settings** to pause playback and move the playhead to its start.
+Click a clip's name or row background in **Videos** to pause playback and move the playhead to its start.
 The selected clip keeps a highlighted background; hovering over a clip shows a lighter background.
 Clicking a clip also selects the chapter and active headline at its start without switching tabs; if no headline
 is active there, the previous headline selection is cleared.
@@ -94,7 +94,7 @@ Change a clip's timeline start or **snap** it to a chapter, and set source **In/
 Hard cuts remain the default, and gaps render black with silence. Chapters and clips are independent:
 one chapter can span several clips, and one clip can span several chapters.
 
-To reorder clips or insert one between existing clips, open **Videos & settings** and drag the dotted grip bar on the left edge of its row
+To reorder clips or insert one between existing clips, open **Videos** and drag the dotted grip bar on the left edge of its row
 onto the upper or lower half of another clip. An orange insertion line shows where it will go.
 Use **Move up / Move down** for keyboard or touch operation. Newly added videos start at the end; move them into
 place using the same controls. Freeze-frame clips can be moved too.
@@ -103,7 +103,7 @@ Chapter/headline times and explicit end settings stay unchanged. Incoming dissol
 they fit the new neighbours; a first clip or incompatible overlap becomes a hard cut and a notification reports it.
 Each move is a single undo step and is saved in the project. The timeline reflects the new order but is not a reorder surface.
 
-In **Videos & settings**, choose **Cross-dissolve** under **Transition in** on any clip after the first, then edit
+In **Videos**, choose **Cross-dissolve** under **Transition in** on any clip after the first, then edit
 its duration in seconds. The clips must meet before adding a dissolve: move or trim away any gap first.
 The incoming clip overlaps the end of the preceding clip, shortening the sequence; later clips, chapters, headlines
 and explicit end times ripple with the change. Reducing the duration or choosing **Hard cut** moves them later again.
@@ -126,7 +126,7 @@ JSON. The editor remembers both the file and folder handles, so media can be lin
 Directory selection is necessary because selecting a JSON file alone does not grant access to adjacent files.
 Files are read locally; no project or video files are uploaded to a server.
 
-The project saves media references and clip data, never video bytes or temporary browser URLs. In **Videos & settings**,
+The project saves media references and clip data, never video bytes or temporary browser URLs. In **Videos**,
 set **Media folder** relative to the saved project JSON, for example `media` or `media/recordings`.
 Each saved media path is relative to that folder, such as `demo.mp4` or `subfolder/demo.mp4`, without repeating the media folder.
 New videos use their filenames; existing paths are preserved when opening a project or relinking media.
@@ -144,7 +144,7 @@ Errors stay visible in the popover so you can retry. Missing media does not prev
 editing or saving the project; rendering requires all referenced clips' media. Save as into a different directory requires
 keeping the same relative media layout or updating the paths.
 
-Choose the render frame rate and **resolution** in **Videos & settings**. The renderer normalizes source
+Choose the render frame rate and **resolution** in the **⚙ Project settings** menu. The renderer normalizes source
 sizes/frame rates and audio; the output has stereo 48 kHz audio and defaults to 1920 × 1080. Other resolutions (4K UHD
 down to 640 × 360) scale the 1920 × 1080 composition, so the preview does not change. Source clips without audio and
 timeline gaps produce silence. Command-line options override the saved settings for one render.
@@ -208,9 +208,9 @@ described. Untick **Move later chapters and headlines too** to leave them. Anyth
 playhead stays put, so a headline that begins there is still showing during the hold. The hold is silent.
 
 To change a hold later, **drag the right edge of its bar in the Videos row** of the timeline (the bar is blue and
-labelled *Freeze frame*), or edit **Length** in **Videos & settings**. Changing the length is a ripple: everything after
+labelled *Freeze frame*), or edit **Length** in **Videos**. Changing the length is a ripple: everything after
 the hold, including chapters and headlines, moves with its end, so lengthening it never overlaps the next clip and
-shortening it closes up. In **Videos & settings** you can also change **Frame at** to hold a different frame. Keep the
+shortening it closes up. In **Videos** you can also change **Frame at** to hold a different frame. Keep the
 **Videos** row switched on (the toggle in the timeline toolbar) to see and drag holds.
 
 **Cut section…** is a ripple delete. It opens a red range on the timeline starting at the playhead (5 s long). Drag
@@ -224,7 +224,7 @@ A hold is saved as an ordinary clip with `"freeze": true`; see [Project file for
 
 ### Video themes
 
-Choose **Video theme → Layout** in **Videos & settings**. The selection updates the preview immediately, is saved
+Choose **Video theme → Layout** in the **⚙ Project settings** menu. The selection updates the preview immediately, is saved
 in the project, supports undo/autosave, and is used by both fullscreen playback and the Python renderer.
 
 - **Dark rail** (default for new projects): dark green branding rail, numbered chapter agenda, orange active marker,
@@ -362,8 +362,10 @@ previous file untouched; **Undo** (`Cmd+Z`), **Download** (if your browser can't
 Press **?** outside an editable field (or click **?** in the header) to open the keyboard-shortcut reference,
 including time-field nudges, timeline handles, tab navigation and sidebar resizing. Press **?** again, **Escape**,
 click **Close**, or click outside the popover to dismiss it. Editing/playback hotkeys are inactive while help is open.
-The left panel has two tabs: **Chapters & headlines** for timing edits, and **Videos & settings** for
-videos, metadata, headline settings and ripple controls. Switching tabs preserves your edits and selection;
+The left panel has two tabs: **Chapters & headlines** for timing edits, and **Videos** for the clips. The **⚙**
+button to the right of the tabs opens **Project settings**: video theme, title and product, headline settings,
+render output (frame rate and resolution) and ripple. It stays open while you change values; close it with
+**Esc**, the gear, **✕** or a click outside it. Switching tabs preserves your edits and selection;
 selecting a chapter or headline on the timeline returns to its editing tab. Use Left/Right arrows or Home/End
 when a tab is focused to switch tabs. Secondary row actions appear on hover or keyboard focus
 (and stay visible on touch devices).
@@ -435,7 +437,7 @@ marker per chapter (shown in the chapter menus of QuickTime, VLC and IINA).
    .venv/bin/python render/render.py /path/to/my-demo/project.json -o my-video-final.mp4
    ```
    Progress prints as it goes. It keeps clip audio (re-encoded to AAC), uses the project's frame rate and
-   resolution (25 fps and 1920 × 1080 unless changed in **Videos & settings**), and outputs H.264. On
+   resolution (25 fps and 1920 × 1080 unless changed in **⚙ Project settings**), and outputs H.264. On
    Apple-silicon Macs add `--fast` to use the hardware encoder.
 5. **Changing something later:** edit the project in the editor, save, and re-run step 4. Nothing is stored in
    the video, so there is nothing to clean up. If you re-cut the video, re-export it and use the editor's
@@ -461,7 +463,7 @@ Without `-o`, the output is `<project>-branded.mp4` next to the project.
 
 The layout is designed at 1920 × 1080. The renderer composes every frame at that size and scales it to the output
 resolution with a Lanczos filter, so text and buttons keep their proportions at every size. Pick a preset in
-**Videos & settings → Render output** (4K UHD, QHD, Full HD, HD, 960 × 540 or 640 × 360); the choice is saved as
+**⚙ Project settings → Render output** (4K UHD, QHD, Full HD, HD, 960 × 540 or 640 × 360); the choice is saved as
 `output.resolution` and used by every render of that project. Sizes larger than Full HD are upscaled from the
 1920 × 1080 composition, which is softer than native 4K but keeps the branding exact. `--size WxH` on the command line
 overrides the saved value and accepts any even size between 16 × 16 and 7680 × 4320; sizes that are not 16:9 are
@@ -627,12 +629,12 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Symptom | Fix |
 |---|---|
 | Editor says "sample project" | Click **Open file…** and choose your project JSON, or **New** to start a blank one. |
-| Preview says "Missing media" | Use **Relink media…** in Videos & settings. Saved placements and trims are retained. |
+| Preview says "Missing media" | Use **Relink media…** in Videos. Saved placements and trims are retained. |
 | Renderer reports missing media | Check the shared Media folder (relative to the JSON) and the video path (relative to that folder), or move the source into that location. |
 | Clips overlap | Restore a hard-cut placement, or use **Transition in → Cross-dissolve** on two adjacent clips. Unmarked overlaps are rejected. |
 | Editor won't save to the file | Use Chrome or Edge. In other browsers use **Download** and replace the file in `timings/`. |
 | Export says "The export service isn't running" | Start the editor with `start_editor.command` or `mise run run`, or run `python3 render/server.py` (needs `pip install -r render/requirements.txt`). The hosted copy can't export. |
-| Export says a video is not linked | Link it in **Videos & settings** (**Relink media…**), or use **Open project folder…**. |
+| Export says a video is not linked | Link it in **Videos** (**Relink media…**), or use **Open project folder…**. |
 | `start_editor.command` says port 8765 is in use | Close the earlier editor window, or run `kill $(lsof -ti tcp:8765)` and start it again. |
 | A video won't load in the preview | The browser can't play that format. Export an H.264 `.mp4`. |
 | A headline is marked **outside chapter** | Move its relative time inside the chapter or extend the chapter. The editor keeps its text but the renderer omits it until corrected. |
@@ -644,7 +646,7 @@ The project's nested timing data uses schema 2. The renderer normalizes it in me
 | Logo is replaced by the word "SUSE" | In the editor, Classic's remote logo or a modern theme's bundled logo could not load. Check network access or the static deployment. |
 | Headline words touch or have big gaps | Nudge `text_scale` (default `1.11`) in `assets/themes.json`, up if touching, down if gaps. Make sure `assets/fonts/SUSE-Medium.otf` exists. |
 | Video doesn't fill the slot | The renderer fits other sizes into the slot with black bars; export 1920 × 1080 for a perfect fit. |
-| Output has black bars top and bottom or left and right | The requested resolution is not 16:9; choose a 16:9 preset in **Videos & settings** or a 16:9 `--size`. |
+| Output has black bars top and bottom or left and right | The requested resolution is not 16:9; choose a 16:9 preset in **⚙ Project settings** or a 16:9 `--size`. |
 
 ## Customising
 
