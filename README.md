@@ -364,8 +364,10 @@ including time-field nudges, timeline handles, tab navigation and sidebar resizi
 click **Close**, or click outside the popover to dismiss it. Editing/playback hotkeys are inactive while help is open.
 The left panel has two tabs: **Chapters & headlines** for timing edits, and **Videos** for the clips. The **⚙**
 button to the right of the tabs opens **Project settings**: video theme, title and product, headline settings,
-render output (frame rate and resolution) and ripple. It stays open while you change values; close it with
-**Esc**, the gear, **✕** or a click outside it. Switching tabs preserves your edits and selection;
+render output (frame rate and resolution) and ripple. Settings open in a centered, scrollable dialog with the rest
+of the screen dimmed, like Export. It stays open while you change values; close it with **Esc**, **✕** or a click
+on the dimmed background. Keyboard focus stays in the dialog and returns to the gear when closed.
+Switching tabs preserves your edits and selection;
 selecting a chapter or headline on the timeline returns to its editing tab. Use Left/Right arrows or Home/End
 when a tab is focused to switch tabs. Secondary row actions appear on hover or keyboard focus
 (and stay visible on touch devices).

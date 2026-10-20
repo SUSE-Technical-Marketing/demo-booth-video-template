@@ -990,7 +990,7 @@ onUnmounted(() => {
             </div>
           </template>
           <template #actions>
-            <ConfigMenu v-model:open="configOpen">
+            <ConfigMenu v-model:open="configOpen" @error="toast">
               <div class="project-settings">
                 <ProjectSettings :title="state.title" :product-name="state.product_name"
                   :headline-end="state.headlines_end" :wipe-seconds="state.wipe_seconds" :cur="cur"

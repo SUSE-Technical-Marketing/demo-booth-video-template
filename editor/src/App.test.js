@@ -142,9 +142,13 @@ describe('Vue editor', () => {
   it('keeps theme, title, headline, render and ripple settings in the gear menu, not in the Videos tab', async () => {
     expect(wrapper.get('#settings-tab').text()).toBe('Videos');
     const menu = wrapper.get('#config-menu'), videos = wrapper.get('#settings-panel');
+    menu.element.showModal = vi.fn(() => { menu.element.open = true; });
+    menu.element.close = vi.fn(() => { menu.element.open = false; });
     expect(menu.isVisible()).toBe(false);
     await wrapper.get('.config-button').trigger('click');
     expect(menu.isVisible()).toBe(true);
+    expect(menu.element.tagName).toBe('DIALOG');
+    expect(menu.attributes('aria-modal')).toBe('true');
     ['#videoTheme', '#titleIn', '#productIn', '#endAt', '#wipe', '#outputFPS', '#outputResolution', '#rippleBy']
       .forEach(id => {
         expect(menu.find(id).exists(), id).toBe(true);
