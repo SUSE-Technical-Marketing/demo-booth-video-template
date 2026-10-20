@@ -30,6 +30,7 @@ from PIL import Image  # noqa: E402
 
 import layout as L  # noqa: E402
 import layers  # noqa: E402
+from chapter_scroll import parents  # noqa: E402
 from timing import normalize_chapters  # noqa: E402
 from project import load_project, project_fps, project_resolution, resolve_media_path, validate_project  # noqa: E402
 from assemble import assemble_project  # noqa: E402
@@ -174,13 +175,19 @@ def chapter_metadata(lay, start, dur):
     if marks[0][0] > 0:                          # time before the first switch belongs to the first chapter's button
         marks.insert(0, (0.0, marks[0][1]))
     marks[0] = (0.0, marks[0][1])
+    levels = lay.t.get("chapter_levels") or [0] * lay.n       # MP4 chapters are flat: a sub-chapter is "Parent > Sub"
+    parent = parents(levels)
+
+    def title(c):
+        return lay.chapters[c - 1] if not levels[c - 1] else "%s \u203a %s" % (lay.chapters[parent[c - 1] - 1], lay.chapters[c - 1])
+
     out = [";FFMETADATA1"]
     for i, (t, c) in enumerate(marks):
         end = marks[i + 1][0] if i + 1 < len(marks) else dur
         if end - t < 0.001:
             continue
         out += ["[CHAPTER]", "TIMEBASE=1/1000", "START=%d" % round(t * 1000), "END=%d" % round(end * 1000),
-                "title=" + esc(lay.chapters[c - 1])]
+                "title=" + esc(title(c))]
     return "\n".join(out) + "\n"
 
 

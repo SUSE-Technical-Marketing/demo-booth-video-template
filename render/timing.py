@@ -45,7 +45,12 @@ def normalize_chapters(timing):
                not _headlines(c.get("headlines"), relative=True, with_end=True) for c in chapters):
             raise ValueError("Each chapter needs a title, non-negative start, and a valid relative headline list "
                              "(an explicit end must come after its start)")
+        if any(c.get("level", 0) not in (0, 1) or isinstance(c.get("level"), bool) for c in chapters):
+            raise ValueError("A chapter's level must be 0 (chapter) or 1 (sub-chapter)")
         owned = sorted(chapters, key=lambda c: c["start"])
+        if owned[0].get("level"):
+            owned[0] = dict(owned[0], level=0)
+            notices.append("The first chapter cannot be a sub-chapter.")
     else:
         if any(not isinstance(c, str) for c in chapters):
             raise ValueError("chapters must contain chapter titles")
@@ -94,6 +99,7 @@ def normalize_chapters(timing):
         notices.append("Skipped %d headline(s) outside their chapter or headline end." % outside)
     timing["schema_version"] = 1  # Internal renderer arrays, not the file's persisted schema.
     timing["chapters"] = [c["title"] for c in owned]
+    timing["chapter_levels"] = [1 if c.get("level") else 0 for c in owned]
     timing["chapter_starts"] = [[float(c["start"]), i + 1] for i, c in enumerate(owned)]
     timing["headlines"] = sorted(
         [[c["start"] + row[0], row[1]] for c in owned for row in c["headlines"]], key=lambda row: row[0])

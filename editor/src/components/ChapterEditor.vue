@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import ChapterRow from './ChapterRow.vue';
 import DurationBadge from './DurationBadge.vue';
 import HeadlineEditor from './HeadlineEditor.vue';
-import { fmt, tc } from '../timing.js';
+import { chapterLabels, fmt, tc } from '../timing.js';
 
 const props = defineProps({
   chapters: { type: Array, required: true },
@@ -21,9 +21,11 @@ const props = defineProps({
 });
 const emit = defineEmits(['begin-edit', 'update-time', 'commit-time', 'error', 'select',
   'update-chapter-title', 'delete-chapter', 'add-chapter', 'select-headline', 'update-follow',
-  'update-text', 'add-headline', 'set-playhead', 'set-chapter-playhead', 'delete-headline', 'change-chapters-end']);
+  'update-text', 'add-headline', 'set-playhead', 'set-chapter-playhead', 'set-chapter-level', 'delete-headline', 'change-chapters-end']);
 const chaptersList = ref(null);
 const headlineEditor = ref(null);
+const levels = computed(() => props.starts.map((c, i) => i > 0 && c.level === 1 ? 1 : 0));
+const labels = computed(() => chapterLabels(levels.value));
 const ownedHeadlines = chapter => props.headlines.filter(h => h.chapterId === chapter.id);
 const selectedChapter = computed(() => props.starts.find(c => c.id === props.selectedChapterId) ?? props.starts[0]);
 const selectedHeadlines = computed(() => ownedHeadlines(selectedChapter.value));
@@ -56,11 +58,13 @@ defineExpose({ focusChapter, focusHeadline });
     <div id="chapters" class="chapter-list" ref="chaptersList" aria-label="Chapter list">
       <ChapterRow v-for="(chapter, i) in starts" :key="chapter.id" :chapter="chapter" :title="chapters[i]" :offset="offset"
         :selected="selectedChapter.id === chapter.id" :playing="playingChapterId === chapter.id"
+        :label="labels[i]" :sub="levels[i] === 1" :can-indent="i > 0"
         :headline-count="ownedHeadlines(chapter).length" :warning-count="warningCount(chapter)"
         :duration="rowDuration(i)"
         @begin-edit="emit('begin-edit')" @update-time="emit('update-time', chapter, $event)"
         @commit-time="emit('commit-time')" @error="emit('error', $event)" @select="emit('select', chapter)"
         @update-title="emit('update-chapter-title', chapter.ch, $event)" @set-playhead="emit('set-chapter-playhead', chapter)"
+        @set-level="emit('set-chapter-level', chapter, $event)"
         @delete="emit('delete-chapter', chapter.ch)" />
     </div>
     <label class="inline follow-control"><input id="followPlayhead" type="checkbox" :checked="followPlayhead"

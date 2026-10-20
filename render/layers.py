@@ -10,13 +10,14 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 import layout as L
-from chapter_scroll import scroll_position, scroll_steps
+from chapter_scroll import labels, parents, scroll_position, scroll_steps, visible_rows
 from timing import headline_intervals, normalize_chapters
 
 ROOT = Path(__file__).resolve().parent.parent
 FONT_PATH = ROOT / "assets" / "fonts" / "SUSE-Medium.otf"
 LOGO_PATH = ROOT / "assets" / "SUSE_Logo-hor_Green.png"
 SS = 4          # supersampling factor for rounded shapes
+SUB_SCALE = 0.88  # sub-chapter text relative to a chapter title
 PAD = 12        # px of slack either side of the headline wipe so glyph overhang isn't clipped
 
 
@@ -116,6 +117,10 @@ class Layout:
         self.t = timing
         self.chapters = timing["chapters"]
         self.n = len(self.chapters)
+        # Only some themes list sub-chapters; the others show every chapter, so a flat list is just all level 0.
+        self.nested = bool(getattr(D, "SUBCHAPTERS", False)) and any(timing.get("chapter_levels") or [])
+        self.levels = list(timing["chapter_levels"]) if self.nested else [0] * self.n
+        self.labels, self.parent = labels(self.levels), parents(self.levels)
         self.chapter_cx = (D.CHAPTER_VIEW["cx"] - (min(self.n, D.CHAPTER_SCROLL["visible"]) - 1) * D.PILL["pitch"] / 2
                            if self.horizontal else D.PILL["cx"])
         self.product = timing.get("product_name", "")
@@ -124,14 +129,19 @@ class Layout:
         self.duration = duration if duration is not None else timing.get("chapters_end") or max(
             60, *(s for s, _ in self.chapter_starts), *(s for s, _ in timing["headlines"]),
             timing.get("headlines_end") or 0) + 30
-        self.scroll_steps = scroll_steps(self.chapter_starts, self.n, D.CHAPTER_SCROLL)
+        self.scroll_steps = scroll_steps(self.chapter_starts, self.n, D.CHAPTER_SCROLL, self.levels)
         intervals = headline_intervals(timing)
         self.headlines = [(start, parse_headline(text)) for start, text, _ in intervals]
         self.hl_ends = [end for _, _, end in intervals]
         S = L.TEXT_SCALE
         self.pill_px = (fit_wrapped_px(self.chapters, D.PILL_TEXT_PX * S, D.PILL_TEXT_MAX_W, D.PILL_LINES)
                         if D.PILL_LINES > 1 else fit_px(self.chapters, D.PILL_TEXT_PX * S, D.PILL_TEXT_MAX_W))
-        self.chapter_lines = [wrap_text(title, D.PILL_TEXT_MAX_W, self.pill_px) for title in self.chapters]
+        self.sub_inset = 20 if theme == "dark-rail" else 44     # how far a sub-chapter is pulled in
+        self.sub_px = fit_wrapped_px([t for t, level in zip(self.chapters, self.levels) if level] or [" "],
+                                     D.PILL_TEXT_PX * S * SUB_SCALE, D.PILL_TEXT_MAX_W - self.sub_inset, D.PILL_LINES)
+        self.chapter_px = [self.sub_px if level else self.pill_px for level in self.levels]
+        self.chapter_lines = [wrap_text(title, D.PILL_TEXT_MAX_W - (self.sub_inset if level else 0), px)
+                              for title, level, px in zip(self.chapters, self.levels, self.chapter_px)]
         self.prod_px = fit_px([self.product or " "], D.PRODUCT_PX * S, D.PRODUCT_MAX_W)
         plains = ["".join(run for run, _ in parse_headline(text)) for _, text in timing["headlines"]]
         self.hl_px = fit_px(plains, D.HEADLINE_PX * S, D.HEADLINE_MAX_W)
@@ -148,6 +158,20 @@ class Layout:
             if s <= t + 1e-6:
                 ch = c
         return ch
+
+    def chapter_number(self, active):
+        """(number of the top-level chapter playing, number of top-level chapters)."""
+        top = self.parent[active - 1]
+        return sum(1 for level in self.levels[:top] if not level), sum(1 for level in self.levels if not level)
+
+    def span(self, active):
+        """(start, end) of the chapter the progress line follows: a chapter plus all of its sub-chapters."""
+        starts = self.chapter_starts
+        shown = self.parent[active - 1] if self.nested else active
+        index = next(i for i, (_, ch) in enumerate(starts) if ch == shown)
+        following = next((i for i in range(index + 1, self.n) if not self.levels[starts[i][1] - 1]), None)
+        end = self.duration if following is None else starts[following][0]
+        return starts[index][0], min(end, self.duration, self.t.get("chapters_end") or float("inf"))
 
     def headline_at(self, t):
         """(index, start_seconds) of the headline showing at t, or None."""
@@ -210,37 +234,47 @@ class Layout:
             d.text((x + D.PILL_TEXT_PAD, cy), self.chapters[active - 1],
                    font=font(self.pill_px), fill=rgb(B["pill_text"]), anchor="lm")
             return img
-        scrolling = self.n > D.CHAPTER_SCROLL["visible"]
-        count = D.CHAPTER_SCROLL["visible"] if self.theme == "dark-rail" else min(self.n, D.CHAPTER_SCROLL["visible"])
+        rows = visible_rows(self.levels, active)          # chapters listed now (sub-chapters only for the open one)
+        n = len(rows)
+        scrolling = n > D.CHAPTER_SCROLL["visible"]
+        # a list that grows and shrinks stays anchored at the top
+        count = D.CHAPTER_SCROLL["visible"] if self.theme == "dark-rail" or self.nested else min(n, D.CHAPTER_SCROLL["visible"])
         view = D.CHAPTER_VIEW
         left, top = int(view["cx"] - view["w"] / 2), int(view["cy"] - view["h"] / 2)
         clipped = scrolling or self.horizontal
         pills = Image.new("RGB", (view["w"], view["h"]), rgb(B["panel"])) if clipped else img
         d = ImageDraw.Draw(pills)
-        for i in range(1, self.n + 1):
-            cx = self.chapter_cx + ((i - 1 - offset) * D.PILL["pitch"] if self.horizontal else 0)
-            cy = D.PILL["cy_last"] - (0 if self.horizontal else (count - i + offset) * D.PILL["pitch"])
+        for pos, i in enumerate(rows, 1):
+            sub = self.levels[i - 1]
+            opened = self.nested and i != active and i == self.parent[active - 1]   # the chapter whose sub-chapter plays
+            cx = self.chapter_cx + ((pos - 1 - offset) * D.PILL["pitch"] if self.horizontal else 0)
+            cy = D.PILL["cy_last"] - (0 if self.horizontal else (count - pos + offset) * D.PILL["pitch"])
             if clipped:
                 cx -= left
                 cy -= top
                 if (cx + D.PILL["w"] / 2 <= 0 or cx - D.PILL["w"] / 2 >= view["w"] or
                         cy + D.PILL["h"] / 2 <= 0 or cy - D.PILL["h"] / 2 >= view["h"]):
                     continue
-            pill = dict(D.PILL, cx=cx) if clipped else D.PILL
-            paste_box(pills, pill, B["pill_active"] if i == active else B["pill_base"], B["pill_line"], cy=cy)
+            pill = dict(D.PILL, cx=cx) if clipped else dict(D.PILL)
+            if sub and self.theme == "classic":               # sub-chapter buttons are smaller and sit to the right
+                pill.update(cx=pill["cx"] + self.sub_inset / 2, w=pill["w"] - self.sub_inset, h=round(pill["h"] * 0.82))
+            line = B["pill_active"] if opened and self.theme == "classic" else B["pill_line"]
+            paste_box(pills, pill, B["pill_active"] if i == active else B["pill_base"], line, cy=cy)
             if self.theme == "dark-rail" or self.horizontal:
                 x = pill["cx"] - pill["w"] / 2
                 if i == active and not self.horizontal:
                     d.rectangle((x, cy - pill["h"] / 2 + 16, x + 3, cy + pill["h"] / 2 - 17), fill=rgb(B["accent"]))
-                d.text((x + 12, cy), "%02d" % i, font=font(D.CHAPTER_SCROLL["indicator_px"] * L.TEXT_SCALE),
-                       fill=rgb(B["accent"] if i == active else B["pill_text"]), anchor="lm")
+                lit = i == active or opened
+                d.text((x + 12 + (14 if sub else 0), cy), self.labels[i - 1],
+                       font=font(D.CHAPTER_SCROLL["indicator_px"] * L.TEXT_SCALE * (0.9 if sub else 1)),
+                       fill=rgb(B["accent"] if lit else B["pill_text"]), anchor="lm")
                 lines = self.chapter_lines[i - 1]
                 for row, text in enumerate(lines):
-                    y = cy + (row - (len(lines) - 1) / 2) * self.pill_px * 1.15
-                    d.text((x + D.PILL_TEXT_PAD, y), text, font=font(self.pill_px),
-                           fill=rgb(B["headline"] if i == active else B["pill_text"]), anchor="lm")
+                    y = cy + (row - (len(lines) - 1) / 2) * self.chapter_px[i - 1] * 1.15
+                    d.text((x + D.PILL_TEXT_PAD + (self.sub_inset if sub else 0), y), text, font=font(self.chapter_px[i - 1]),
+                           fill=rgb(B["headline"] if lit else B["pill_text"]), anchor="lm")
             else:
-                d.text((pill["cx"], cy), self.chapters[i - 1], font=font(self.pill_px),
+                d.text((pill["cx"], cy), self.chapters[i - 1], font=font(self.chapter_px[i - 1]),
                        fill=rgb(B["pill_text"]), anchor="mm")
         if clipped:
             img.paste(pills, (left, top))
@@ -248,12 +282,12 @@ class Layout:
             d = ImageDraw.Draw(img)
             settings = D.CHAPTER_SCROLL
             indicator_font = font(settings["indicator_px"] * L.TEXT_SCALE)
-            d.text((D.CHAPTER_VIEW["cx"], settings["indicator_y"]), "Chapter %d of %d" % (active, self.n),
+            d.text((D.CHAPTER_VIEW["cx"], settings["indicator_y"]), "Chapter %d of %d" % self.chapter_number(active),
                    font=indicator_font, fill=rgb(B["product"]), anchor="mm")
             if offset > 1e-6:
                 d.text((settings["arrow_x"], settings["arrow_top"]), "<" if self.horizontal else "^",
                        font=indicator_font, fill=rgb(B["product"]), anchor="mm")
-            if offset < self.n - count - 1e-6:
+            if offset < n - count - 1e-6:
                 d.text((settings["arrow_end_x"] if self.horizontal else settings["arrow_x"],
                         settings["arrow_top"] if self.horizontal else settings["indicator_y"]), ">" if self.horizontal else "v",
                        font=indicator_font, fill=rgb(B["product"]), anchor="mm")
@@ -321,10 +355,7 @@ class Layout:
             mask = rrect_mask(*self.slot_size, D.CONTENT["r"]) if D.CONTENT["r"] else None
             img.paste(video, self.slot, mask)
         if self.theme != "classic":
-            index = next(i for i, (_, ch) in enumerate(self.chapter_starts) if ch == active)
-            start = self.chapter_starts[index][0]
-            end = min(self.chapter_starts[index + 1][0] if index + 1 < self.n else self.duration,
-                      self.duration, self.t.get("chapters_end") or float("inf"))
+            start, end = self.span(active)
             progress = max(0.0, min(1.0, (t - start) / max(0.001, end - start)))
             box = D.PROGRESS
             track = Image.new("RGB", (box["w"], box["h"]), rgb(D.BRAND["pill_active"]))

@@ -4,6 +4,7 @@
   "themes": {
     "classic": {
       "label": "Classic",
+      "SUBCHAPTERS": true,
       "description": "The original white sidebar, chapter buttons and framed headline.",
       "BRAND": {
         "canvas": "#0C322C", "panel": "#FFFFFF", "bar_fill": "#16453B", "bar_line": "#FFFFFF",
@@ -23,6 +24,7 @@
     },
     "dark-rail": {
       "label": "Dark rail",
+      "SUBCHAPTERS": true,
       "description": "A numbered chapter agenda and clean headline beside unobscured demo footage.",
       "BRAND": {
         "canvas": "#0C322C", "panel": "#092922", "bar_fill": "#0C322C", "bar_line": "#0C322C",

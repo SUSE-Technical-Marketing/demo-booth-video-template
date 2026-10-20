@@ -2,7 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import AccentText from './AccentText.vue';
 import { clipAt, clipLayersAt } from '../videos.js';
-import { activeChapter, activeHeadline, chapterEnd, chapterScrollAt, chapterScrollSteps, duration, TEXT_SCALE } from '../timing.js';
+import { activeChapter, activeHeadline, chapterEnd, chapterLabels, chapterLevels, chapterNumber, chapterParents, chapterScrollAt,
+  chapterScrollSteps, duration, TEXT_SCALE, visibleRows } from '../timing.js';
 import { themeLayout } from '../themes.js';
 import localLogo from '../../../assets/SUSE_Logo-hor_Green.png';
 
@@ -82,12 +83,20 @@ const modern = computed(() => themeId.value !== 'classic');
 const cinematic = computed(() => themeId.value === 'cinematic');
 const horizontal = computed(() => design.value.CHAPTER_AXIS === 'horizontal');
 watch(themeId, () => { logoFailed.value = false; });
-const steps = computed(() => chapterScrollSteps(props.state, design.value.CHAPTER_SCROLL));
+// Themes that list sub-chapters show every chapter plus the sub-chapters of the one playing; others show a flat list.
+const levels = computed(() => chapterLevels(props.state, !!design.value.SUBCHAPTERS));
+const hasSubs = computed(() => levels.value.some(Boolean));
+const steps = computed(() => chapterScrollSteps(props.state, design.value.CHAPTER_SCROLL, levels.value));
 const offset = computed(() => chapterScrollAt(props.cur, steps.value, design.value.CHAPTER_SCROLL.seconds));
 const active = computed(() => activeChapter(props.state, props.cur));
+const rows = computed(() => visibleRows(levels.value, active.value));
+const labels = computed(() => chapterLabels(levels.value));
+const numbers = computed(() => chapterNumber(levels.value, active.value));
+const rowLabel = ch => labels.value[ch - 1].includes('.') ? labels.value[ch - 1] : labels.value[ch - 1].padStart(2, '0');
 const headline = computed(() => activeHeadline(props.state, props.cur));
-const scrolling = computed(() => props.state.chapters.length > design.value.CHAPTER_SCROLL.visible);
-const count = computed(() => Math.min(props.state.chapters.length, design.value.CHAPTER_SCROLL.visible));
+const scrolling = computed(() => rows.value.length > design.value.CHAPTER_SCROLL.visible);
+const count = computed(() => Math.min(rows.value.length, design.value.CHAPTER_SCROLL.visible));
+const SUB_SCALE = 0.88, subInset = computed(() => themeId.value === 'dark-rail' ? 20 : 44);
 const chapterCenter = computed(() => design.value.CHAPTER_VIEW.cx - (count.value - 1) * design.value.PILL.pitch / 2);
 const boxStyle = box => ({
   left: `${box.cx - box.w / 2}px`, top: `${box.cy - box.h / 2}px`,
@@ -105,26 +114,37 @@ const productStyle = computed(() => {
     textAlign: cinematic.value ? 'right' : 'center' };
 });
 const progress = computed(() => {
+  const end = props.state.preview_end ?? duration(props.state);
+  if (hasSubs.value) {                    // a chapter's line runs through its sub-chapters
+    const chapter = props.state.chapter_starts.find(c => c.ch === chapterParents(levels.value)[active.value - 1]);
+    const next = props.state.chapter_starts.find(c => c.t > chapter.t && !levels.value[c.ch - 1] && c.ch > chapter.ch);
+    const stop = Math.min(next?.t ?? end, end, props.state.chapters_end ?? Infinity);
+    return Math.max(0, Math.min(1, (props.cur - chapter.t) / Math.max(0.001, stop - chapter.t)));
+  }
   const chapter = props.state.chapter_starts.find(c => c.ch === active.value);
-  const end = chapterEnd(props.state, chapter, props.state.preview_end ?? duration(props.state));
-  return Math.max(0, Math.min(1, (props.cur - chapter.t) / Math.max(0.001, end - chapter.t)));
+  const end2 = chapterEnd(props.state, chapter, end);
+  return Math.max(0, Math.min(1, (props.cur - chapter.t) / Math.max(0.001, end2 - chapter.t)));
 });
 function fadeStyle(fade) {
   const color = design.value.BRAND.canvas, alpha = value => value.toString(16).padStart(2, '0');
   return { left: 0, top: `${fade.y}px`, width: '1920px', height: `${fade.h}px`,
     background: `linear-gradient(${color}${alpha(fade.from)}, ${color}${alpha(fade.to)})` };
 }
-function pillStyle(i) {
-  const d = design.value, pill = d.PILL, view = d.CHAPTER_VIEW, on = active.value === i + 1;
-  const rows = modern.value ? d.CHAPTER_SCROLL.visible : count.value;
-  const cx = horizontal.value ? chapterCenter.value + (i - offset.value) * pill.pitch : pill.cx;
-  const cy = pill.cy_last - (horizontal.value ? 0 : (rows - i - 1 + offset.value) * pill.pitch);
+function pillStyle(pos, ch) {          // pos: place in the listed rows, ch: the chapter's number
+  const d = design.value, view = d.CHAPTER_VIEW, on = active.value === ch, sub = levels.value[ch - 1] === 1;
+  const opened = hasSubs.value && !on && chapterParents(levels.value)[active.value - 1] === ch;   // its sub-chapter plays
+  const pill = sub && !modern.value ? { ...d.PILL, w: d.PILL.w - subInset.value, h: Math.round(d.PILL.h * 0.82) } : d.PILL;
+  const anchored = modern.value || hasSubs.value ? d.CHAPTER_SCROLL.visible : count.value;
+  const cx = (horizontal.value ? chapterCenter.value + (pos - offset.value) * d.PILL.pitch : d.PILL.cx) +
+    (sub && !modern.value ? subInset.value / 2 : 0);
+  const cy = d.PILL.cy_last - (horizontal.value ? 0 : (anchored - pos - 1 + offset.value) * d.PILL.pitch);
   return { ...boxStyle({ ...pill, cx, cy }),
     left: `${cx - pill.w / 2 - (view.cx - view.w / 2)}px`,
     top: `${cy - pill.h / 2 - (view.cy - view.h / 2)}px`,
-    fontSize: `${props.pillPx}px`, background: on ? d.BRAND.pill_active : d.BRAND.pill_base,
-    color: modern.value && on ? d.BRAND.headline : d.BRAND.pill_text, borderColor: d.BRAND.pill_line,
-    paddingLeft: modern.value ? `${d.PILL_TEXT_PAD}px` : 0,
+    fontSize: `${props.pillPx * (sub ? SUB_SCALE : 1)}px`, background: on ? d.BRAND.pill_active : d.BRAND.pill_base,
+    color: modern.value && (on || opened) ? d.BRAND.headline : d.BRAND.pill_text,
+    borderColor: opened && !modern.value ? d.BRAND.pill_active : d.BRAND.pill_line,
+    paddingLeft: modern.value ? `${d.PILL_TEXT_PAD + (sub ? subInset.value : 0)}px` : 0,
     paddingRight: modern.value ? '16px' : 0 };
 }
 function indicatorStyle(x, y, width) {
@@ -160,20 +180,21 @@ const headlineStyle = computed(() => {
         top: `${design.LOGO_CY - design.LOGO_W_PX / 6}px`, width: `${design.LOGO_W_PX}px`, fontSize: `${design.LOGO_W_PX / 3.375}px` }">SUSE</div>
       <div id="prodname" class="abs" :style="productStyle">{{ state.product_name }}</div>
       <div v-if="!cinematic" id="chapterViewport" class="abs" :style="boxStyle(design.CHAPTER_VIEW)">
-        <div v-for="(title, i) in state.chapters" :key="i" class="abs pill" :class="{ on: active === i + 1 }"
-          :data-number="String(i + 1).padStart(2, '0')" :style="pillStyle(i)">{{ title }}
-          <div v-if="horizontal && active === i + 1" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
+        <div v-for="(ch, pos) in rows" :key="ch" class="abs pill"
+          :class="{ on: active === ch, sub: levels[ch - 1] === 1, opened: hasSubs && active !== ch && chapterParents(levels)[active - 1] === ch }"
+          :data-number="rowLabel(ch)" :style="pillStyle(pos, ch)">{{ state.chapters[ch - 1] }}
+          <div v-if="horizontal && active === ch" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
             :style="{ height: `${design.PROGRESS.h}px`, background: design.BRAND.pill_active }">
             <span :style="{ width: `${progress * 100}%`, background: design.BRAND.accent }"></span>
           </div>
         </div>
       </div>
       <div v-if="!cinematic && (scrolling || modern)" id="chapterCounter" class="abs chapterIndicator"
-        :style="indicatorStyle(design.CHAPTER_VIEW.cx, design.CHAPTER_SCROLL.indicator_y, modern ? 240 : 300)">Chapter {{ active }} of {{ state.chapters.length }}</div>
+        :style="indicatorStyle(design.CHAPTER_VIEW.cx, design.CHAPTER_SCROLL.indicator_y, modern ? 240 : 300)">Chapter {{ numbers[0] }} of {{ numbers[1] }}</div>
       <div v-if="!cinematic && scrolling && offset > 1e-6" id="chaptersAbove" class="abs chapterIndicator"
         :title="horizontal ? 'More chapters to the left' : 'More chapters above'"
         :style="indicatorStyle(design.CHAPTER_SCROLL.arrow_x, design.CHAPTER_SCROLL.arrow_top, 24)">{{ horizontal ? '<' : '^' }}</div>
-      <div v-if="!cinematic && scrolling && offset < state.chapters.length - count - 1e-6" id="chaptersBelow" class="abs chapterIndicator"
+      <div v-if="!cinematic && scrolling && offset < rows.length - count - 1e-6" id="chaptersBelow" class="abs chapterIndicator"
         :title="horizontal ? 'More chapters to the right' : 'More chapters below'"
         :style="indicatorStyle(horizontal ? design.CHAPTER_SCROLL.arrow_end_x : design.CHAPTER_SCROLL.arrow_x,
           horizontal ? design.CHAPTER_SCROLL.arrow_top : design.CHAPTER_SCROLL.indicator_y, 24)">{{ horizontal ? '>' : 'v' }}</div>
