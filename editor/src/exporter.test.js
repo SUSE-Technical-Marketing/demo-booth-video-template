@@ -26,6 +26,41 @@ describe('helpers', () => {
   });
 });
 
+describe('export kinds', () => {
+  it('knows what each kind produces', async () => {
+    const { KINDS } = await import('./exporter.js');
+    expect(KINDS.video).toMatchObject({ ext: '.mp4', mime: 'video/mp4' });
+    expect(KINDS.page).toMatchObject({ ext: '.zip', mime: 'application/zip' });
+  });
+  it('asks the picker for a zip when saving a page', async () => {
+    const { chooseLocation } = await import('./exporter.js');
+    const picker = vi.fn(() => Promise.resolve({ name: 'a.zip' }));
+    vi.stubGlobal('showSaveFilePicker', picker);
+    await chooseLocation('booth.zip', null, 'page');
+    expect(picker).toHaveBeenCalledWith({ suggestedName: 'booth.zip',
+      types: [{ description: 'Zip archive', accept: { 'application/zip': ['.zip'] } }] });
+    await chooseLocation('booth.mp4');
+    expect(picker.mock.calls[1][0].types[0].accept).toEqual({ 'video/mp4': ['.mp4'] });
+    vi.unstubAllGlobals();
+  });
+  it('sends the kind to the service', async () => {
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/jobs') return Promise.resolve({ ok: true, status: 201, json: () => Promise.resolve({ id: 'k1', token: 't', media: [], names: [] }) });
+      if (url === '/api/jobs/k1') return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ status: 'done' }) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+    }));
+    vi.useFakeTimers();
+    const { runExport } = await import('./exporter.js');
+    const promise = runExport({ project: '{"project_version":1}', files: new Map(), size: '1920x1080', quality: 'standard',
+      filename: 'x', kind: 'page', onUpdate() {} });
+    await vi.advanceTimersByTimeAsync(1000);
+    await promise;
+    vi.useRealTimers();
+    expect(JSON.parse(fetch.mock.calls[0][1].body).kind).toBe('page');
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('saving the video', () => {
   afterEach(() => vi.unstubAllGlobals());
   const done = { job: 'j', token: 't' };
@@ -121,7 +156,7 @@ describe('service calls', () => {
     vi.useRealTimers();
     expect(out).toMatchObject({ job: 'j1', token: 'tok', view: { status: 'done' } });
     const create = fetch.mock.calls[0];
-    expect(JSON.parse(create[1].body)).toEqual({ project: { project_version: 1 }, size: '3840x2160', quality: 'high', fast: false, audio: expectedAudio, filename: 'x' });
+    expect(JSON.parse(create[1].body)).toEqual({ project: { project_version: 1 }, size: '3840x2160', quality: 'high', fast: false, audio: expectedAudio, filename: 'x', kind: 'video' });
     expect(calls.filter(c => c[0] === 'upload').map(c => [c[2], c[3], c[4]])).toEqual([
       ['/api/jobs/j1/media/0', ['X-Booth-Export', '1'], 4], ['/api/jobs/j1/media/1', ['X-Booth-Export', '1'], 2]]);   // only the used media, by slot
     expect(calls.filter(c => c[0] !== 'upload').every(c => c[2] === '1')).toBe(true);

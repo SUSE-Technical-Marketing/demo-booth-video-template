@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
-import { canChooseLocation, chooseLocation, formatBytes, formatEta, getInfo, QUALITIES, removeJob, runExport, saveVideo, sizeHint, slowdown } from '../exporter.js';
+import { canChooseLocation, chooseLocation, formatBytes, formatEta, getInfo, KINDS, QUALITIES, removeJob, runExport, saveVideo, sizeHint, slowdown } from '../exporter.js';
+import { themeLayout } from '../themes.js';
 import { DEFAULT_RESOLUTION, RESOLUTIONS } from '../project.js';
 import { fmt } from '../timing.js';
 
@@ -9,6 +10,7 @@ const props = defineProps({
   files: { type: Object, required: true },           // Map: media id -> the File that was linked
   getProject: { type: Function, required: true },    // returns the project file's JSON text (throws if it is invalid)
   resolution: { type: String, default: DEFAULT_RESOLUTION },
+  theme: { type: String, default: 'classic' },
   startIn: { type: Object, default: null },          // project folder or file handle: the save picker opens there
   title: { type: String, default: '' },
   duration: { type: Number, default: 0 },
@@ -16,6 +18,7 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 
 const info = ref(null), checking = ref(true);
+const kind = ref('video');                          // video: the branded MP4 · page: the interactive web page (zip)
 const size = ref(props.resolution), quality = ref('standard'), fast = ref(false), audio = ref(true);
 const filename = ref((props.title || 'booth-video').replace(/[^\w .-]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'booth-video');
 const stage = ref('form');                           // form | running | done | error
@@ -29,9 +32,14 @@ const sizes = computed(() => RESOLUTIONS.some(([value]) => value === size.value)
 const width = computed(() => size.value.split('x')[0]), height = computed(() => size.value.split('x')[1]);
 const missing = computed(() => [...new Set(props.clips.filter(c => !props.files.has(c.media_id)).map(c => c.name))]);
 const videoCount = computed(() => new Set(props.clips.map(c => c.media_id)).size);
-const factor = computed(() => slowdown(size.value, quality.value));
+const page = computed(() => kind.value === 'page');
+const ext = computed(() => KINDS[kind.value].ext);
+const pageReady = computed(() => info.value?.page === true);         // an older service does not know pages (and would make a video)
+const serviceOld = computed(() => info.value != null && info.value.page === undefined);
+const footage = computed(() => { const box = themeLayout(props.theme).CONTENT; return `${box.w} × ${box.h}`; });
+const factor = computed(() => slowdown(page.value ? '1920x1080' : size.value, quality.value));
 const hardware = computed(() => Boolean(info.value?.encoders?.h264_videotoolbox));
-const ready = computed(() => props.clips.length > 0 && !missing.value.length);
+const ready = computed(() => props.clips.length > 0 && !missing.value.length && (!page.value || pageReady.value));
 const percent = computed(() => Math.round(update.value.fraction * 100));
 const speed = computed(() => factor.value < 0.8 ? 'Quick render' : factor.value < 1.5 ? 'About as fast as 1080p Standard'
   : `About ${factor.value.toFixed(factor.value < 10 ? 1 : 0)}× slower than 1080p Standard`);
@@ -57,7 +65,7 @@ async function start() {
   update.value = { phase: 'uploading', fraction: 0, message: 'Starting' };
   try {
     result.value = await runExport({
-      project, files: props.files, size: size.value, quality: quality.value,
+      project, files: props.files, size: size.value, quality: quality.value, kind: kind.value,
       fast: fast.value && hardware.value, audio: audio.value, filename: filename.value, signal: controller.signal,
       onUpdate: value => { update.value = value; },
     });
@@ -72,10 +80,10 @@ async function start() {
 function cancel() { controller?.abort(); }
 // A chosen location belongs to one export and to one file name: the name field follows it, and typing a different
 // name drops it, so a later export can never be written over an earlier file by accident.
-const stem = name => name.replace(/\.mp4$/i, '');
+const stem = name => name.replace(/\.(mp4|zip)$/i, '');
 async function choose() {
   try {
-    const picked = await chooseLocation(`${filename.value.trim() || 'booth-video'}.mp4`, props.startIn);
+    const picked = await chooseLocation(`${filename.value.trim() || 'booth-video'}${ext.value}`, props.startIn, kind.value);
     filename.value = stem(picked.name);
     target.value = picked;
   }
@@ -84,11 +92,12 @@ async function choose() {
 async function save(askAgain = false) {
   try {
     saved.value = await saveVideo(result.value, result.value.view.filename,
-      { target: askAgain === true ? null : target.value, startIn: props.startIn });
+      { target: askAgain === true ? null : target.value, startIn: props.startIn, kind: kind.value });
   } catch (error) {
     if (error.name !== 'AbortError') saveError.value = error.message;
   }
 }
+watch(kind, () => { target.value = null; });                 // a chosen file is a .mp4 or a .zip, not both
 watch(filename, name => { if (target.value && stem(target.value.name) !== name.trim()) target.value = null; });
 function again() {
   if (result.value) removeJob(result.value.job);
@@ -116,8 +125,9 @@ onUnmounted(() => {
     <section ref="dialog" class="export-dialog" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
       <header class="export-head">
         <svg class="export-glyph" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div><h2 id="exportTitle">Export video</h2>
-          <p>Render the finished, branded MP4 with the chapter panel and headlines.</p></div>
+        <div><h2 id="exportTitle">{{ page ? 'Export interactive page' : 'Export video' }}</h2>
+          <p v-if="page">A web page with the same layout. Press a chapter, or the timeline, to jump to it.</p>
+          <p v-else>Render the finished, branded MP4 with the chapter panel and headlines.</p></div>
         <button class="icon ghost export-x" aria-label="Close" :disabled="stage === 'running'" @click="close">✕</button>
       </header>
 
@@ -144,8 +154,29 @@ onUnmounted(() => {
           <p>Link {{ missing.join(', ') }} in <i>Videos</i> (<b>Relink media…</b> or <b>Open project folder…</b>) so it can be rendered.</p>
         </div>
 
+        <div class="export-field"><span id="kindLabel">Format</span>
+          <div class="export-seg" role="radiogroup" aria-labelledby="kindLabel">
+            <button type="button" role="radio" :aria-checked="!page" :class="{ on: !page }" data-kind="video" @click="kind = 'video'">
+              Video<small>An MP4 with the layout built in</small></button>
+            <button type="button" role="radio" :aria-checked="page" :class="{ on: page }" data-kind="page" @click="kind = 'page'">
+              Interactive page<small>A web page with a clickable chapter list and timeline</small></button>
+          </div>
+        </div>
+        <div v-if="page && !pageReady" id="exportNoPage" class="export-callout warn">
+          <template v-if="serviceOld">
+            <strong>The export service is older than this editor.</strong>
+            <p>Stop it and start it again (<code>start_editor.command</code>, <code>mise run run</code> or
+              <code>python3 render/server.py</code>) so it can make interactive pages.</p>
+          </template>
+          <template v-else>
+            <strong>The interactive page isn't built yet.</strong>
+            <p>Run <code>bun run build:player</code> once, then try again. (Starting the editor with <code>bun run dev</code>,
+              <code>start_editor.command</code> or the container builds it for you.)</p>
+          </template>
+        </div>
+
         <label class="export-field"><span>File name</span>
-          <span class="export-name"><input ref="nameInput" id="exportName" v-model="filename" spellcheck="false" aria-label="File name"><em>.mp4</em></span></label>
+          <span class="export-name"><input ref="nameInput" id="exportName" v-model="filename" spellcheck="false" aria-label="File name"><em>{{ ext }}</em></span></label>
 
         <div class="export-field"><span id="saveLabel">Save to</span>
           <div v-if="canChoose" class="export-where">
@@ -156,7 +187,7 @@ onUnmounted(() => {
           <small v-else id="exportTarget">This browser can't choose a folder: the video goes to your Downloads folder. Use Chrome or Edge to pick the location.</small>
         </div>
 
-        <div class="export-field"><span id="resLabel">Resolution</span>
+        <div v-if="!page" class="export-field"><span id="resLabel">Resolution</span>
           <div class="export-select">
             <select id="exportResolution" v-model="size" aria-labelledby="resLabel">
               <option v-for="[value, label] in sizes" :key="value" :value="value">{{ label }}{{ value === props.resolution ? ' · project setting' : '' }}</option>
@@ -179,9 +210,16 @@ onUnmounted(() => {
         <label v-if="hardware" class="export-check"><input id="exportFast" v-model="fast" type="checkbox">
           <span>Use the Mac hardware encoder <small>(much faster, slightly larger files, quality setting is ignored)</small></span></label>
 
+        <p v-if="page" id="pageHint" class="export-note">Makes a zip with <b>index.html</b> and <b>video.mp4</b>: unzip it and open the page in
+          any browser, even without internet. The chapters and headlines are drawn live over the video, so the footage is
+          encoded at the layout's video area ({{ footage }}) with no branding burned in.</p>
+
         <div class="export-chips" aria-label="Summary">
-          <span class="chip">{{ width }} × {{ height }}</span>
-          <span class="chip">H.264 · MP4</span>
+          <span v-if="page" class="chip">Web page · ZIP</span>
+          <span v-if="page" class="chip">{{ footage }} video</span>
+          <span v-else class="chip">{{ width }} × {{ height }}</span>
+          <span v-if="!page" class="chip">H.264 · MP4</span>
+          <span v-else class="chip">H.264 video</span>
           <span class="chip">{{ audio ? 'With audio' : 'No audio' }}</span>
           <span class="chip">{{ videoCount }} {{ videoCount === 1 ? 'video' : 'videos' }}</span>
           <span class="chip">{{ fmt(duration) }} long</span>
@@ -204,13 +242,14 @@ onUnmounted(() => {
 
       <div v-else-if="stage === 'done'" id="exportDone" class="export-body">
         <div class="export-callout ok">
-          <strong>Your video is ready.</strong>
-          <p>{{ result.view.filename }} · {{ formatBytes(result.view.size) }} · {{ width }} × {{ height }}</p>
+          <strong>{{ page ? 'Your interactive page is ready.' : 'Your video is ready.' }}</strong>
+          <p>{{ result.view.filename }} · {{ formatBytes(result.view.size) }}<template v-if="!page"> · {{ width }} × {{ height }}</template></p>
+          <p v-if="page" id="exportPageHow">Unzip it, then open <b>index.html</b> in a browser. Keep <b>video.mp4</b> beside it.</p>
           <p v-if="saved" id="exportSaved" class="export-saved">Saved as {{ saved.name }} in {{ saved.where }}.</p>
           <p v-if="saveError" id="exportSaveError" class="export-saved bad">{{ saveError }}</p>
         </div>
         <footer class="export-foot"><button class="ghost" @click="again">Export another</button>
-          <button id="exportSave" class="primary" @click="save(true)">{{ saved ? 'Save another copy…' : 'Save video…' }}</button></footer>
+          <button id="exportSave" class="primary" @click="save(true)">{{ saved ? 'Save another copy…' : (page ? 'Save page…' : 'Save video…') }}</button></footer>
       </div>
 
       <div v-else id="exportError" class="export-body">

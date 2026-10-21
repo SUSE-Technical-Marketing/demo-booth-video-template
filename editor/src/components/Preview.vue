@@ -17,8 +17,11 @@ const props = defineProps({
   playing: { type: Boolean, default: false },
   muted: { type: Boolean, default: false },
   presentation: { type: Boolean, default: false },
+  interactive: { type: Boolean, default: false },   // chapter buttons can be pressed (the exported page)
+  offline: { type: Boolean, default: false },       // use the bundled logo instead of the one on suse.com
+  settled: { type: Boolean, default: false },       // while paused, show the whole headline instead of part-way through its wipe
 });
-const emit = defineEmits(['playback-error', 'buffering']);
+const emit = defineEmits(['playback-error', 'buffering', 'select-chapter']);
 const view = ref(null), scale = ref(1), logoFailed = ref(false);
 let observer;
 onMounted(() => {
@@ -37,6 +40,14 @@ const videoStyle = c => {
   return { display: index < 0 ? 'none' : '', opacity: layers.value[index]?.opacity ?? 0, zIndex: index + 1 };
 };
 const setVideo = (id, el) => { if (el) videos.set(id, el); else videos.delete(id); };
+// Where the video that is showing has got to, in project time, so a page can let the video keep the clock.
+function mediaState() {
+  const layer = layers.value.at(-1), el = layer && videos.get(layer.clip.id);
+  if (!el) return null;
+  return { time: layer.clip.start + el.currentTime - (layer.clip.source_in ?? 0), ended: el.ended, paused: el.paused,
+    seeking: el.seeking };
+}
+defineExpose({ mediaState });
 let previousTime = props.cur;
 let previousActive = new Set();
 function mediaError(c, event) {
@@ -80,6 +91,7 @@ watch([() => props.cur, () => props.playing, clip, () => props.clips.length], sy
 const themeId = computed(() => props.state.output?.theme ?? 'classic');
 const design = computed(() => themeLayout(themeId.value));
 const modern = computed(() => themeId.value !== 'classic');
+const localLogo_ = computed(() => modern.value || props.offline);
 const cinematic = computed(() => themeId.value === 'cinematic');
 const horizontal = computed(() => design.value.CHAPTER_AXIS === 'horizontal');
 watch(themeId, () => { logoFailed.value = false; });
@@ -103,9 +115,10 @@ const boxStyle = box => ({
   width: `${box.w}px`, height: `${box.h}px`, borderRadius: `${box.r}px`, borderWidth: `${box.line ?? 0}px`,
 });
 const logoStyle = computed(() => {
-  const d = design.value, width = d.LOGO_W_PX * (modern.value ? 1125 / 880 : 1), height = width / 3;
+  const d = design.value, width = d.LOGO_W_PX * (localLogo_.value ? 1125 / 880 : 1), height = width / 3;
+  const filter = modern.value ? 'brightness(0) invert(1)' : props.offline ? 'none' : 'invert(1) hue-rotate(180deg)';
   return { left: `${d.LOGO_CX - width / 2}px`, top: `${d.LOGO_CY - height / 2}px`,
-    width: `${width}px`, height: `${height}px`, filter: modern.value ? 'brightness(0) invert(1)' : 'invert(1) hue-rotate(180deg)' };
+    width: `${width}px`, height: `${height}px`, filter };
 });
 const productStyle = computed(() => {
   const d = design.value;
@@ -153,7 +166,8 @@ function indicatorStyle(x, y, width) {
     width: `${width}px`, fontSize: `${px}px`, color: design.value.BRAND.product };
 }
 const headlineStyle = computed(() => {
-  const progress = headline.value ? Math.max(0, Math.min(1, (props.cur - headline.value.t) / Math.max(0.01, props.state.wipe_seconds))) : 1;
+  const progress = headline.value && !(props.settled && !props.playing)
+    ? Math.max(0, Math.min(1, (props.cur - headline.value.t) / Math.max(0.01, props.state.wipe_seconds))) : 1;
   return { fontSize: `${props.headlinePx}px`, clipPath: `inset(-20px ${(1 - progress) * 100}% -20px -12px)` };
 });
 </script>
@@ -175,14 +189,19 @@ const headlineStyle = computed(() => {
       <div v-for="(fade, i) in design.FADES ?? []" :key="i" class="abs video-fade" :style="fadeStyle(fade)"></div>
       <div v-if="!cinematic && !horizontal" id="panel" class="abs" :style="{ ...boxStyle(design.PANEL), background: design.BRAND.panel }"></div>
       <img v-if="!logoFailed" id="logo" class="abs" :style="logoStyle"
-        :src="modern ? localLogo : 'https://www.suse.com/assets/img/suse-white-logo-green.svg'" alt="SUSE" @error="logoFailed = true">
+        :src="localLogo_ ? localLogo : 'https://www.suse.com/assets/img/suse-white-logo-green.svg'" alt="SUSE" @error="logoFailed = true">
       <div v-else id="logoFallback" class="abs" :style="{ left: `${design.LOGO_CX - design.LOGO_W_PX / 2}px`,
         top: `${design.LOGO_CY - design.LOGO_W_PX / 6}px`, width: `${design.LOGO_W_PX}px`, fontSize: `${design.LOGO_W_PX / 3.375}px` }">SUSE</div>
       <div id="prodname" class="abs" :style="productStyle">{{ state.product_name }}</div>
       <div v-if="!cinematic" id="chapterViewport" class="abs" :style="boxStyle(design.CHAPTER_VIEW)">
         <div v-for="(ch, pos) in rows" :key="ch" class="abs pill"
           :class="{ on: active === ch, sub: levels[ch - 1] === 1, opened: hasSubs && active !== ch && chapterParents(levels)[active - 1] === ch }"
-          :data-number="rowLabel(ch)" :style="pillStyle(pos, ch)">{{ state.chapters[ch - 1] }}
+          :data-number="rowLabel(ch)" :style="{ ...pillStyle(pos, ch), ...(interactive ? { cursor: 'pointer' } : {}) }"
+          v-bind="interactive ? { role: 'button', tabindex: 0, 'aria-label': `Go to ${state.chapters[ch - 1]}`,
+            'aria-current': active === ch ? 'true' : undefined } : {}"
+          @click="interactive && emit('select-chapter', ch)"
+          @keydown.enter.prevent="interactive && emit('select-chapter', ch)"
+          @keydown.space.prevent="interactive && emit('select-chapter', ch)">{{ state.chapters[ch - 1] }}
           <div v-if="horizontal && active === ch" id="chapterProgress" class="abs chapter-progress" aria-hidden="true"
             :style="{ height: `${design.PROGRESS.h}px`, background: design.BRAND.pill_active }">
             <span :style="{ width: `${progress * 100}%`, background: design.BRAND.accent }"></span>

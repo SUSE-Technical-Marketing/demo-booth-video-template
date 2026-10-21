@@ -401,6 +401,68 @@ def render_project(args, ffmpeg, progress=None, cancel=None):
                                                 "Rendering", fps=fps, remaining=(total - frames) / fps if total and fps else None)) if progress else None)
 
 
+def render_footage(args, ffmpeg, progress=None, cancel=None):
+    """The project's clips joined and encoded as one web-friendly MP4 with no branding, for the interactive page, which
+    draws the chapters and headlines itself. The picture is the content area of the theme, so it fits the page's slot.
+    Returns False if cancel was set. progress(fraction, note) is called as in render_project."""
+    project, path = load_project(args.project)
+    fps, _ = output_settings(args, project)
+    if fps != project["output"].get("fps"):
+        project["output"]["fps"] = fps
+        validate_project(project)
+    output = Path(args.output or path.with_name(path.stem + "-footage.mp4"))
+    if output.resolve() == path or any(
+            output.resolve() == (path.parent / resolve_media_path(m["path"], project.get("media_folder", ""))).resolve()
+            for m in project["media"]):
+        raise ValueError("Output must not overwrite the project or source media")
+    with tempfile.TemporaryDirectory(prefix="booth-assembly-") as directory:
+        assembled = assemble_project(project, path, directory, ffmpeg, probe, slot_filter, source_matrix,
+                                     progress=(lambda f: progress(f * ASSEMBLY_SHARE, "Preparing clips")) if progress else None,
+                                     cancel=cancel)
+        if assembled is None:
+            return False
+        master, duration = assembled
+        rate = float(project_fps(fps))
+        vcodec = ["-c:v", "libx264", "-crf", str(args.crf), "-preset", args.preset]
+        if args.fast:
+            vcodec = ["-c:v", "h264_videotoolbox", "-b:v", getattr(args, "bitrate", None) or "8M"]
+        audio = ["-an"] if getattr(args, "no_audio", False) else ["-map", "0:a:0", "-c:a", "aac", "-b:a", "160k"]
+        command = [ffmpeg, "-y", "-v", "error", "-nostats", "-progress", "pipe:1", "-i", str(master), "-map", "0:v:0"] + audio + vcodec + [
+            # the same HD colour handling as the branded video; a keyframe every second keeps scrubbing quick
+            # H.264 needs even sizes and Classic's video area is 1459 wide: drop the odd pixel (the page fits the picture to its area)
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2:in_range=full:out_range=tv:out_color_matrix=bt709,format=yuv420p,"
+                   "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv",
+            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+            "-g", str(max(1, round(rate))), "-movflags", "+faststart", str(output)]
+        errors = tempfile.TemporaryFile()
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, text=True)
+        started = time.time()
+        cancelled = False
+        for line in process.stdout:
+            if cancel is not None and cancel.is_set():
+                cancelled = True
+                process.kill()
+                break
+            if line.startswith("out_time_us=") and progress and duration:
+                try:
+                    done = min(1.0, int(line.split("=")[1]) / 1e6 / duration)
+                except ValueError:
+                    continue
+                elapsed = time.time() - started
+                progress(ASSEMBLY_SHARE + (1 - ASSEMBLY_SHARE) * done, "Encoding",
+                         remaining=elapsed * (1 - done) / done if done > 0.02 else None)
+        process.wait()
+        errors.seek(0)
+        message = errors.read().decode(errors="replace")[-600:]
+        errors.close()
+        if cancelled:
+            return False
+        if process.returncode != 0:
+            raise RenderError("Encoding failed:\n" + message)
+    print("Wrote %s  (%.0fs of footage)" % (output, duration))
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description="Render a video project with optional cross-dissolves, audio, chapters and headlines.")
     ap.add_argument("project", nargs="?", help="project JSON; media paths are relative to its media_folder (default: JSON's folder)")
@@ -418,6 +480,8 @@ def main():
     ap.add_argument("--no-audio", action="store_true", help="export without an audio track")
     ap.add_argument("--fast", action="store_true", help="use the Mac hardware encoder (h264_videotoolbox)")
     ap.add_argument("--system-ffmpeg", action="store_true", help="prefer ffmpeg from PATH over the bundled one")
+    ap.add_argument("--footage", action="store_true", help="encode only the joined clips, with no layout, for the "
+                    "interactive page (-o names the .mp4)")
     ap.add_argument("--selftest", action="store_true", help="render a generated test clip and exit")
     args = ap.parse_args()
 
@@ -427,7 +491,7 @@ def main():
     if not args.project:
         ap.error("give a project JSON (or use --selftest)")
     try:
-        render_project(args, ffmpeg)
+        (render_footage if args.footage else render_project)(args, ffmpeg)
     except (ValueError, OSError) as error:
         sys.exit(str(error))
 

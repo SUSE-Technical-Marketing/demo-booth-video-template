@@ -27,9 +27,9 @@ description = "Install the Vue editor dependencies from bun.lock"
 run = "bun install --frozen-lockfile"
 
 [tasks."editor:build"]
-description = "Build the static Vue editor into dist/"
+description = "Build the static Vue editor into dist/, and the interactive page the Export dialog packs into dist-player/"
 depends = ["editor:install"]
-run = "bun run build"
+run = ["bun run build", "bun run build:player"]
 
 [tasks."editor:test"]
 description = "Run Vue editor regression tests"
@@ -42,6 +42,7 @@ depends = ["install", "editor:install"]
 run = [
   "bun run test",
   "bun run build",
+  "bun run build:player",
   "python -m unittest discover -s tests",
   "python -c \"import sys,glob;sys.path.insert(0,'render');from project import load_project;[load_project(f) for f in glob.glob('timings/*.json')]\"",
   "python render/render.py --selftest",

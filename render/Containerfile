@@ -9,11 +9,13 @@
 FROM registry.suse.com/bci/nodejs:24 AS editor
 WORKDIR /src
 RUN npm install --global bun@1.3.14
-COPY package.json bun.lock vite.config.js ./
+COPY package.json bun.lock vite.config.js vite.player.config.js ./
 RUN bun install --frozen-lockfile
 COPY editor/ editor/
 COPY assets/ assets/
-RUN bun run build
+COPY scripts/ scripts/
+# the editor, and the interactive page its Export dialog packs next to a video
+RUN bun run build && bun run build:player
 
 # ---- stage 2: renderer + export service + the built editor ----
 FROM registry.suse.com/bci/python:3.13
@@ -28,6 +30,7 @@ COPY render/ render/
 COPY assets/ assets/
 COPY timings/ timings/
 COPY --from=editor /src/dist dist/
+COPY --from=editor /src/dist-player dist-player/
 
 # Command-line renders: projects and their relative source media are mounted by run-container.sh.
 # --ui replaces the entrypoint with the export service, which also serves dist/ (see run-container.sh).

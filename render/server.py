@@ -11,6 +11,7 @@ uploads (never file paths), refuses requests that lack the editor's header, and 
 temporary folder that is deleted when the job is removed or the service stops.
 """
 import argparse
+import html as htmllib
 import json
 import mimetypes
 import re
@@ -19,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 import threading
 import time
 import uuid
@@ -33,11 +35,24 @@ import render  # noqa: E402
 from project import project_resolution, validate_project  # noqa: E402
 
 PORT = 8766
+ROOT = Path(__file__).resolve().parent.parent
+PLAYER = ROOT / "dist-player" / "player.html"       # the interactive page template (bun run build:player)
 HEADER = "X-Booth-Export"
 MAX_UPLOAD = 64 * 1024 ** 3
 # quality -> (x264 crf, x264 preset); bitrates are for the hardware encoder, which has no crf
 QUALITY = {"draft": (26, "veryfast"), "standard": (20, "medium"), "high": (16, "slow")}
 BITRATE = ((2160, "40M"), (1440, "20M"), (1080, "12M"), (0, "6M"))
+
+
+PAGE_README = """%(title)s
+
+Open index.html in a web browser (Chrome, Edge, Safari or Firefox). Nothing else is needed, and it works without
+an internet connection. Keep video.mp4 in the same folder as index.html.
+
+Press a chapter on the left to jump to it, or click or drag along the timeline underneath.
+Keys: Space play/pause, Left/Right 5 s back/forward (Shift for 15 s), N / P next / previous chapter,
+M sound, F fullscreen.
+"""
 
 
 def safe_name(text, fallback="video"):
@@ -71,8 +86,9 @@ class Job:
 
 
 class Service:
-    def __init__(self, ffmpeg=None):
+    def __init__(self, ffmpeg=None, player=None):
         self.ffmpeg = ffmpeg or render.find_ffmpeg()
+        self.player = Path(player) if player else PLAYER
         self.jobs = {}
         self.lock = threading.Lock()
         self._encoders = None
@@ -84,7 +100,8 @@ class Service:
         return self._encoders
 
     def info(self):
-        return {"ok": True, "ffmpeg": self.ffmpeg, "encoders": self.encoders(), "qualities": list(QUALITY)}
+        return {"ok": True, "ffmpeg": self.ffmpeg, "encoders": self.encoders(), "qualities": list(QUALITY),
+                "page": self.player.is_file()}
 
     # ---- jobs ----
     def create(self, body):
@@ -98,6 +115,11 @@ class Service:
             width, height = project_resolution(size)
         except ValueError as error:
             raise ValueError("the project is not valid: %s" % error)
+        kind = body.get("kind", "video")
+        if kind not in ("video", "page"):
+            raise ValueError("kind must be video or page")
+        if kind == "page" and not self.player.is_file():
+            raise ValueError("the interactive page is not built yet: run `bun run build:player` and try again")
         quality = body.get("quality", "standard")
         if quality not in QUALITY:
             raise ValueError("quality must be one of: " + ", ".join(QUALITY))
@@ -116,7 +138,11 @@ class Service:
         title = (project["timing"].get("title") or "").strip()
         options = {"project": project, "size": "%dx%d" % (width, height), "height": height, "quality": quality,
                    "fast": fast, "audio": audio, "names": names, "ids": [m["id"] for m in used],
-                   "filename": safe_name(body.get("filename") or title or "booth-video") + ".mp4"}
+                   "kind": kind, "filename": safe_name(body.get("filename") or title or "booth-video") +
+                   (".zip" if kind == "page" else ".mp4")}
+        if kind == "page":                    # all the page needs to know; the media paths and clips stay behind
+            options["page"] = {"title": title or options["filename"][:-4], "output": {"theme": project["output"].get("theme")},
+                               "timing": project["timing"], "video": "video.mp4"}
         job = Job(options)
         with self.lock:
             self.jobs[job.id] = job
@@ -145,7 +171,9 @@ class Service:
             project_file.write_text(json.dumps(opts["project"]), encoding="utf-8")
             crf, preset = QUALITY[opts["quality"]]
             bitrate = next(rate for height, rate in BITRATE if opts["height"] >= height)
-            args = SimpleNamespace(project=str(project_file), output=str(job.dir / "final.mp4"), frame=None, png=None,
+            page = opts["kind"] == "page"
+            args = SimpleNamespace(project=str(project_file), output=str(job.dir / ("video.mp4" if page else "final.mp4")),
+                                   frame=None, png=None,
                                    start=None, duration=None, crf=crf, preset=preset, fast=opts["fast"],
                                    bitrate=bitrate, size=opts["size"], fps=None, no_audio=not opts["audio"])
             job.status = "rendering"
@@ -154,15 +182,39 @@ class Service:
                 job.fraction, job.message = fraction, note
                 if fps is not None:
                     job.fps, job.eta = fps, remaining
-            done = render.render_project(args, self.ffmpeg, progress=progress, cancel=job.cancel)
+            done = (render.render_footage if page else render.render_project)(args, self.ffmpeg, progress=progress, cancel=job.cancel)
             if not done:
                 job.status = "cancelled"
                 return
-            job.output, job.fraction, job.eta, job.status, job.message = Path(args.output), 1.0, 0, "done", "Done"
+            output = Path(args.output)
+            if page:
+                job.message = "Packing the page"
+                output = self.package_page(job, output)
+            job.output, job.fraction, job.eta, job.status, job.message = output, 1.0, 0, "done", "Done"
         except BaseException as error:               # never let a failed render kill the service
             job.status, job.message = "error", str(error) or error.__class__.__name__
             if job.cancel.is_set():
                 job.status = "cancelled"
+
+
+    def package_page(self, job, footage):
+        """index.html (the player with the project's timing filled in), video.mp4 and a short note, in one zip."""
+        opts, page = job.options, job.options["page"]
+        template = self.player.read_text(encoding="utf-8")
+        data = (json.dumps(page, ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c")
+                .replace(">", "\\u003e").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+        if template.count("__BOOTH_TITLE__") != 1 or template.count("__BOOTH_DATA__") != 1:
+            raise ValueError("the interactive page template is out of date: run `bun run build:player`")
+        fill = {"__BOOTH_TITLE__": htmllib.escape(page["title"]), "__BOOTH_DATA__": data}
+        index = re.sub(r"__BOOTH_(?:TITLE|DATA)__", lambda m: fill[m.group(0)], template)     # one pass: a title cannot inject
+        folder = opts["filename"][:-4]
+        out = job.dir / opts["filename"]
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(folder + "/index.html", index)
+            archive.writestr(folder + "/README.txt", PAGE_README % {"title": page["title"]})
+            archive.write(footage, folder + "/video.mp4", compress_type=zipfile.ZIP_STORED)   # already compressed
+        footage.unlink()
+        return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -263,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail(409, "the video is not ready")
                 size = job.output.stat().st_size
                 self.send_response(200)
-                self.send_header("Content-Type", "video/mp4")
+                self.send_header("Content-Type", "application/zip" if job.output.suffix == ".zip" else "video/mp4")
                 self.send_header("Content-Length", str(size))
                 self.send_header("Content-Disposition", 'attachment; filename="%s"' % job.options["filename"])
                 self.end_headers()
@@ -337,8 +389,8 @@ class Handler(BaseHTTPRequestHandler):
         self.fail(404, "not found")
 
 
-def make_server(port=PORT, ffmpeg=None, verbose=False, host="127.0.0.1", static=None):
-    service = Service(ffmpeg)
+def make_server(port=PORT, ffmpeg=None, verbose=False, host="127.0.0.1", static=None, player=None):
+    service = Service(ffmpeg, player)
     handler = type("BoundHandler", (Handler,), {"service": service, "static": Path(static) if static else None})
     httpd = ThreadingHTTPServer((host, port), handler)
     httpd.service, httpd.verbose = service, verbose
@@ -351,12 +403,13 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="address to listen on. Only change it inside a container, "
                     "and publish the port to 127.0.0.1 only (run-container.sh --ui does this)")
     ap.add_argument("--static", metavar="DIR", help="also serve the built editor (dist/) from this folder")
+    ap.add_argument("--player", metavar="FILE", help="the built interactive page template (default: dist-player/player.html)")
     ap.add_argument("--public-port", type=int, help="port to show in the startup message when it is published "
                     "under a different number (inside a container)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
     try:
-        httpd = make_server(args.port, verbose=args.verbose, host=args.host, static=args.static)
+        httpd = make_server(args.port, verbose=args.verbose, host=args.host, static=args.static, player=args.player)
     except OSError as error:
         sys.exit("Could not listen on %s:%d (%s). Is the export service already running?" % (args.host, args.port, error))
     print("%s: http://127.0.0.1:%d  (ffmpeg: %s)" % ("Editor and export service" if args.static else "Export service",

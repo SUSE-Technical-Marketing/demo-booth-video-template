@@ -20,7 +20,8 @@ import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, norma
   projectClipEnd, projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
 import { zipProjectSource } from './zipProjects.js';
-import { fitWrappedPx, themeLayout } from './themes.js';
+import { layoutFit } from './layoutFit.js';
+import { themeLayout } from './themes.js';
 import { activeChapter, activeHeadline, DEFAULT, duration, fitPx, fmt, headlineChapter, headlineEnd,
   headlineOutside, headlineTime, newRow, parseClock,
   parseTime, plain, removeChapter, sortAll, tc, TEXT_SCALE } from './timing.js';
@@ -82,26 +83,10 @@ function measure(text, px) {
   context.font = `500 ${px}px SUSE, system-ui, sans-serif`;
   return context.measureText(text).width;
 }
-const headlineFit = computed(() => {
-  const design = themeLayout(state.value.output.theme);
-  let best = { w: 1, idx: -1 };
-  state.value.headlines.forEach((h, idx) => {
-    const w = measure(plain(h.text), design.HEADLINE_PX);
-    if (w > best.w) best = { w, idx };
-  });
-  return { px: fitPx(best.w, design.HEADLINE_PX, design.HEADLINE_MAX_W), idx: best.idx };
-});
-const pillPx = computed(() => {
-  const design = themeLayout(state.value.output.theme);
-  return design.PILL_LINES > 1
-    ? fitWrappedPx(state.value.chapters, design.PILL_TEXT_PX * TEXT_SCALE, design.PILL_TEXT_MAX_W, design.PILL_LINES, measure)
-    : fitPx(Math.max(...state.value.chapters.map(c => measure(c, design.PILL_TEXT_PX))),
-      design.PILL_TEXT_PX, design.PILL_TEXT_MAX_W);
-});
-const productPx = computed(() => {
-  const design = themeLayout(state.value.output.theme);
-  return fitPx(measure(state.value.product_name || ' ', design.PRODUCT_PX), design.PRODUCT_PX, design.PRODUCT_MAX_W);
-});
+const fit = computed(() => layoutFit(state.value, measure));
+const headlineFit = computed(() => fit.value.headline);
+const pillPx = computed(() => fit.value.pillPx);
+const productPx = computed(() => fit.value.productPx);
 const shortCount = computed(() => state.value.headlines.filter(h => !headlineOutside(state.value, h, totalDuration.value) &&
   headlineEnd(state.value, h, totalDuration.value) - headlineTime(state.value, h) < 3).length);
 
@@ -1030,7 +1015,7 @@ onUnmounted(() => {
         @apply-freeze="applyFreeze" @apply-cut="applyCut" @update-cut="updateCut" @close="closeTool" @error="toast" />
     </template>
   </TimelineDock>
-  <ExportDialog v-if="exporting" :clips="clips" :files="exportFiles" :get-project="checkedJSON" :title="state.title"
+  <ExportDialog v-if="exporting" :clips="clips" :files="exportFiles" :get-project="checkedJSON" :title="state.title" :theme="state.output.theme"
     :duration="totalDuration" :resolution="state.output.resolution ?? DEFAULT_RESOLUTION" :start-in="projectFolder?.directory ?? handle"
     @close="exporting = false" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
