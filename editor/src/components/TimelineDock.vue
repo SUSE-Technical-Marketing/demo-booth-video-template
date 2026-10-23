@@ -12,7 +12,7 @@ const props = defineProps({
   playing: { type: Boolean, required: true },
   offset: { type: Number, required: true },
   clips: { type: Array, default: () => [] },
-  tool: { type: String, default: null },            // 'freeze' or 'cut' while that editing tool is open
+  tool: { type: String, default: null },            // 'freeze', 'cut' or 'insert' while that editing tool is open
   cutRange: { type: Object, default: null },
 });
 // Zoom is a view setting only: 1 fits the whole video, each step doubles it (up to about 10 s across).
@@ -47,6 +47,9 @@ const emit = defineEmits(['seek', 'toggle-play', 'select-chapter', 'select-headl
           @click="toggleVideos">Videos</button>
       </div>
       <div class="edit-tools" role="group" aria-label="Editing tools">
+        <button id="btnInsert" class="ghost" :aria-pressed="tool === 'insert'" :disabled="!clips.length"
+          :title="clips.length ? 'Put another video in at the playhead and push the rest of the video later' : 'Add a video to use this'"
+          @click="emit('tool', 'insert')">Insert video…</button>
         <button id="btnFreeze" class="ghost" :aria-pressed="tool === 'freeze'" :disabled="!clips.length"
           :title="clips.length ? 'Hold the frame at the playhead for a few seconds' : 'Add a video to use this'"
           @click="emit('tool', 'freeze')">Freeze frame…</button>

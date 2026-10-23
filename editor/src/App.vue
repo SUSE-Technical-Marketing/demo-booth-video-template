@@ -15,7 +15,7 @@ import VideoList from './components/VideoList.vue';
 import ZipImport from './components/ZipImport.vue';
 import { downloadJSON, pickerOptions, rememberHandle, rememberedHandle } from './fileAccess.js';
 import { clipEnd, loadClip, releaseClip } from './videos.js';
-import { freezeFrame, freezeProblem, reorderClip, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
+import { freezeFrame, freezeProblem, insertClip, insertProblem, reorderClip, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
 import { DEFAULT_RESOLUTION, createProject, fromProject, mediaPathForFile, normalizeMediaFolder,
   projectClipEnd, projectFPS, projectResolution, resolveMediaPath, toProjectJSON, validateProject } from './project.js';
 import { directoryProjectSource, uploadedProjectSource } from './projectFiles.js';
@@ -147,8 +147,10 @@ function trimClip(clip, patch, time) {
   seek(time);
 }
 // ---- editing tools: freeze frame and cut section ----
-const tool = ref(null), cutRange = ref(null);
+const tool = ref(null), cutRange = ref(null), pendingInsert = shallowRef(null);
 const freezeIssue = computed(() => tool.value === 'freeze' ? freezeProblem(state.value, cur.value) : null);
+const insertIssue = computed(() => tool.value === 'insert' ? insertProblem(state.value, cur.value) : null);
+const chapterAtPlayhead = computed(() => playingChapter.value ? { title: playingChapter.value.title, start: playingChapter.value.t } : null);
 const frameClip = computed(() => clips.value.find(c => cur.value >= c.start - 1e-6 && cur.value < clipEnd(c) - 1e-6));
 const frameFPS = () => projectFPS(state.value.output.fps);
 function openTool(name) {
@@ -161,7 +163,39 @@ function openTool(name) {
     cutRange.value = { start: +start.toFixed(2), end: +(start + room).toFixed(2) };
   } else cutRange.value = null;
 }
-function closeTool() { tool.value = null; cutRange.value = null; }
+function closeTool() {
+  tool.value = null;
+  cutRange.value = null;
+  if (pendingInsert.value) releaseClip(pendingInsert.value);
+  pendingInsert.value = null;
+}
+async function chooseInsert(file) {                         // read the length of the video to insert; nothing changes yet
+  const generation = documentGeneration;
+  try {
+    mediaPathForFile(file);
+    const loaded = await loadClip(file, 0);
+    if (generation !== documentGeneration || tool.value !== 'insert') return releaseClip(loaded);
+    if (pendingInsert.value) releaseClip(pendingInsert.value);
+    pendingInsert.value = loaded;
+  } catch (error) { toast(error.message); }
+}
+function applyInsert({ shift }) {
+  const loaded = pendingInsert.value, at = cur.value, mediaId = crypto.randomUUID();
+  if (!loaded) return toast('Choose the video to insert first');
+  applyEdit(() => {
+    const draft = JSON.parse(JSON.stringify(state.value));
+    draft.media.push({ id: mediaId, path: mediaPathForFile(loaded.file) });
+    return insertClip(draft, at, mediaId, loaded.dur, { shiftTiming: shift, min: 1 / frameFPS() });
+  }, () => {
+    mediaFiles.value = new Map(mediaFiles.value).set(mediaId, loaded);
+    pendingInsert.value = null;                              // now owned by the project
+    closeTool();
+    setCur(at);
+    editorTab.value = 'settings';
+    toast(`Inserted ${loaded.name} (${fmt(loaded.dur)}) at ${fmt(at)}. Everything after it moved ${fmt(loaded.dur)} later`
+      + `${shift ? ', chapters and headlines included.' : '.'}`);
+  });
+}
 function updateCut(patch) {
   const next = { ...cutRange.value, ...patch };
   if (next.end <= next.start + 0.01) {                      // keep a usable range: the edge you did not touch gives way
@@ -1011,8 +1045,9 @@ onUnmounted(() => {
     @begin-edit="beginEdit" @move-headline="moveHeadline" @move-headline-end="moveHeadlineEnd" @move-chapter="moveChapter"
     :tool="tool" :cut-range="cutRange" @tool="openTool" @update-cut="updateCut" @trim-clip="trimClip">
     <template #tool>
-      <EditStrip v-if="tool" :tool="tool" :cur="cur" :problem="freezeIssue" :frame-name="frameClip?.name ?? ''" :cut-range="cutRange"
-        @apply-freeze="applyFreeze" @apply-cut="applyCut" @update-cut="updateCut" @close="closeTool" @error="toast" />
+      <EditStrip v-if="tool" :tool="tool" :cur="cur" :problem="tool === 'insert' ? insertIssue : freezeIssue"
+        :frame-name="frameClip?.name ?? ''" :cut-range="cutRange" :insert-clip="pendingInsert" :chapter="chapterAtPlayhead"
+        @apply-insert="applyInsert" @choose-insert="chooseInsert" @seek="seek" @apply-freeze="applyFreeze" @apply-cut="applyCut" @update-cut="updateCut" @close="closeTool" @error="toast" />
     </template>
   </TimelineDock>
   <ExportDialog v-if="exporting" :clips="clips" :files="exportFiles" :get-project="checkedJSON" :title="state.title" :theme="state.output.theme"

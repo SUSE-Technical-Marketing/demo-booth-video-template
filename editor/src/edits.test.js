@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipEnd, freezeFrame, freezeProblem, reorderClip, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
+import { clipEnd, freezeFrame, freezeProblem, insertClip, insertProblem, reorderClip, resizeFreeze, rippleDelete, setDissolve } from './edits.js';
 import { fromJSON, headlineTime } from './timing.js';
 import { validateProject, toProjectJSON, createProject, fromProject } from './project.js';
 
@@ -336,5 +336,49 @@ describe('ripple delete', () => {
     const reloaded = fromProject(JSON.parse(text));
     expect(reloaded.clips.map(c => [c.start, c.source_in, c.source_out, !!c.freeze]))
       .toEqual(edited.clips.map(c => [c.start, c.source_in, c.source_out, !!c.freeze]));
+  });
+});
+
+describe('inserting a video', () => {
+  const withMedia = state => ({ ...state, media: [...state.media, { id: 'n', path: 'new.mp4' }] });
+  it('splits the video at the chapter start, shifts everything after, and makes the chapter as long as the clip', () => {
+    const original = withMedia(base()), snapshot = structuredClone(original);
+    const { state, clipId } = insertClip(original, 20, 'n', 12);
+    expect(summary(state)).toEqual([[0, 0, 20, '-'], [20, 0, 12, '-'], [32, 20, 60, '-']]);
+    expect(state.clips.find(c => c.id === clipId).media_id).toBe('n');
+    expect(new Set(state.clips.map(c => c.id)).size).toBe(3);
+    expect(chapterTimes(state)).toEqual([0, 20, 52]);          // chapter B (at the insert point) now lasts 12 s, C keeps its video
+    expect(headlineTimes(state).map(h => h[1])).toEqual([0, 10, 20, 57]);  // B's headline stays on its chapter start; C's moves with its video
+    expect(() => valid(state)).not.toThrow();
+    expect(original).toEqual(snapshot);
+  });
+  it('leaves chapters and headlines alone when asked, and handles a clip boundary and the very end', () => {
+    const two = withMedia(base([{ id: 'a', media_id: 'x', start: 0, source_in: 0, source_out: 30 },
+      { id: 'b', media_id: 'x', start: 30, source_in: 30, source_out: 60 }]));
+    const { state } = insertClip(two, 30, 'n', 5, { shiftTiming: false });
+    expect(summary(state)).toEqual([[0, 0, 30, '-'], [30, 0, 5, '-'], [35, 30, 60, '-']]);
+    expect(chapterTimes(state)).toEqual([0, 20, 40]);
+    expect(summary(insertClip(two, 60, 'n', 5).state).at(-1)).toEqual([60, 0, 5, '-']);
+  });
+  it('splits a freeze frame without moving its frame, and refuses inside a dissolve', () => {
+    const hold = withMedia(base([{ id: 'f', media_id: 'x', start: 0, source_in: 7, source_out: 17, freeze: true }]));
+    const { state } = insertClip(hold, 4, 'n', 3);
+    expect(summary(state)).toEqual([[0, 7, 11, 'F'], [4, 0, 3, '-'], [7, 7, 13, 'F']]);
+    const dissolve = withMedia(base([{ id: 'a', media_id: 'x', start: 0, source_in: 0, source_out: 30 },
+      { id: 'b', media_id: 'x', start: 28, source_in: 0, source_out: 30, transition_in: { type: 'crossfade', duration: 2 } }]));
+    expect(insertProblem(dissolve, 29)).toMatch(/dissolve/);
+    expect(() => insertClip(dissolve, 29, 'n', 3)).toThrow(/dissolve/);
+    expect(insertProblem(dissolve, 10)).toBeNull();
+  });
+  it('keeps a later dissolve intact', () => {
+    const dissolve = withMedia(base([{ id: 'a', media_id: 'x', start: 0, source_in: 0, source_out: 30 },
+      { id: 'b', media_id: 'x', start: 28, source_in: 0, source_out: 30, transition_in: { type: 'crossfade', duration: 2 } }]));
+    const { state } = insertClip(dissolve, 10, 'n', 4);
+    expect(() => valid(state)).not.toThrow();
+    expect(state.clips.at(-1)).toMatchObject({ id: 'b', start: 32, transition_in: { duration: 2 } });
+  });
+  it('rejects a video with no length or no media entry', () => {
+    expect(() => insertClip(withMedia(base()), 5, 'n', 0)).toThrow(/no length/);
+    expect(() => insertClip(base(), 5, 'n', 3)).toThrow(/missing/);
   });
 });

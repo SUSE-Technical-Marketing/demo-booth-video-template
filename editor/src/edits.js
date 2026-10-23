@@ -171,6 +171,42 @@ export function freezeFrame(state, t, length, { mode = 'insert', shiftTiming = t
   return { state: next, clipId: freeze.id };
 }
 
+/** Why a video cannot be inserted at t (a dissolve is in progress there), or null if it can. */
+export function insertProblem(state, t) {
+  return state.clips.filter(c => t >= c.start - EPS && t < clipEnd(c) - EPS).length > 1
+    ? 'Remove the dissolve here before inserting a video inside its overlap.' : null;
+}
+
+/**
+ * Put the whole of media `mediaId` (`length` seconds) on the timeline at t. The video under t is split in two, the new
+ * clip goes in between, and everything after moves later by `length`. If t is in a gap, or at the very end, the clip
+ * simply goes there and later clips move. With shiftTiming the chapters and headlines after t move too, so a chapter
+ * that starts at t is exactly as long as the inserted video and the chapters after it keep their video. Anything that
+ * starts exactly at t stays.
+ */
+export function insertClip(state, t, mediaId, length, { shiftTiming = true, min = 0.04 } = {}) {
+  if (!(length > 0)) throw new Error('The video to insert has no length.');
+  if (!state.media.some(m => m.id === mediaId)) throw new Error('The video to insert is missing from the project.');
+  const problem = insertProblem(state, t);
+  if (problem) throw new Error(problem);
+  const next = clone(state), clips = [];
+  for (const clip of next.clips) {
+    const end = clipEnd(clip);
+    if (clip.start >= t - EPS) { clips.push({ ...clip, start: clip.start + length }); continue; }
+    if (end <= t + EPS) { clips.push(clip); continue; }
+    const head = t - clip.start, tail = end - t;
+    if (head >= min - EPS) clips.push(piece(clip, clip.start, clip.source_in, head));
+    if (tail >= min - EPS) {
+      clips.push(piece(clip, t + length, clip.freeze ? clip.source_in : clip.source_in + head, tail,
+        head >= min - EPS ? { id: newId() } : {}));
+    }
+  }
+  const inserted = { id: newId(), media_id: mediaId, start: t, source_in: 0, source_out: length };
+  next.clips = [...clips, inserted].sort((a, b) => a.start - b.start);
+  if (shiftTiming) retimeTiming(next, x => (x > t + EPS ? x + length : x));
+  return { state: next, clipId: inserted.id };
+}
+
 /**
  * Change how long a freeze lasts. Everything after it moves with its end (a ripple), including the chapters and
  * headlines when shiftTiming is on, so lengthening a hold never overlaps the next clip and shortening it closes up.
