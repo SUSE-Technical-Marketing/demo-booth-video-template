@@ -6,13 +6,15 @@ import { MIN_FREEZE } from '../edits.js';
 // The strip above the timeline for the two editing tools. It only collects choices; App applies them (and records
 // the undo step). The cut range lives in App so the timeline can draw it and let you drag its edges.
 const props = defineProps({
-  tool: { type: String, required: true },            // 'freeze' | 'cut'
+  tool: { type: String, required: true },            // 'freeze' | 'cut' | 'insert'
   cur: { type: Number, required: true },
   problem: { type: String, default: null },           // why a freeze cannot be made at the playhead
   frameName: { type: String, default: '' },           // the video the playhead is on
   cutRange: { type: Object, default: null },
+  insertClip: { type: Object, default: null },       // the chosen video to insert: { name, dur }
+  chapter: { type: Object, default: null },          // the chapter playing at the playhead: { title, start }
 });
-const emit = defineEmits(['apply-freeze', 'apply-cut', 'update-cut', 'close', 'error']);
+const emit = defineEmits(['apply-insert', 'choose-insert', 'seek', 'apply-freeze', 'apply-cut', 'update-cut', 'close', 'error']);
 
 // remembered for the next time the tool is opened during this visit
 const last = { length: 3, mode: 'insert', shift: true };
@@ -30,12 +32,32 @@ function commitTime(key, event) {
   event.target.value = fmt(time);
 }
 const freeze = () => emit('apply-freeze', { length: +length.value, mode: mode.value, shift: mode.value === 'insert' && shift.value });
+const picker = ref(null);
+const choose = event => { const [file] = event.target.files; event.target.value = ''; if (file) emit('choose-insert', file); };
+const insert = () => emit('apply-insert', { shift: shift.value });
+const atChapterStart = computed(() => props.chapter && Math.abs(props.chapter.start - props.cur) < 0.005);
 const cut = () => emit('apply-cut', { from: props.cutRange.start, to: props.cutRange.end, shift: shift.value });
 </script>
 
 <template>
-  <div class="edit-strip" role="group" :aria-label="tool === 'freeze' ? 'Freeze frame' : 'Cut section'" @keydown.esc.stop="emit('close')">
-    <template v-if="tool === 'freeze'">
+  <div class="edit-strip" role="group" :aria-label="tool === 'freeze' ? 'Freeze frame' : tool === 'insert' ? 'Insert video' : 'Cut section'"
+    @keydown.esc.stop="emit('close')">
+    <template v-if="tool === 'insert'">
+      <strong class="strip-title">Insert video</strong>
+      <span v-if="problem" id="insertProblem" class="strip-problem">{{ problem }}</span>
+      <template v-else>
+        <span class="strip-at">at <b>{{ fmt(cur) }}</b><template v-if="chapter"> in {{ chapter.title }}</template></span>
+        <button v-if="chapter && !atChapterStart" id="insertChapterStart" class="ghost"
+          title="Move the playhead to where this chapter begins" @click="emit('seek', chapter.start)">Go to chapter start ({{ fmt(chapter.start) }})</button>
+        <input id="insertFile" ref="picker" type="file" accept="video/*" hidden @change="choose">
+        <button id="insertChoose" class="ghost" @click="picker.click()">{{ insertClip ? 'Choose another…' : 'Choose video…' }}</button>
+        <span v-if="insertClip" id="insertChosen" class="strip-at"><b>{{ insertClip.name }}</b> · {{ fmt(insertClip.dur) }}</span>
+        <label class="strip-check"><input v-model="shift" type="checkbox"> Move later chapters and headlines too</label>
+      </template>
+      <span class="spacer"></span>
+      <button v-if="!problem" id="insertApply" class="primary" :disabled="!insertClip" @click="insert">Insert video</button>
+    </template>
+    <template v-else-if="tool === 'freeze'">
       <strong class="strip-title">Freeze frame</strong>
       <span v-if="problem" id="freezeProblem" class="strip-problem">{{ problem }}</span>
       <template v-else>

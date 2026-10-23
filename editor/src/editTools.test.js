@@ -68,6 +68,40 @@ describe('freeze frame and cut section tools', () => {
     expect(wrapper.get('#durChip').text()).toBe('to 0:44');
   });
 
+  async function insertVideo(at, name, { chapterStart = false } = {}) {
+    await seekTo(at);
+    await wrapper.get('#btnInsert').trigger('click');
+    if (chapterStart) await wrapper.get('#insertChapterStart').trigger('click');
+    const input = wrapper.get('#insertFile');
+    Object.defineProperty(input.element, 'files', { value: [new File(['x'], name)], configurable: true });
+    await input.trigger('change');
+    await new Promise(r => setTimeout(r, 20)); await flushPromises();
+  }
+
+  it('inserts a second video at the start of a chapter, pushing later video and chapters so the chapter fits the clip', async () => {
+    await addVideo('a.mp4');
+    await seekTo(40);                                      // inside the second chapter (starts at 0:30)
+    await insertVideo(40, 'extra.mp4', { chapterStart: true });
+    expect(wrapper.get('#insertChosen').text()).toContain('extra.mp4');
+    await wrapper.get('#insertApply').trigger('click');
+    await flushPromises();
+    expect(wrapper.get('#toast').text()).toContain('Inserted extra.mp4');
+    expect(wrapper.find('.edit-strip').exists()).toBe(false);
+    expect(await clips()).toEqual([[0, 0, 30, false], [30, 0, 40, false], [70, 30, 40, false]]);
+    expect(await chapterStarts()).toEqual([0, 30, 100, 130, 160, 190]);   // the second chapter is now exactly the clip's 40 s
+    expect((await project()).media.map(m => m.path)).toEqual(['a.mp4', 'extra.mp4']);
+    await wrapper.get('#btnUndo').trigger('click');
+    expect(await clips()).toEqual([[0, 0, 40, false]]);
+  });
+
+  it('does not insert until a video is chosen, and offers to jump to the chapter start', async () => {
+    await addVideo('a.mp4');
+    await seekTo(5);
+    await wrapper.get('#btnInsert').trigger('click');
+    expect(wrapper.get('#insertApply').attributes('disabled')).toBeDefined();
+    expect(wrapper.find('#insertChapterStart').exists()).toBe(true);
+  });
+
   it('replace mode covers the next seconds of video and moves nothing', async () => {
     await addVideo('a.mp4');
     await freeze(10, 4, 'replace');

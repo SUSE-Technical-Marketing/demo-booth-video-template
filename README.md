@@ -191,10 +191,18 @@ Use **Download** or **Save as** for project edits. The original archive/URL is n
 do not contain video bytes: keep the original ZIP or your own media folder. Preview, fullscreen playback and
 the local Export service can use the extracted files without manual media relinking.
 
-### Freeze frames and cutting a section
+### Inserting a video, freeze frames and cutting a section
 
-Two edits for the common "this part needs adjusting" jobs. Both are buttons in the timeline toolbar
-(**Freeze frame…** and **Cut section…**), both need a video, and both are a single **Undo** step.
+Three edits for the common "this part needs adjusting" jobs. They are buttons in the timeline toolbar
+(**Insert video…**, **Freeze frame…** and **Cut section…**), all need a video, and each is a single **Undo** step.
+
+**Insert video…** puts another recording into the middle of the timeline, for example a new chapter you added after
+recording. Move the playhead to where it should start (**Go to chapter start** jumps to the beginning of the chapter
+that is playing), click **Choose video…**, and click **Insert video**. The video under the playhead is split, the new
+video goes in between, and everything after it moves later by the new video's length. The chapters and headlines
+after the playhead move too (untick **Move later chapters and headlines too** to leave them), so a chapter that starts
+exactly at the playhead becomes exactly as long as the inserted video and the chapters after it keep their video.
+It can't be used inside a cross-dissolve; remove the dissolve first.
 
 **Freeze frame…** holds the frame under the playhead. Move the playhead onto a video, click the button, choose how long
 to hold it (default 3 s), and pick what happens to the video:
