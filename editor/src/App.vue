@@ -1025,7 +1025,7 @@ onUnmounted(() => {
     </template>
   </TimelineDock>
   <ExportDialog v-if="exporting" :clips="clips" :files="exportFiles" :get-project="checkedJSON" :title="state.title" :theme="state.output.theme"
-    :duration="totalDuration" :resolution="state.output.resolution ?? DEFAULT_RESOLUTION" :start-in="projectFolder?.directory ?? handle"
+    :duration="totalDuration" :resolution="state.output.resolution" :format="state.output.format ?? DEFAULT_FORMAT" :start-in="projectFolder?.directory ?? handle"
     @close="exporting = false" />
   <div id="toast" class="toast" :class="{ show: message }" role="status">{{ message }}</div>
   <ShortcutHelp ref="shortcutHelp" @error="toast" />

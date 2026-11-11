@@ -392,6 +392,11 @@ The **Export** button (top right, orange) renders the finished video without lea
 files. The dialog shows an estimate of how much slower than 1080p Standard your choice will be, then a progress bar with
 frames per second and time left. **Cancel** stops it.
 
+**File type** switches the same export to an **animated GIF**: pick a GIF frame rate (10 fps is the usual choice), and the
+resolution drops to 960 × 540 because GIFs grow quickly. The quality, audio and hardware-encoder options disappear, as
+they do not apply to a GIF. The dialog starts on the project's own format from **⚙ Project settings**; see
+[Animated GIF](#animated-gif) for size advice and the command-line equivalents.
+
 **Where the file goes:** the **Save to** row lets you choose the location before rendering (**Choose location…**, in
 Chrome or Edge). The picker opens in your project folder, and when the render finishes the MP4 is written there
 without asking again. If you don't choose, **Save video…** asks when it is done, again starting in the project folder.

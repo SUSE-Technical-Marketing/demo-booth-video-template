@@ -156,7 +156,7 @@ describe('service calls', () => {
     vi.useRealTimers();
     expect(out).toMatchObject({ job: 'j1', token: 'tok', view: { status: 'done' } });
     const create = fetch.mock.calls[0];
-    expect(JSON.parse(create[1].body)).toEqual({ project: { project_version: 1 }, size: '3840x2160', quality: 'high', fast: false, audio: expectedAudio, filename: 'x', kind: 'video' });
+    expect(JSON.parse(create[1].body)).toEqual({ project: { project_version: 1 }, size: '3840x2160', quality: 'high', fast: false, audio: expectedAudio, filename: 'x', kind: 'video', format: 'mp4' });
     expect(calls.filter(c => c[0] === 'upload').map(c => [c[2], c[3], c[4]])).toEqual([
       ['/api/jobs/j1/media/0', ['X-Booth-Export', '1'], 4], ['/api/jobs/j1/media/1', ['X-Booth-Export', '1'], 2]]);   // only the used media, by slot
     expect(calls.filter(c => c[0] !== 'upload').every(c => c[2] === '1')).toBe(true);

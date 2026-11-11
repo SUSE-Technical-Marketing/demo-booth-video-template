@@ -5,6 +5,9 @@ import { toRaw } from 'vue';
 const BASE = '/api';
 const HEADERS = { 'X-Booth-Export': '1' };
 
+// GIF frame delays are whole hundredths of a second, so only these rates play back at exactly the speed asked for
+export const GIF_RATES = [['5/1', '5 fps · smallest file'], ['10/1', '10 fps · the usual choice'], ['20/1', '20 fps'], ['25/1', '25 fps · smooth, large']];
+
 export const QUALITIES = [
   { id: 'draft', name: 'Draft', hint: 'Fastest, smaller file' },
   { id: 'standard', name: 'Standard', hint: 'Balanced', recommended: true },
@@ -73,8 +76,8 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
  * onUpdate({ phase, fraction, message, fps, eta, uploaded, total }) is called as things move along.
  * Aborting the signal cancels the export and removes its working files.
  */
-export async function runExport({ project, files, size, quality, fast, audio = true, filename, kind = 'video', onUpdate, signal }) {
-  const created = await post('/jobs', { project: JSON.parse(project), size, quality, fast, audio, filename, kind });
+export async function runExport({ project, files, size, quality, fast, audio = true, filename, kind = 'video', format = 'mp4', fps = null, onUpdate, signal }) {
+  const created = await post('/jobs', { project: JSON.parse(project), size, quality, fast, audio, filename, kind, format, ...(fps ? { fps } : {}) });
   const job = created.id;
   try {
     const list = created.media.map((id, slot) => {
@@ -117,6 +120,7 @@ export const removeJob = job => json(`/jobs/${job}`, { method: 'DELETE' }).catch
 // What each kind of export produces: the video, or the zip holding the interactive page and its footage.
 export const KINDS = {
   video: { ext: '.mp4', mime: 'video/mp4', description: 'MP4 video' },
+  gif: { ext: '.gif', mime: 'image/gif', description: 'Animated GIF' },
   page: { ext: '.zip', mime: 'application/zip', description: 'Zip archive' },
 };
 

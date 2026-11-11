@@ -40,6 +40,7 @@ export const DEFAULT_FORMAT = 'mp4';
 export const FORMATS = [['mp4', 'MP4 video'], ['gif', 'Animated GIF']];
 export const DEFAULT_RESOLUTION = '1920x1080';
 export const MAX_RESOLUTION = [7680, 4320];
+export const GIF_RESOLUTION = '960x540', GIF_FPS = '10/1';   // what the renderer uses for a GIF when nothing else says
 export const RESOLUTIONS = [
   ['3840x2160', '3840 × 2160 (4K UHD)'], ['2560x1440', '2560 × 1440 (QHD)'], ['1920x1080', '1920 × 1080 (Full HD)'],
   ['1280x720', '1280 × 720 (HD)'], ['960x540', '960 × 540'], ['640x360', '640 × 360'],

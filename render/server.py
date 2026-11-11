@@ -6,7 +6,7 @@
 
 The editor is a static web page, so it cannot run ffmpeg itself. Its Export dialog talks to this service instead
 (through the dev server's /api proxy): it sends the project, uploads the linked videos, watches the progress and
-downloads the finished MP4. The render itself is render.py's render_project, the same code the command line uses. Everything stays on this machine: the service only listens on 127.0.0.1, only takes
+downloads the finished MP4 or animated GIF. The render itself is render.py's render_project, the same code the command line uses. Everything stays on this machine: the service only listens on 127.0.0.1, only takes
 uploads (never file paths), refuses requests that lack the editor's header, and keeps its working files in a
 temporary folder that is deleted when the job is removed or the service stops.
 """
@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import render  # noqa: E402
-from project import project_resolution, validate_project  # noqa: E402
+from project import FORMATS, project_format, project_fps, project_resolution, validate_project  # noqa: E402
 
 PORT = 8766
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,7 +101,7 @@ class Service:
 
     def info(self):
         return {"ok": True, "ffmpeg": self.ffmpeg, "encoders": self.encoders(), "qualities": list(QUALITY),
-                "page": self.player.is_file()}
+                "formats": list(FORMATS), "page": self.player.is_file()}
 
     # ---- jobs ----
     def create(self, body):
@@ -109,9 +109,23 @@ class Service:
         if not isinstance(project, dict):
             raise ValueError("project must be the project file's JSON object")
         project = json.loads(json.dumps(project))
+        fmt = body.get("format")
+        if fmt is not None and fmt not in FORMATS:
+            raise ValueError("format must be one of: " + ", ".join(FORMATS))
+        fps = body.get("fps")
+        if fps is not None:                          # a GIF frame rate; MP4 exports use the project's rate
+            if not isinstance(fps, str):
+                raise ValueError("fps must be a frame rate such as 10/1")
+            fps = render.fps_argument(fps)
+            try:
+                project_fps(fps)
+            except (ValueError, ZeroDivisionError) as error:
+                raise ValueError(str(error) or "fps must be a frame rate such as 10/1")
         try:                                         # validate now, so a bad project fails before any upload
             validate_project(project)
-            size = body.get("size") or project["output"].get("resolution")
+            # the command line's precedence: this export, then the project, then the format's own default size
+            fmt = project_format(fmt or project["output"].get("format"))
+            size = body.get("size") or project["output"].get("resolution") or render.DEFAULTS[fmt]["resolution"]
             width, height = project_resolution(size)
         except ValueError as error:
             raise ValueError("the project is not valid: %s" % error)
@@ -138,8 +152,9 @@ class Service:
         title = (project["timing"].get("title") or "").strip()
         options = {"project": project, "size": "%dx%d" % (width, height), "height": height, "quality": quality,
                    "fast": fast, "audio": audio, "names": names, "ids": [m["id"] for m in used],
-                   "kind": kind, "filename": safe_name(body.get("filename") or title or "booth-video") +
-                   (".zip" if kind == "page" else ".mp4")}
+                   "kind": kind, "format": fmt, "fps": fps,
+                   "filename": safe_name(body.get("filename") or title or "booth-video") +
+                   (".zip" if kind == "page" else "." + fmt)}
         if kind == "page":                    # all the page needs to know; the media paths and clips stay behind
             options["page"] = {"title": title or options["filename"][:-4], "output": {"theme": project["output"].get("theme")},
                                "timing": project["timing"], "video": "video.mp4"}
@@ -172,10 +187,10 @@ class Service:
             crf, preset = QUALITY[opts["quality"]]
             bitrate = next(rate for height, rate in BITRATE if opts["height"] >= height)
             page = opts["kind"] == "page"
-            args = SimpleNamespace(project=str(project_file), output=str(job.dir / ("video.mp4" if page else "final.mp4")),
-                                   frame=None, png=None,
+            args = SimpleNamespace(project=str(project_file), output=str(job.dir / ("video.mp4" if page else "final." + opts["format"])),
+                                   frame=None, png=None, format=None if page else opts["format"],
                                    start=None, duration=None, crf=crf, preset=preset, fast=opts["fast"],
-                                   bitrate=bitrate, size=opts["size"], fps=None, no_audio=not opts["audio"])
+                                   bitrate=bitrate, size=opts["size"], fps=opts.get("fps"), no_audio=not opts["audio"])
             job.status = "rendering"
 
             def progress(fraction, note, fps=None, remaining=None):
@@ -315,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail(409, "the video is not ready")
                 size = job.output.stat().st_size
                 self.send_response(200)
-                self.send_header("Content-Type", "application/zip" if job.output.suffix == ".zip" else "video/mp4")
+                self.send_header("Content-Type", {".zip": "application/zip", ".gif": "image/gif"}.get(job.output.suffix, "video/mp4"))
                 self.send_header("Content-Length", str(size))
                 self.send_header("Content-Disposition", 'attachment; filename="%s"' % job.options["filename"])
                 self.end_headers()

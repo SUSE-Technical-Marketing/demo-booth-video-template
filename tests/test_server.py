@@ -95,6 +95,7 @@ class ServerTests(unittest.TestCase):
         status, info = self.json("GET", "/api/info")
         self.assertEqual(status, 200)
         self.assertEqual(info["qualities"], ["draft", "standard", "high"])
+        self.assertEqual(info["formats"], ["mp4", "gif"])
 
     def test_rejects_bad_requests_before_any_upload(self):
         no_clips = {**copy.deepcopy(PROJECT), "clips": []}
@@ -102,7 +103,8 @@ class ServerTests(unittest.TestCase):
         bad_media["media"][0]["path"] = "/etc/passwd"
         for patch in ({"size": "1281x721"}, {"size": "huge"}, {"quality": "ultra"}, {"project": no_clips},
                       {"project": bad_media}, {"project": {"timing": {}}}, {"project": None},
-                      {"audio": "false"}, {"audio": 0}, {"audio": None}):
+                      {"audio": "false"}, {"audio": 0}, {"audio": None},
+                      {"format": "webm"}, {"fps": "0/1"}, {"fps": "fast"}, {"fps": 10}):
             status, data = self.json("POST", "/api/jobs", {"project": PROJECT, **patch})
             self.assertEqual(status, 400, patch)
             self.assertIn("error", data)
@@ -171,6 +173,35 @@ class ServerTests(unittest.TestCase):
         out = Path(self.tmp.name) / "default-size.mp4"
         out.write_bytes(self.call("GET", "/api/jobs/%s/download" % job)[2])
         self.assertEqual(probe(self.ffmpeg, out)[:2], (960, 540))
+
+    def test_an_animated_gif_export_is_served_as_a_gif_at_the_asked_rate(self):
+        job = self.create(format="gif", fps="10", size="320x180", filename="Teaser")["id"]
+        self.json("POST", "/api/jobs/%s/start" % job)
+        view = self.wait(job)
+        self.assertEqual(view["status"], "done", view)
+        self.assertEqual(view["filename"], "Teaser.gif")
+        status, res, payload = self.call("GET", "/api/jobs/%s/download" % job)
+        self.assertEqual(status, 200)
+        self.assertEqual(res.getheader("Content-Type"), "image/gif")
+        self.assertEqual(payload[:6], b"GIF89a")
+        out = Path(self.tmp.name) / "teaser.gif"
+        out.write_bytes(payload)
+        w, h, fps, duration, _ = probe(self.ffmpeg, out)
+        self.assertEqual((w, h, fps), (320, 180, 10))
+        self.assertAlmostEqual(duration, 5, delta=0.3)
+
+    def test_the_project_format_and_the_gif_default_size_apply_when_the_export_does_not_say(self):
+        project = copy.deepcopy(PROJECT)
+        project["output"]["format"] = "gif"
+        del project["output"]["resolution"]
+        data = self.create(project, size=None)
+        self.assertEqual(data["filename"], "Export test.gif")
+        self.assertEqual(self.httpd.service.get(data["id"]).options["size"], "960x540")
+        data = self.create(project, size=None, format="mp4")            # the export's own choice wins over the project
+        self.assertEqual(data["filename"], "Export test.mp4")
+        self.assertEqual(self.httpd.service.get(data["id"]).options["size"], "1920x1080")
+        for job in list(self.httpd.service.jobs):
+            self.httpd.service.remove(job)
 
     def test_progress_is_reported_while_rendering(self):
         job = self.create()["id"]

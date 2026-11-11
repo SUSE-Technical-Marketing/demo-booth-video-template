@@ -8,7 +8,7 @@ vi.mock('../exporter.js', async importOriginal => ({
   getInfo: vi.fn(), runExport: vi.fn(), saveVideo: vi.fn(), removeJob: vi.fn(), chooseLocation: vi.fn(), canChooseLocation: vi.fn(),
 }));
 
-const INFO = { ok: true, page: true, encoders: { libx264: true, h264_videotoolbox: true } };
+const INFO = { ok: true, page: true, formats: ['mp4', 'gif'], encoders: { libx264: true, h264_videotoolbox: true } };
 const clip = (name, start = 0) => ({ id: name + start, media_id: name, name, start, dur: 10 });
 const linked = (...names) => new Map(names.map(name => [name, new File(['x'], name)]));
 const mountDialog = async (props = {}) => {
@@ -114,6 +114,70 @@ describe('Export dialog', () => {
       expect(wrapper.get('#exportNoPage').text()).toContain('older than this editor');
       expect(wrapper.get('#exportStart').attributes('disabled')).toBeDefined();
       await wrapper.get('[data-kind="video"]').trigger('click');
+      expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();
+      wrapper.unmount();
+    });
+  });
+
+  describe('animated GIF', () => {
+    it('is picked as the file type: a .gif name, a GIF frame rate, no audio or quality, and a small default size', async () => {
+      const wrapper = await mountDialog();
+      runExport.mockResolvedValue({ job: 'j1', token: 't', view: { filename: 'my-demo.gif', size: 2e6 } });
+      expect(wrapper.get('#exportFormat').element.value).toBe('mp4');
+      expect(wrapper.findAll('#exportFormat option')[0].text()).toContain('project setting');
+      await wrapper.get('#exportFormat').setValue('gif');
+      expect(wrapper.get('#exportTitle').text()).toBe('Export animated GIF');
+      expect(wrapper.get('.export-name em').text()).toBe('.gif');
+      expect(wrapper.get('#exportResolution').element.value).toBe('960x540');
+      expect(wrapper.find('#exportAudio').exists()).toBe(false);
+      expect(wrapper.find('[data-quality="standard"]').exists()).toBe(false);
+      expect(wrapper.find('#exportFast').exists()).toBe(false);
+      expect(wrapper.get('#exportGifRate').element.value).toBe('10/1');
+      await wrapper.get('#exportGifRate').setValue('5/1');
+      expect(wrapper.text()).toContain('GIF · loops');
+      expect(wrapper.text()).toContain('No audio');
+      await wrapper.get('#exportStart').trigger('click');
+      await flushPromises();
+      expect(runExport).toHaveBeenCalledWith(expect.objectContaining({ kind: 'video', format: 'gif', fps: '5/1', size: '960x540', audio: false }));
+      expect(wrapper.get('#exportDone').text()).toContain('Your GIF is ready.');
+      expect(wrapper.get('#exportSave').text()).toBe('Save GIF…');
+      wrapper.unmount();
+    });
+
+    it('starts as a GIF when the project says so, keeps the project size, and forgets a chosen .gif location when switching to MP4', async () => {
+      const wrapper = await mountDialog({ format: 'gif', resolution: '1280x720' });
+      expect(wrapper.get('#exportFormat').element.value).toBe('gif');
+      expect(wrapper.findAll('#exportFormat option')[1].text()).toContain('project setting');
+      expect(wrapper.get('#exportResolution').element.value).toBe('1280x720');
+      chooseLocation.mockResolvedValue({ name: 'my-demo.gif' });
+      await wrapper.get('#exportChoose').trigger('click');
+      await flushPromises();
+      expect(chooseLocation).toHaveBeenCalledWith('my-demo.gif', null, 'gif');
+      expect(wrapper.get('#exportTarget').text()).toBe('my-demo.gif');
+      await wrapper.get('#exportFormat').setValue('mp4');
+      expect(wrapper.get('#exportTarget').text()).not.toContain('my-demo.gif');
+      expect(wrapper.get('.export-name em').text()).toBe('.mp4');
+      expect(wrapper.get('#exportResolution').element.value).toBe('1280x720');
+      expect(wrapper.find('#exportAudio').exists()).toBe(true);
+      wrapper.unmount();
+    });
+
+    it('uses the renderer\'s GIF size when a GIF project has no size of its own', async () => {
+      const wrapper = await mountDialog({ format: 'gif' });
+      expect(wrapper.get('#exportResolution').element.value).toBe('960x540');
+      expect(wrapper.findAll('#exportResolution option').find(o => o.element.value === '960x540').text()).toContain('project setting');
+      wrapper.unmount();
+    });
+
+    it('tells you to restart a service that cannot make GIFs yet, and will not start', async () => {
+      getInfo.mockResolvedValue({ ok: true, page: true, encoders: {} });
+      const wrapper = await mountDialog();
+      expect(wrapper.find('#exportNoGif').exists()).toBe(false);
+      await wrapper.get('#exportFormat').setValue('gif');
+      expect(wrapper.get('#exportNoGif').text()).toContain('older than this editor');
+      expect(wrapper.get('#exportStart').attributes('disabled')).toBeDefined();
+      await wrapper.get('#exportFormat').setValue('mp4');
+      expect(wrapper.find('#exportNoGif').exists()).toBe(false);
       expect(wrapper.get('#exportStart').attributes('disabled')).toBeUndefined();
       wrapper.unmount();
     });
